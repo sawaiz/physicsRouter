@@ -52,6 +52,7 @@ def board_to_viewer_dict(board: BoardModel, config: PlacementConfig | None = Non
 
 
 def route_to_viewer_dict(route: RouteResult, name: str = "route") -> dict[str, Any]:
+    d = route.to_dict() if hasattr(route, "to_dict") else {}
     return {
         "name": name,
         "total_length_mm": route.total_length_mm,
@@ -59,6 +60,9 @@ def route_to_viewer_dict(route: RouteResult, name: str = "route") -> dict[str, A
         "unrouted_nets": route.unrouted_nets,
         "clearance_violations": route.clearance_violations,
         "notes": route.notes,
+        "quality": d.get("quality") or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
+        "net_reports": d.get("net_reports") or [],
+        "length_by_layer_mm": d.get("length_by_layer_mm") or {},
         "segments": [
             {
                 "net": s.net,

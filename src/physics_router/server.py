@@ -42,7 +42,7 @@ from physics_router.physics import (
     geometric_score,
 )
 from physics_router.placement import apply_positions, optimize_placement, result_to_dict
-from physics_router.router import clearance_aware_route, topological_guide_route
+from physics_router.router import clearance_aware_route
 from physics_router.routing_strategies import multilayer_route, pre_route_analysis
 from physics_router.viewer_export import build_viewer_payload, write_viewer_data
 
@@ -139,6 +139,8 @@ class AppState:
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
         self.glb_url: str | None = None
         self.step_url: str | None = None
+        self.selected_route: str | None = None  # guide | topor | …
+        self.routed_pcb_path: str | None = None  # last applied copper PCB
         # Prefer HALO-90 when the open test project is present
         if HALO_CFG.exists() and HALO_PCB.exists():
             self._load_preset("halo-90")
@@ -180,6 +182,8 @@ class AppState:
         self.config_text = self._config_to_yaml()
         self._board = self._build_board()
         self.routes = {}
+        self.selected_route = None
+        self.routed_pcb_path = None
         self.last_score = None
         self.last_placement = None
         self._discover_assets()
@@ -217,14 +221,14 @@ class AppState:
         candidates.append(ASSETS_DIR / "board.glb")
         for p in candidates:
             if p.is_file() and p.stat().st_size > 1000:
-                self.glb_url = f"assets/{p.name}"
+                self.glb_url = f"/assets/{p.name}"
                 break
         for p in [
             ASSETS_DIR / f"{self.preset}_full.step" if self.preset else None,
             ASSETS_DIR / "board_full.step",
         ]:
             if p and p.is_file():
-                self.step_url = f"assets/{p.name}"
+                self.step_url = f"/assets/{p.name}"
                 break
 
     def _refresh_viewer(self) -> None:
@@ -371,7 +375,9 @@ class AppState:
             "export_dsn": self._job_export_dsn,
             "export_step": self._job_export_step,
             "export_board_3d": self._job_export_board_3d,
+            "apply_route_pcb": self._job_apply_route_pcb,
             "drc": self._job_drc,
+            "erc": self._job_erc,
             "tests": self._job_tests,
             "ci_regression": self._job_ci,
             "pipeline": self._job_pipeline,
@@ -496,26 +502,41 @@ class AppState:
         }
 
     def _job_route_guide(self, job: Job) -> dict[str, Any]:
-        self.set_progress(job, 10, "guide route")
+        self.set_progress(job, 5, "guide route")
         self.log(job, "TopoR free-angle guide routing…")
         with self.lock:
             board = copy.deepcopy(self.board())
             cfg = self.config
-        route = topological_guide_route(board, cfg)
-        self.set_progress(job, 85, "store")
+
+        def pcb(done_n, total, name, stage, detail):
+            frac = 10 + 75 * (done_n / max(total, 1))
+            self.set_progress(job, frac, f"guide {done_n}/{total} {name}")
+            if stage in ("ok", "soft_violation", "routing") and done_n % 3 == 0:
+                self.log(job, f"  [{done_n}/{total}] {name}: {stage}")
+
+        route = clearance_aware_route(
+            board, cfg, clearance_mm=0.0, allow_vias=False, guide_only=True, progress_cb=pcb
+        )
+        # keep topological_guide_route semantics via guide_only
+        self.set_progress(job, 90, "store")
         d = route.to_dict()
         with self.lock:
             self.routes["guide"] = route
+            self.selected_route = "guide"
             self._refresh_viewer()
             outp = WORK_DIR / f"route_guide_{job.id}.json"
             outp.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
-        self.log(job, f"Guide: {route.total_length_mm:.2f} mm, {len(route.segments)} segs")
+        q = route.quality or route.compute_quality()
+        self.log(job, f"Guide: {q.get('summary')} · {len(route.segments)} segs")
         return {
             "total_length_mm": route.total_length_mm,
             "via_count": route.via_count,
             "clearance_violations": route.clearance_violations,
             "segments": len(route.segments),
             "unrouted": route.unrouted_nets,
+            "quality": q,
+            "net_reports": d.get("net_reports", [])[:40],
+            "length_by_layer_mm": d.get("length_by_layer_mm"),
             "artifact": str(outp.relative_to(ROOT)),
             "route": d,
         }
@@ -524,13 +545,26 @@ class AppState:
         p = job.params
         clearance = float(p.get("clearance_mm", 0.2))
         grid = float(p.get("grid_mm", 0.5))
-        self.set_progress(job, 8, "clearance route")
+        self.set_progress(job, 5, "clearance route")
         self.log(job, f"Clearance-aware TopoR (clearance={clearance} mm, grid={grid} mm)…")
         with self.lock:
             board = copy.deepcopy(self.board())
             cfg = self.config
-            pcb = self.pcb_path
-        rules = load_design_rules(pcb) if pcb and Path(pcb).exists() else None
+            pcb_path = self.pcb_path
+        rules = load_design_rules(pcb_path) if pcb_path and Path(pcb_path).exists() else None
+
+        def pcb(done_n, total, name, stage, detail):
+            frac = 8 + 80 * (done_n / max(total, 1))
+            self.set_progress(job, frac, f"route {done_n}/{total} · {name} · {stage}")
+            if isinstance(detail, dict) and detail.get("length_mm") is not None:
+                self.log(
+                    job,
+                    f"  [{done_n}/{total}] {name}: {stage} "
+                    f"L={detail.get('length_mm', 0):.2f}mm vias={detail.get('vias', 0)} "
+                    f"method={detail.get('method', '')}",
+                )
+            elif stage == "routing":
+                self.log(job, f"  [{done_n}/{total}] routing {name}…")
 
         done: dict[str, Any] = {"r": None, "err": None}
 
@@ -538,37 +572,63 @@ class AppState:
             try:
                 if rules is not None:
                     done["r"] = multilayer_route(
-                        board, cfg, rules, grid_mm=grid, clearance_mm=clearance
+                        board,
+                        cfg,
+                        rules,
+                        grid_mm=grid,
+                        clearance_mm=clearance,
+                        progress_cb=pcb,
                     )
                 else:
                     done["r"] = clearance_aware_route(
-                        board, cfg, clearance_mm=clearance, grid_mm=grid
+                        board,
+                        cfg,
+                        clearance_mm=clearance,
+                        grid_mm=grid,
+                        progress_cb=pcb,
                     )
             except Exception as e:
                 done["err"] = e
 
         th = threading.Thread(target=target, daemon=True)
         th.start()
-        t0 = time.time()
         while th.is_alive():
-            elapsed = time.time() - t0
-            frac = min(0.9, elapsed / 45.0)
-            self.set_progress(job, 10 + 80 * frac, f"routing… {int(frac * 100)}%")
-            th.join(timeout=0.3)
+            th.join(timeout=0.4)
         if done["err"]:
             raise done["err"]
         route = done["r"]
         d = route.to_dict()
         with self.lock:
             self.routes["topor"] = route
+            self.selected_route = "topor"
             self._refresh_viewer()
             outp = WORK_DIR / f"route_topor_{job.id}.json"
             outp.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
-        self.log(
-            job,
-            f"TopoR: {route.total_length_mm:.2f} mm, vias={route.via_count}, "
-            f"viol={route.clearance_violations}",
-        )
+        q = route.quality or route.compute_quality()
+        self.log(job, f"TopoR done: {q.get('summary')}")
+        for note in (route.notes or [])[-8:]:
+            self.log(job, f"  note: {note}")
+
+        # Auto-apply to PCB + DRC when a real board is loaded (closed loop)
+        auto_apply = bool(job.params.get("auto_apply", True))
+        validation: dict[str, Any] = {}
+        with self.lock:
+            has_pcb = bool(self.pcb_path and Path(self.pcb_path).exists())
+        if auto_apply and has_pcb and route.segments:
+            self.set_progress(job, 88, "auto-apply + DRC")
+            self.log(job, "Auto-applying copper to KiCad and running DRC…")
+            sub = Job(
+                id=f"{job.id}-apply",
+                type="apply_route_pcb",
+                params={"variant": "topor", "rebuild_3d": bool(job.params.get("rebuild_3d", False))},
+            )
+            try:
+                validation = self._job_apply_route_pcb(sub)
+                self.log(job, f"Apply/DRC: {validation.get('drc', {}).get('error_count', '—')} DRC errors")
+            except Exception as e:
+                validation = {"error": str(e)}
+                self.log(job, f"Auto-apply failed: {e}")
+
         return {
             "total_length_mm": route.total_length_mm,
             "via_count": route.via_count,
@@ -576,8 +636,12 @@ class AppState:
             "segments": len(route.segments),
             "unrouted": route.unrouted_nets,
             "notes": route.notes,
+            "quality": q,
+            "net_reports": d.get("net_reports", [])[:50],
+            "length_by_layer_mm": d.get("length_by_layer_mm"),
             "artifact": str(outp.relative_to(ROOT)),
             "route": d,
+            "validation": validation,
         }
 
     def _job_pre_route(self, job: Job) -> dict[str, Any]:
@@ -731,22 +795,149 @@ class AppState:
             subst_models=True,
         )
         with self.lock:
-            self.step_url = f"assets/{path.name}"
+            self.step_url = f"/assets/{path.name}"
             self._refresh_viewer()
         self.set_progress(job, 100, "done")
         self.log(job, f"STEP {path.stat().st_size // 1024} KB")
         return {
             "step": str(path.relative_to(ROOT)),
-            "url": f"assets/{path.name}",
+            "url": f"/assets/{path.name}",
             "bytes": path.stat().st_size,
             "includes": ["components STEP", "tracks", "pads", "soldermask", "silkscreen", "inner copper"],
         }
+
+    def _job_apply_route_pcb(self, job: Job) -> dict[str, Any]:
+        """Write selected route copper into a KiCad PCB (for 3D / DRC / fab)."""
+        from physics_router.router import RouteResult, append_routes_to_kicad_pcb
+
+        variant = job.params.get("variant") or self.selected_route or "topor"
+        rebuild_3d = bool(job.params.get("rebuild_3d", False))
+        self.set_progress(job, 10, f"apply {variant}")
+        with self.lock:
+            route = self.routes.get(variant)
+            # Prefer original PCB as copper base, not a previously routed copy
+            base_pcb = self.pcb_path
+            preset = self.preset or "board"
+        if route is None:
+            raise RuntimeError(
+                f"No route variant '{variant}'. Run Guide or Clearance route first."
+            )
+        if not base_pcb or not Path(base_pcb).exists():
+            raise RuntimeError("No .kicad_pcb in session — load HALO-90 or set pcb path")
+
+        if not isinstance(route, RouteResult):
+            # rebuild from dict if needed
+            from physics_router.router import RouteSegment, Via
+
+            segs = [
+                RouteSegment(
+                    x1=s["x1"], y1=s["y1"], x2=s["x2"], y2=s["y2"],
+                    layer=s.get("layer", "F.Cu"), net=s.get("net", ""),
+                    width_mm=s.get("width_mm", 0.25),
+                )
+                for s in (route.get("segments") or [])
+            ]
+            vias = [
+                Via(
+                    x=v["x"], y=v["y"], net=v.get("net", ""),
+                    size_mm=v.get("size_mm", 0.8), drill_mm=v.get("drill_mm", 0.4),
+                )
+                for v in (route.get("vias") or [])
+            ]
+            route = RouteResult(
+                segments=segs,
+                vias=vias,
+                via_count=int(route.get("via_count") or len(vias)),
+                total_length_mm=float(route.get("total_length_mm") or 0),
+                unrouted_nets=list(route.get("unrouted_nets") or []),
+                clearance_violations=int(route.get("clearance_violations") or 0),
+                notes=list(route.get("notes") or []),
+            )
+
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        # Always bake onto the *source* board (not a prior routed file) when possible
+        source = Path(base_pcb)
+        # If current path is already a routed file, prefer stock halo/original from preset
+        if "routed" in source.name and HALO_PCB.exists() and preset == "halo-90":
+            source = HALO_PCB
+        out_pcb = ASSETS_DIR / f"{preset}_routed_{variant}.kicad_pcb"
+        self.log(job, f"Writing copper from '{variant}' → {out_pcb.name}")
+        self.set_progress(job, 40, "write kicad_pcb")
+        path = append_routes_to_kicad_pcb(str(source), str(out_pcb), route, replace_previous=True)
+        with self.lock:
+            self.selected_route = variant
+            self.routed_pcb_path = str(path)
+            # Point session PCB at routed board so 3D export includes copper
+            self.pcb_path = str(path)
+            self.board_source = "pcb"
+            self._refresh_viewer()
+        self.set_progress(job, 55, "pcb written")
+        self.log(
+            job,
+            f"Applied {len(route.segments)} segments + {route.via_count} vias "
+            f"({route.total_length_mm:.1f} mm)",
+        )
+        out: dict[str, Any] = {
+            "variant": variant,
+            "pcb": str(path.relative_to(ROOT)),
+            "url": f"/assets/{path.name}",
+            "segments": len(route.segments),
+            "vias": route.via_count,
+            "total_length_mm": route.total_length_mm,
+            "quality": route.quality or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
+        }
+
+        # Official KiCad DRC (+ ERC when schematic present) after every apply
+        try:
+            from physics_router.kicad_tools import (
+                find_schematic_for_pcb,
+                run_drc,
+                run_erc,
+            )
+
+            self.set_progress(job, 60, "kicad DRC")
+            drc_dir = WORK_DIR / f"drc_apply_{job.id}"
+            drc_dir.mkdir(parents=True, exist_ok=True)
+            drc = run_drc(path, drc_dir / "drc.json")
+            drc_sum = drc.to_dict() if hasattr(drc, "to_dict") else {}
+            out["drc"] = drc_sum
+            self.log(
+                job,
+                f"DRC: errors={drc_sum.get('error_count')} warn={drc_sum.get('warning_count')} "
+                f"copper={drc_sum.get('copper_violation_count')} unconn={drc_sum.get('unconnected_count')}",
+            )
+            sch = find_schematic_for_pcb(source)
+            if sch is not None:
+                self.set_progress(job, 68, "kicad ERC")
+                erc = run_erc(sch, drc_dir / "erc.json")
+                out["erc"] = erc
+                self.log(
+                    job,
+                    f"ERC: errors={erc.get('error_count')} warn={erc.get('warning_count')} "
+                    f"passed={erc.get('passed')}",
+                )
+            else:
+                out["erc"] = {"skipped": True, "reason": "no schematic next to PCB"}
+        except Exception as e:
+            out["drc"] = {"error": str(e)}
+            self.log(job, f"DRC/ERC skipped: {e}")
+
+        if rebuild_3d:
+            self.set_progress(job, 75, "rebuild 3D GLB from routed PCB")
+            self.log(job, "Re-exporting KiCad GLB with applied copper…")
+            sub = Job(id=f"{job.id}-glb", type="export_board_3d", params={"also_step": False})
+            glb_res = self._job_export_board_3d(sub)
+            out["glb"] = glb_res
+            self.log(job, f"GLB: {glb_res.get('url') or glb_res}")
+        self.set_progress(job, 100, "done")
+        return out
 
     def _job_export_board_3d(self, job: Job) -> dict[str, Any]:
         """KiCad GLB for three.js: component STEP models + all visual layers."""
         self.set_progress(job, 5, "export board 3D")
         with self.lock:
-            pcb = self.pcb_path
+            # Prefer last applied routed board (includes copper)
+            pcb = self.routed_pcb_path or self.pcb_path
             preset = self.preset or "board"
         if not pcb or not Path(pcb).exists():
             return {"skipped": True, "reason": "no pcb path"}
@@ -756,6 +947,9 @@ class AppState:
             raise FileNotFoundError("kicad-cli not found — install KiCad or set KICAD_CLI")
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
         also_step = bool(job.params.get("also_step", False))
+        stem = f"{preset}_routed" if self.routed_pcb_path and Path(pcb).name.find("routed") >= 0 else (
+            preset if preset != "synthetic" else Path(pcb).stem
+        )
         self.set_progress(job, 15, "kicad-cli glb (STEP models + mask + silk + copper)")
         self.log(
             job,
@@ -765,22 +959,26 @@ class AppState:
         result = export_board_visual_3d(
             Path(pcb),
             ASSETS_DIR,
-            stem=preset if preset != "synthetic" else Path(pcb).stem,
+            stem=stem,
             also_step=also_step,
         )
         glb_path = Path(result["glb"])
-        # Stable name for default preset
-        stable = ASSETS_DIR / f"{preset}.glb"
-        if glb_path.resolve() != stable.resolve() and glb_path.exists():
-            import shutil
+        # Stable names: halo-90.glb (stock) and halo-90_routed.glb (with copper)
+        import shutil
 
+        stable = ASSETS_DIR / f"{stem}.glb"
+        if glb_path.resolve() != stable.resolve() and glb_path.exists():
             shutil.copy2(glb_path, stable)
             result["glb"] = str(stable)
             glb_path = stable
+        # Also publish as preset.glb when this is the active view model
+        view_name = ASSETS_DIR / f"{preset}.glb"
+        if glb_path.resolve() != view_name.resolve():
+            shutil.copy2(glb_path, view_name)
         with self.lock:
-            self.glb_url = f"assets/{glb_path.name}"
+            self.glb_url = f"/assets/{view_name.name}"
             if result.get("step"):
-                self.step_url = f"assets/{Path(result['step']).name}"
+                self.step_url = f"/assets/{Path(result['step']).name}"
             self._refresh_viewer()
         self.set_progress(job, 100, "done")
         self.log(job, f"GLB ready {glb_path.stat().st_size // 1024} KB → {self.glb_url}")
@@ -793,7 +991,7 @@ class AppState:
     def _job_drc(self, job: Job) -> dict[str, Any]:
         self.set_progress(job, 10, "DRC")
         with self.lock:
-            pcb = self.pcb_path
+            pcb = self.routed_pcb_path or self.pcb_path
         if not pcb or not Path(pcb).exists():
             self.log(job, "No PCB — cannot run official KiCad DRC")
             return {"skipped": True, "reason": "no pcb path"}
@@ -807,6 +1005,27 @@ class AppState:
         self.set_progress(job, 100, "done")
         summary = report.to_dict() if hasattr(report, "to_dict") else {"result": str(report)}
         self.log(job, f"DRC summary: {summary}")
+        return summary
+
+    def _job_erc(self, job: Job) -> dict[str, Any]:
+        self.set_progress(job, 10, "ERC")
+        with self.lock:
+            pcb = self.pcb_path
+        from physics_router.kicad_tools import find_schematic_for_pcb, run_erc
+
+        sch = None
+        if job.params.get("sch") and Path(job.params["sch"]).exists():
+            sch = Path(job.params["sch"])
+        elif pcb:
+            sch = find_schematic_for_pcb(pcb)
+        if sch is None or not Path(sch).exists():
+            return {"skipped": True, "reason": "no schematic found"}
+        out_dir = WORK_DIR / f"erc_{job.id}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self.set_progress(job, 40, "kicad-cli sch erc")
+        summary = run_erc(sch, out_dir / "erc.json")
+        self.set_progress(job, 100, "done")
+        self.log(job, f"ERC: {summary}")
         return summary
 
     def _job_tests(self, job: Job) -> dict[str, Any]:
@@ -969,19 +1188,22 @@ class AppState:
                     "project_name": self.config.project_name,
                     "glb": self.glb_url,
                     "step": self.step_url,
+                    "selected_route": self.selected_route,
+                    "routed_pcb": self.routed_pcb_path,
                 },
                 "config": self.config.model_dump(mode="json"),
                 "config_text": self.config_text,
+                "selected_route": self.selected_route,
+                "routed_pcb": (
+                    str(Path(self.routed_pcb_path).relative_to(ROOT))
+                    if self.routed_pcb_path and Path(self.routed_pcb_path).exists()
+                    else None
+                ),
                 "routes": {
                     k: (
                         v.to_dict()
                         if hasattr(v, "to_dict")
-                        else {
-                            "total_length_mm": v.get("total_length_mm"),
-                            "via_count": v.get("via_count"),
-                            "clearance_violations": v.get("clearance_violations"),
-                            "segments": len(v.get("segments") or []),
-                        }
+                        else v
                     )
                     for k, v in self.routes.items()
                 },
@@ -1063,6 +1285,12 @@ JOB_CATALOG = [
         "description": "Clearance-aware free-angle + rubberband cleanup",
     },
     {
+        "id": "apply_route_pcb",
+        "label": "Apply route → KiCad PCB",
+        "group": "route",
+        "description": "Write selected copper into .kicad_pcb; optional GLB rebuild for 3D",
+    },
+    {
         "id": "spice",
         "label": "Spice / PI proxy",
         "group": "sim",
@@ -1097,6 +1325,12 @@ JOB_CATALOG = [
         "label": "KiCad DRC",
         "group": "validate",
         "description": "Official kicad-cli pcb drc oracle (needs PCB)",
+    },
+    {
+        "id": "erc",
+        "label": "KiCad ERC",
+        "group": "validate",
+        "description": "Official kicad-cli sch erc (needs schematic)",
     },
     {
         "id": "compare_routes",
@@ -1142,6 +1376,24 @@ STATE = AppState()
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(VIEWER_DIR), **kwargs)
+
+    def guess_type(self, path: str) -> str:  # type: ignore[override]
+        low = path.lower().split("?", 1)[0]
+        if low.endswith(".glb"):
+            return "model/gltf-binary"
+        if low.endswith(".gltf"):
+            return "model/gltf+json"
+        if low.endswith((".step", ".stp")):
+            return "application/step"
+        return super().guess_type(path)
+
+    def end_headers(self) -> None:
+        # Allow canvas/workers to fetch GLB from same origin without cache traps
+        path = (self.path or "").split("?", 1)[0]
+        if path.endswith((".glb", ".gltf")):
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+        super().end_headers()
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Quieter default
@@ -1269,6 +1521,14 @@ class Handler(SimpleHTTPRequestHandler):
                 params = body.get("params") or {}
                 job = STATE.enqueue(jtype, params)
                 return self._json(202, {"job": job.to_dict(full=False)})
+            if path == "/api/routes/select":
+                name = body.get("variant") or body.get("name")
+                with STATE.lock:
+                    if name and name not in STATE.routes:
+                        return self._json(404, {"error": f"unknown variant {name}", "known": list(STATE.routes)})
+                    STATE.selected_route = name
+                    snap = STATE.snapshot()
+                return self._json(200, {"selected_route": name, "session": snap.get("session")})
             if path == "/api/preset":
                 name = body.get("preset") or body.get("id") or "synthetic"
                 with STATE.lock:

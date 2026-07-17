@@ -694,6 +694,96 @@ def export_simulation_bundle(
     return result
 
 
+def run_erc(
+    sch_path: str | Path,
+    out_json: str | Path | None = None,
+    *,
+    severity_all: bool = True,
+    timeout_s: float = 300,
+) -> dict[str, Any]:
+    """Run official schematic ERC via kicad-cli; return a compact summary dict."""
+    cli = find_kicad_cli()
+    if cli is None:
+        raise FileNotFoundError("kicad-cli not found")
+    sch_path = Path(sch_path).resolve()
+    if out_json is None:
+        out_json = sch_path.with_suffix(".erc.json")
+    out_json = Path(out_json)
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        str(cli),
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--units",
+        "mm",
+        "-o",
+        str(out_json),
+    ]
+    if severity_all:
+        cmd.append("--severity-all")
+    cmd.append(str(sch_path))
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    summary: dict[str, Any] = {
+        "source": str(sch_path),
+        "raw_path": str(out_json),
+        "exit_code": proc.returncode,
+        "error_count": 0,
+        "warning_count": 0,
+        "violation_count": 0,
+        "by_type": {},
+        "samples": [],
+    }
+    if not out_json.exists():
+        summary["error"] = (proc.stderr or proc.stdout or "no ERC output")[:800]
+        return summary
+    try:
+        data = json.loads(out_json.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        summary["error"] = f"ERC JSON parse failed: {e}"
+        return summary
+    violations = data.get("violations") or data.get("errors") or []
+    by_type: dict[str, int] = {}
+    for v in violations:
+        sev = str(v.get("severity", "error")).lower()
+        typ = str(v.get("type", v.get("description", "unknown")))[:80]
+        by_type[typ] = by_type.get(typ, 0) + 1
+        if sev == "warning":
+            summary["warning_count"] += 1
+        else:
+            summary["error_count"] += 1
+        if len(summary["samples"]) < 12:
+            summary["samples"].append(
+                {
+                    "severity": sev,
+                    "type": typ,
+                    "description": str(v.get("description", ""))[:200],
+                }
+            )
+    summary["violation_count"] = len(violations)
+    summary["by_type"] = dict(sorted(by_type.items(), key=lambda x: -x[1])[:20])
+    summary["passed"] = summary["error_count"] == 0
+    return summary
+
+
+def find_schematic_for_pcb(pcb_path: str | Path) -> Path | None:
+    """Best-effort locate a root schematic next to a PCB."""
+    pcb_path = Path(pcb_path)
+    stem = pcb_path.stem
+    candidates = [
+        pcb_path.with_suffix(".kicad_sch"),
+        pcb_path.parent / f"{stem}.kicad_sch",
+        pcb_path.parent.parent / f"{stem}.kicad_sch",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    # any schematic in same folder
+    schs = list(pcb_path.parent.glob("*.kicad_sch"))
+    return schs[0] if schs else None
+
+
 def validate_copper_board(
     pcb_path: str | Path,
     out_dir: str | Path | None = None,

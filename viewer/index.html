@@ -109,6 +109,18 @@
     .notes { font-size: 0.72rem; color: var(--muted); max-height: 90px; overflow: auto; margin: 0; padding-left: 1rem; }
     .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.35rem; align-items: center;
       font-size: 0.7rem; margin: 0.18rem 0; }
+    #route2d {
+      width: 100%; height: 260px; background: #0b0f14; border: 1px solid var(--line);
+      border-radius: 10px; display: block; cursor: crosshair;
+    }
+    .variant-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
+    .variant-btn {
+      background: #0f1419; border: 1px solid var(--line); color: var(--muted);
+      border-radius: 8px; padding: 0.35rem 0.55rem; font: inherit; cursor: pointer; font-size: 0.75rem;
+    }
+    .variant-btn:hover { border-color: var(--accent); color: var(--text); }
+    .variant-btn.active { background: #1e3a55; border-color: #3a7abd; color: var(--text); }
+    .variant-btn small { display: block; color: var(--muted); font-size: 0.65rem; margin-top: 0.1rem; }
     #dock {
       border-top: 1px solid var(--line); background: #0e141c;
       display: grid; grid-template-columns: 1fr 1.2fr; max-height: 150px; min-height: 0;
@@ -267,6 +279,7 @@
     snap: null,
     viewer: null,
     selectedJob: null,
+    selectedRoute: null,  // guide | topor | …
     chart: null,
     chartKey: '',
     layersBuilt: false,
@@ -326,30 +339,61 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(w, h, false);
     renderer.setClearColor(0x070a0e, 1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.innerHTML = '';
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x070a0e, 80, 220);
+    // Z-up (CAD / KiCad convention): board in XY, thickness +Z
+    scene.fog = new THREE.FogExp2(0x070a0e, 0.008);
 
-    const camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 500);
-    camera.position.set(28, 32, 36);
+    // 1 scene unit = 1 mm after GLB m→mm fix. FOV for close-up PCB viewing.
+    const camera = new THREE.PerspectiveCamera(35, w / h, 0.01, 5000);
+    camera.up.set(0, 0, 1); // Z-up
+    // Default pose looking down on ~24 mm board (mm units)
+    camera.position.set(28, -32, 24);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, 0, 1);
+    controls.screenSpacePanning = true;
+    controls.zoomSpeed = 1.35;
+    controls.panSpeed = 0.9;
+    // Allow microscopic zoom (zoom limit was blocking close-ups)
+    controls.minDistance = 0.2;   // 0.2 mm
+    controls.maxDistance = 5000;
+    controls.maxPolarAngle = Math.PI * 0.98; // almost under-board
+    controls.minPolarAngle = 0.02;
 
-    scene.add(new THREE.AmbientLight(0x8aa0b8, 0.55));
-    const key = new THREE.DirectionalLight(0xffffff, 1.05);
-    key.position.set(40, 60, 30);
+    // Studio lighting (positions in Z-up frame)
+    const hemi = new THREE.HemisphereLight(0xd8e4f8, 0x1a2230, 0.9);
+    // HemisphereLight default sky=+Y; rotate so sky is +Z
+    hemi.position.set(0, 0, 1);
+    scene.add(hemi);
+    const amb = new THREE.AmbientLight(0xb0c0d4, 0.32);
+    scene.add(amb);
+
+    const key = new THREE.DirectionalLight(0xfff6ea, 1.6);
+    key.position.set(40, 30, 60);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x6688aa, 0.35);
-    fill.position.set(-30, 20, -20);
+    const fill = new THREE.DirectionalLight(0x8eb4e8, 0.7);
+    fill.position.set(-50, 10, 30);
     scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xc8e0ff, 0.55);
+    rim.position.set(-20, -50, 25);
+    scene.add(rim);
+    const top = new THREE.DirectionalLight(0xffffff, 0.5);
+    top.position.set(0, 0, 90);
+    scene.add(top);
+    const bounce = new THREE.DirectionalLight(0x3a4a5a, 0.22);
+    bounce.position.set(0, 20, -40);
+    scene.add(bounce);
 
-    const grid = new THREE.GridHelper(60, 30, 0x2a3548, 0x1a2332);
-    grid.position.y = -0.02;
+    // Grid in XY plane (Z-up ground)
+    const grid = new THREE.GridHelper(80, 40, 0x2a3548, 0x1a2332);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.z = -0.02;
     scene.add(grid);
 
     const root = new THREE.Group();
@@ -360,6 +404,8 @@
     three.camera = camera;
     three.controls = controls;
     three.root = root;
+    three.lights = { hemi, amb, key, fill, rim, top, bounce };
+    three.grid = grid;
     three.gKicad = new THREE.Group(); three.gKicad.name = 'kicad';
     three.gComps = new THREE.Group(); three.gComps.name = 'comps';
     three.gRoutes = new THREE.Group(); three.gRoutes.name = 'routes';
@@ -385,6 +431,81 @@
     three.camera.aspect = w / h;
     three.camera.updateProjectionMatrix();
     three.renderer.setSize(w, h, false);
+    // Re-frame so board still fills the viewport after resize
+    if (three.lastBox) frameCameraToBox(three.lastBox, { animate: false });
+  }
+
+  /**
+   * Fit camera so the board fills the view. World is Z-up; units = millimetres.
+   * @param {THREE.Box3} box
+   * @param {{ fill?: number, elevation?: number, azimuth?: number }} opts
+   */
+  function frameCameraToBox(box, opts = {}) {
+    if (!three.camera || !three.controls || !box || box.isEmpty()) return;
+    const fill = opts.fill ?? 0.85;
+    // elevation from XY plane toward +Z; azimuth in XY
+    const elevation = opts.elevation ?? 0.55;
+    const azimuth = opts.azimuth ?? 0.85;
+
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const target = center.clone();
+    target.z = Math.max(center.z, size.z * 0.4); // aim at component height
+
+    // Board extent in plane XY
+    const planeW = Math.max(size.x, 1);
+    const planeH = Math.max(size.y, 1);
+    const maxDim = Math.max(planeW, planeH, size.z, 1);
+
+    const fovY = three.camera.fov * (Math.PI / 180);
+    const aspect = Math.max(three.camera.aspect || 1, 0.2);
+    const fovX = 2 * Math.atan(Math.tan(fovY / 2) * aspect);
+
+    const distForH = (planeH / 2) / Math.tan(fovY / 2) / fill;
+    const distForW = (planeW / 2) / Math.tan(fovX / 2) / fill;
+    let dist = Math.max(distForH, distForW, maxDim * 0.55);
+
+    // Direction in Z-up spherical coords
+    const dir = new THREE.Vector3(
+      Math.cos(elevation) * Math.sin(azimuth),
+      Math.cos(elevation) * Math.cos(azimuth),
+      Math.sin(elevation),
+    ).normalize();
+
+    three.camera.up.set(0, 0, 1);
+    three.camera.position.copy(target).addScaledVector(dir, dist);
+    three.controls.target.copy(target);
+    // Zoom: allow almost surface contact — previous minDistance (~0.25*board) blocked close-ups
+    three.controls.minDistance = Math.max(0.15, maxDim * 0.008);
+    three.controls.maxDistance = Math.max(200, maxDim * 40);
+    three.camera.near = Math.max(0.01, dist / 500);
+    three.camera.far = Math.max(1000, dist * 80);
+    three.camera.updateProjectionMatrix();
+    three.controls.update();
+
+    placeLightsAround(center, maxDim);
+    if (three.grid) {
+      const gSpan = Math.max(50, Math.max(planeW, planeH) * 3.5);
+      three.grid.scale.set(gSpan / 80, 1, gSpan / 80);
+      three.grid.position.set(center.x, center.y, box.min.z - 0.05);
+    }
+    if (three.scene?.fog) {
+      three.scene.fog.density = 0.4 / Math.max(dist, 15);
+    }
+    three.lastBox = box.clone();
+    three.boardMm = { x: size.x, y: size.y, z: size.z };
+  }
+
+  function placeLightsAround(center, span) {
+    const L = three.lights;
+    if (!L) return;
+    const s = Math.max(span, 20);
+    // Z-up: +Z is above board
+    L.key.position.set(center.x + s * 0.9, center.y + s * 0.7, center.z + s * 1.5);
+    L.fill.position.set(center.x - s * 1.2, center.y + s * 0.2, center.z + s * 0.8);
+    L.rim.position.set(center.x - s * 0.3, center.y - s * 1.3, center.z + s * 0.6);
+    L.top.position.set(center.x, center.y, center.z + s * 2.5);
+    L.bounce.position.set(center.x, center.y + s * 0.4, center.z - s);
   }
 
   function clearGroup(g) {
@@ -436,67 +557,116 @@
     });
   }
 
+  function resolveGlbUrl(url) {
+    if (!url) return null;
+    // Always absolute from server root so /assets/... works
+    let u = url.startsWith('http') ? url : (url.startsWith('/') ? url : '/' + url.replace(/^\.\//, ''));
+    // cache-bust local assets
+    if (!u.includes('?')) u += '?v=' + Date.now();
+    return u;
+  }
+
   function loadKicadGlb(url) {
     if (!url || !three.gKicad) return;
-    if (three.glbUrl === url && three.gKicad.children.length) return;
+    const resolved = resolveGlbUrl(url);
+    if (three.glbUrl === resolved && three.gKicad.children.length) return;
     if (three.glbLoading) return;
     three.glbLoading = true;
-    three.glbUrl = url;
+    three.glbUrl = resolved;
     clearGroup(three.gKicad);
-    $('#boardStats').textContent = `Loading KiCad 3D ${url}…`;
+    if ($('#showKicad')) $('#showKicad').checked = true;
+    $('#boardStats').textContent = `Loading KiCad 3D ${resolved}…`;
     const loader = new GLTFLoader();
     loader.load(
-      url,
+      resolved,
       (gltf) => {
         three.glbLoading = false;
         const model = gltf.scene || gltf.scenes?.[0];
         if (!model) {
-          $('#boardStats').textContent = 'GLB loaded but empty';
+          $('#boardStats').textContent = 'GLB loaded but empty scene';
           return;
         }
-        // KiCad exports in mm; center on board XY
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        model.position.sub(center);
-        // Keep Z so board sits near y=0
-        model.position.y += size.y / 2;
-        // Mild material boost for mask/silk readability
-        model.traverse((ch) => {
-          if (ch.isMesh && ch.material) {
-            const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
-            mats.forEach((m) => {
-              if (m.metalness != null) m.metalness = Math.min(0.9, (m.metalness || 0) + 0.15);
-              if (m.roughness != null) m.roughness = Math.max(0.25, (m.roughness || 0.5) * 0.9);
-              m.needsUpdate = true;
-            });
-          }
+
+        // Keep KiCad board coordinates (mm, Z-up) so routes/pads share one space.
+        // OCC often exports metres — scale only, do NOT re-center (that broke overlays).
+        const root = new THREE.Group();
+        root.name = 'kicad-board';
+        root.add(model);
+
+        model.updateMatrixWorld(true);
+        let box0 = new THREE.Box3().setFromObject(root);
+        let size0 = box0.getSize(new THREE.Vector3());
+        const max0 = Math.max(size0.x, size0.y, size0.z);
+        let unitNote = 'mm (native GLB)';
+        if (max0 > 0 && max0 < 0.5) {
+          root.scale.setScalar(1000); // m → mm
+          unitNote = 'mm (GLB metres×1000, KiCad XY shared with routes)';
+          root.updateMatrixWorld(true);
+          box0 = new THREE.Box3().setFromObject(root);
+          size0 = box0.getSize(new THREE.Vector3());
+        }
+
+        let meshCount = 0;
+        root.traverse((ch) => {
+          if (!ch.isMesh) return;
+          meshCount++;
+          ch.castShadow = false;
+          ch.receiveShadow = true;
+          const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+          mats.forEach((m) => {
+            if (!m) return;
+            m.side = THREE.DoubleSide;
+            if (m.map) {
+              m.map.colorSpace = THREE.SRGBColorSpace;
+              m.map.needsUpdate = true;
+            }
+            if (m.metalness != null) m.metalness = Math.min(0.85, (m.metalness || 0.2) + 0.1);
+            if (m.roughness != null) m.roughness = Math.min(0.9, Math.max(0.2, m.roughness ?? 0.5));
+            m.needsUpdate = true;
+          });
         });
-        three.gKicad.add(model);
-        // Frame camera on full board
-        const span = Math.max(size.x, size.y, size.z, 20);
-        three.controls.target.set(0, size.y * 0.15, 0);
-        three.camera.position.set(span * 0.65, span * 0.55, span * 0.7);
-        three.controls.update();
+
+        three.gKicad.add(root);
+        three.gKicad.visible = true;
+
+        // Frame on union of GLB + component/route coords (same space)
+        root.updateMatrixWorld(true);
+        const box2 = new THREE.Box3().setFromObject(root);
+        const comps = state.viewer?.board?.components || [];
+        for (const c of comps) {
+          box2.expandByPoint(new THREE.Vector3(c.x, c.y, 0));
+          box2.expandByPoint(new THREE.Vector3(c.x, c.y, 2));
+        }
+        const size2 = box2.getSize(new THREE.Vector3());
+        frameCameraToBox(box2, { fill: 0.88, elevation: 0.62, azimuth: 0.9 });
         applyVisibility();
+
         const detail = state.viewer?.assets?.detail || 'KiCad GLB';
+        const okScale = size2.x > 10 && size2.x < 100;
         $('#boardStats').textContent =
-          `KiCad 3D · ${detail} · ${url} · ${fmt(size.x, 1)}×${fmt(size.z, 1)}×${fmt(size.y, 1)} mm`;
+          `KiCad 3D · Z-up · shared XY with routes · ${meshCount} meshes · ` +
+          `${fmt(size2.x, 2)}×${fmt(size2.y, 2)}×${fmt(size2.z, 2)} mm · ${unitNote}` +
+          (okScale ? ' · scale OK' : ' · check scale') +
+          ` · ${detail}`;
+        console.info('[physicsRouter] GLB loaded (aligned to KiCad coords)', resolved, {
+          meshCount, sizeMm: size2, nativeMax: max0, unitNote,
+        });
       },
       (ev) => {
         if (ev.total) {
-          $('#boardStats').textContent = `Loading KiCad 3D… ${Math.round(100 * ev.loaded / ev.total)}%`;
+          $('#boardStats').textContent =
+            `Loading KiCad 3D… ${Math.round(100 * ev.loaded / ev.total)}% (${Math.round(ev.loaded / 1e6)} MB)`;
+        } else if (ev.loaded) {
+          $('#boardStats').textContent = `Loading KiCad 3D… ${Math.round(ev.loaded / 1e6)} MB`;
         }
       },
       (err) => {
         three.glbLoading = false;
-        console.warn('GLB load failed', err);
+        three.glbUrl = null;
+        console.error('[physicsRouter] GLB load failed', resolved, err);
         $('#boardStats').textContent =
-          `KiCad GLB failed (${url}) — showing box fallback. Run Rebuild 3D / export_board_3d.`;
-        // enable simple parts if GLB missing
-        if ($('#showComps') && !$('#showComps').checked) {
+          `KiCad GLB failed (${resolved}) — ${err?.message || err}. Try Rebuild 3D.`;
+        if ($('#showComps')) {
           $('#showComps').checked = true;
           $('#showBoard').checked = true;
         }
@@ -552,28 +722,27 @@
     const bw = Math.max(maxX - minX, board.width_mm || 24);
     const bh = Math.max(maxY - minY, board.height_mm || 26);
 
-    // PCB substrate (green FR4 disk-ish box)
+    // PCB substrate — Z-up: size along X/Y, thickness along Z
     const boardMat = new THREE.MeshStandardMaterial({
       color: 0x1a4a32, roughness: 0.75, metalness: 0.05,
     });
     const boardMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(bw + 1.2, 0.8, bh + 1.2),
+      new THREE.BoxGeometry(bw + 1.2, bh + 1.2, 0.8),
       boardMat,
     );
-    boardMesh.position.set(cx, 0, cy);
+    boardMesh.position.set(cx, cy, 0.4);
     three.gBoard.add(boardMesh);
-    // edge outline
     const edge = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(bw + 1.2, 0.8, bh + 1.2)),
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(bw + 1.2, bh + 1.2, 0.8)),
       new THREE.LineBasicMaterial({ color: 0x3ecf8e }),
     );
     edge.position.copy(boardMesh.position);
     three.gBoard.add(edge);
 
-    // Components
+    // Components (Z-up)
     for (const c of comps) {
       const led = isLed(c.ref);
-      let color = 0x4c78a8; // free
+      let color = 0x4c78a8;
       if (c.locked && led) color = 0xe85d4c;
       else if (c.locked) color = 0x6b4c7a;
       if (c.ref === 'U1' || c.ref === 'BT1') color = 0xe45756;
@@ -587,27 +756,22 @@
         emissive: led ? 0x401008 : 0x000000,
         emissiveIntensity: led ? 0.35 : 0,
       });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), mat);
-      const zTop = 0.4 + t / 2;
-      mesh.position.set(c.x, zTop, c.y);
-      mesh.rotation.y = -((c.rot || 0) * Math.PI) / 180;
+      // BoxGeometry(x, y, z) with z = height in Z-up
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, d, t), mat);
+      const zMid = 0.4 + t / 2;
+      mesh.position.set(c.x, c.y, zMid);
+      mesh.rotation.z = -((c.rot || 0) * Math.PI) / 180;
       mesh.userData = { ref: c.ref, locked: c.locked, led };
       three.gComps.add(mesh);
 
-      // Labels for non-LED or important parts
-      if ($('#showLabels')?.checked && (!led || c.ref === 'D1' || c.ref === 'D45' || c.ref === 'D90')) {
-        if (!led || ['D1', 'D23', 'D45', 'D68', 'D90'].includes(c.ref)) {
-          // sprite-like simple canvas texture for a few labels
-        }
-      }
       if (!led && c.ref && (c.ref.length <= 4 || ['U1', 'BT1', 'MK1', 'U2', 'S1'].includes(c.ref))) {
         const spr = makeTextSprite(c.ref, c.locked ? '#c9b0d8' : '#d0e4ff');
-        spr.position.set(c.x, zTop + t / 2 + 0.6, c.y);
+        spr.position.set(c.x, c.y, zMid + t / 2 + 0.6);
         three.gLabels.add(spr);
       }
     }
 
-    // Routes
+    // Routes in XY, stacked in Z by layer
     const rname = $('#routeSel')?.value;
     const route = state.viewer.routes?.[rname];
     if (route?.segments) {
@@ -618,23 +782,24 @@
         const dy = s.y2 - s.y1;
         const len = Math.hypot(dx, dy) || 0.01;
         const width = Math.max(s.width_mm || 0.2, 0.12);
-        const y = layerZ(s.layer, layers);
+        const z = layerZ(s.layer, layers);
         const mat = new THREE.MeshStandardMaterial({
           color: netColor(s.net),
           metalness: 0.85,
           roughness: 0.28,
         });
+        // length along X, width along Y, thickness along Z — then rotate in XY
         const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(len, width * 0.35, width),
+          new THREE.BoxGeometry(len, width, width * 0.35),
           mat,
         );
-        mesh.position.set((s.x1 + s.x2) / 2, y, (s.y1 + s.y2) / 2);
-        mesh.rotation.y = -Math.atan2(dy, dx);
+        mesh.position.set((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, z);
+        mesh.rotation.z = Math.atan2(dy, dx);
         three.gRoutes.add(mesh);
       }
     }
 
-    // Vias
+    // Vias along Z
     if (route?.vias) {
       for (const v of route.vias) {
         const r = Math.max((v.size_mm || 0.6) / 2, 0.2);
@@ -642,32 +807,34 @@
           new THREE.CylinderGeometry(r, r, 1.4, 12),
           new THREE.MeshStandardMaterial({ color: 0xd4a017, metalness: 0.7, roughness: 0.35 }),
         );
-        mesh.position.set(v.x, 0.7, v.y);
+        mesh.rotation.x = Math.PI / 2; // default cylinder axis Y → Z
+        mesh.position.set(v.x, v.y, 0.7);
         three.gVias.add(mesh);
       }
     }
 
-    // EMI
+    // EMI boxes
     if (state.viewer.emi_geometry?.primitives) {
       for (const p of state.viewer.emi_geometry.primitives) {
         if (p.kind !== 'box') continue;
         const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(p.w_mm || 1, p.t_mm || 0.4, p.h_mm || 1),
+          new THREE.BoxGeometry(p.w_mm || 1, p.h_mm || 1, p.t_mm || 0.4),
           new THREE.MeshStandardMaterial({
             color: 0xc0a060, transparent: true, opacity: 0.28, metalness: 0.4, roughness: 0.4,
           }),
         );
-        mesh.position.set(p.cx_mm || 0, (p.cz_mm || 0.5) + 0.5, p.cy_mm || 0);
+        mesh.position.set(p.cx_mm || 0, p.cy_mm || 0, (p.cz_mm || 0.5) + 0.5);
         three.gEmi.add(mesh);
       }
     }
 
     // Only reframe if no KiCad GLB (GLB loader sets camera)
     if (!glb) {
-      const span = Math.max(bw, bh, 20);
-      three.controls.target.set(cx, 0, cy);
-      three.camera.position.set(cx + span * 0.7, span * 0.85, cy + span * 0.75);
-      three.controls.update();
+      const box = new THREE.Box3(
+        new THREE.Vector3(minX, minY, 0),
+        new THREE.Vector3(maxX, maxY, 2),
+      );
+      frameCameraToBox(box, { fill: 0.85, elevation: 0.62, azimuth: 0.9 });
     }
 
     applyVisibility();
@@ -803,7 +970,18 @@
         <button type="button" class="btn" data-job="route_guide">Guide</button>
         <button type="button" class="btn primary" data-job="route_clearance">Clearance route</button>
       </div>
-      <div id="routeTable"></div>`;
+      <h2 style="font-size:0.78rem;margin:0.65rem 0 0.35rem;color:var(--muted)">2D route preview · pick a variant</h2>
+      <div class="variant-row" id="routeVariants"></div>
+      <canvas id="route2d" width="640" height="260"></canvas>
+      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Run Guide or Clearance to populate variants.</p>
+      <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run a route</div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btnApplyRoute">Apply to KiCad PCB</button>
+        <button type="button" class="btn good" id="btnApplyRoute3d">Apply + rebuild 3D</button>
+      </div>
+      <p class="muted" id="routeApplyStatus" style="font-size:0.72rem"></p>
+      <div id="routeTable"></div>
+      <div id="netReportTable" style="margin-top:0.5rem;max-height:140px;overflow:auto"></div>`;
   }
 
   function panelSim() {
@@ -897,6 +1075,26 @@
     }
     fillRouteTable();
     fillSimNotes();
+    bindRoutePanel();
+  }
+
+  function bindRoutePanel() {
+    $('#btnApplyRoute')?.addEventListener('click', () => applySelectedRoute(false).catch(e => alert(e.message)));
+    $('#btnApplyRoute3d')?.addEventListener('click', () => applySelectedRoute(true).catch(e => alert(e.message)));
+  }
+
+  async function applySelectedRoute(rebuild3d) {
+    if (!state.live) return alert('physics-router serve required');
+    const variant = state.selectedRoute
+      || state.snap?.selected_route
+      || Object.keys(state.viewer?.routes || state.snap?.routes || {})[0];
+    if (!variant) return alert('No route variant — run Guide or Clearance first');
+    $('#routeApplyStatus').textContent = `Applying ${variant}…`;
+    await api('/api/routes/select', { method: 'POST', body: JSON.stringify({ variant }) });
+    await startJob('apply_route_pcb', { variant, rebuild_3d: !!rebuild3d });
+    $('#routeApplyStatus').textContent = rebuild3d
+      ? `Applied ${variant} + 3D rebuild queued — watch Progress dock`
+      : `Applied ${variant} to KiCad — use “Apply + rebuild 3D” or Simulate → Rebuild board 3D`;
   }
 
   function setStep(i) {
@@ -974,18 +1172,234 @@
     ul.innerHTML = notes.length ? notes.slice(0, 10).map(n => `<li>${esc(n)}</li>`).join('') : '<li>No notes yet</li>';
   }
 
+  function getRouteVariants() {
+    // Prefer full geometry from viewer_data; fall back to snapshot
+    const fromViewer = state.viewer?.routes || {};
+    const fromSnap = state.snap?.routes || {};
+    const keys = new Set([...Object.keys(fromViewer), ...Object.keys(fromSnap)]);
+    const out = {};
+    for (const k of keys) {
+      const a = fromViewer[k];
+      const b = fromSnap[k];
+      // pick the one with segment list if possible
+      if (a?.segments?.length) out[k] = a;
+      else if (b?.segments?.length) out[k] = b;
+      else out[k] = a || b;
+    }
+    return out;
+  }
+
   function fillRouteTable() {
     const el = $('#routeTable');
     if (!el) return;
-    const routes = state.snap?.routes || state.viewer?.routes || {};
+    const routes = getRouteVariants();
     const keys = Object.keys(routes);
+    if (!state.selectedRoute) {
+      state.selectedRoute = state.snap?.selected_route || (keys.includes('topor') ? 'topor' : keys[0] || null);
+    }
+    // Variant picker buttons
+    const varEl = $('#routeVariants');
+    if (varEl) {
+      if (!keys.length) {
+        varEl.innerHTML = '<span class="muted" style="font-size:0.75rem">No variants yet</span>';
+      } else {
+        varEl.innerHTML = keys.map(k => {
+          const r = routes[k];
+          const active = k === state.selectedRoute ? 'active' : '';
+          const segs = r.segments?.length ?? r.segments ?? '—';
+          return `<button type="button" class="variant-btn ${active}" data-variant="${esc(k)}">
+            ${esc(k)}
+            <small>${fmt(r.total_length_mm, 1)} mm · ${r.via_count ?? 0} vias · ${segs} segs</small>
+          </button>`;
+        }).join('');
+        $$('.variant-btn', varEl).forEach(btn => {
+          btn.onclick = async () => {
+            state.selectedRoute = btn.dataset.variant;
+            // sync 3D overlay + session
+            const sel = $('#routeSel');
+            if (sel && [...sel.options].some(o => o.value === state.selectedRoute)) {
+              sel.value = state.selectedRoute;
+              state.sceneKey = '';
+              rebuildScene();
+            }
+            if (state.live) {
+              try {
+                await api('/api/routes/select', { method: 'POST', body: JSON.stringify({ variant: state.selectedRoute }) });
+              } catch (_) {}
+            }
+            fillRouteTable();
+          };
+        });
+      }
+    }
+
     el.innerHTML = keys.length
-      ? `<table class="compact"><thead><tr><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th></tr></thead><tbody>
+      ? `<table class="compact"><thead><tr><th></th><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th><th>Grade</th></tr></thead><tbody>
         ${keys.map(k => {
           const r = routes[k];
-          return `<tr><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td></tr>`;
+          const g = r.quality?.grade || r.quality?.score || '—';
+          const sel = k === state.selectedRoute ? '●' : '';
+          return `<tr data-pick="${esc(k)}" style="cursor:pointer">
+            <td>${sel}</td><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td>
+            <td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td>
+            <td>${esc(String(g))}</td></tr>`;
         }).join('')}</tbody></table>`
       : '<p class="muted" style="font-size:0.76rem">No routes yet</p>';
+    $$('tr[data-pick]', el).forEach(tr => {
+      tr.onclick = () => {
+        state.selectedRoute = tr.dataset.pick;
+        fillRouteTable();
+      };
+    });
+
+    const qEl = $('#routeQuality');
+    const prefer = (state.selectedRoute && routes[state.selectedRoute])
+      || routes.topor || routes.guide || Object.values(routes)[0];
+    if (qEl) {
+      const q = prefer?.quality;
+      if (q?.summary) {
+        qEl.innerHTML = `<strong>${esc(state.selectedRoute || '')}</strong> · Grade ${esc(q.grade)} · ${esc(q.summary)}`;
+      } else if (prefer) {
+        qEl.textContent = `${state.selectedRoute || ''}: ${prefer.total_length_mm?.toFixed?.(1) ?? prefer.total_length_mm} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} viol`;
+      }
+    }
+    fillNetReports(prefer);
+    drawRoute2d();
+    const hint = $('#route2dHint');
+    if (hint) {
+      const pcb = state.snap?.routed_pcb || state.snap?.session?.routed_pcb;
+      hint.textContent = state.selectedRoute
+        ? `Showing “${state.selectedRoute}” · click variant to switch · Apply writes copper to KiCad`
+          + (pcb ? ` · last PCB: ${pcb}` : '')
+        : 'Run Guide or Clearance to populate variants.';
+    }
+  }
+
+  function drawRoute2d() {
+    const canvas = $('#route2d');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 320;
+    const cssH = canvas.clientHeight || 260;
+    if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
+      canvas.width = Math.floor(cssW * dpr);
+      canvas.height = Math.floor(cssH * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0b0f14';
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const board = state.viewer?.board;
+    const routes = getRouteVariants();
+    const name = state.selectedRoute || Object.keys(routes)[0];
+    const route = name ? routes[name] : null;
+    const comps = board?.components || [];
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of comps) {
+      minX = Math.min(minX, c.x - (c.w || 1) / 2);
+      maxX = Math.max(maxX, c.x + (c.w || 1) / 2);
+      minY = Math.min(minY, c.y - (c.h || 1) / 2);
+      maxY = Math.max(maxY, c.y + (c.h || 1) / 2);
+    }
+    for (const s of route?.segments || []) {
+      minX = Math.min(minX, s.x1, s.x2);
+      maxX = Math.max(maxX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2);
+      maxY = Math.max(maxY, s.y1, s.y2);
+    }
+    if (!isFinite(minX)) {
+      ctx.fillStyle = '#8b9bb4';
+      ctx.font = '12px system-ui';
+      ctx.fillText('No geometry — run a route', 16, 28);
+      return;
+    }
+    const pad = 1.5;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const bw = maxX - minX, bh = maxY - minY;
+    const scale = 0.92 * Math.min(cssW / bw, cssH / bh);
+    const ox = cssW / 2 - scale * (minX + maxX) / 2;
+    const oy = cssH / 2 + scale * (minY + maxY) / 2;
+    const tx = (x, y) => [ox + scale * x, oy - scale * y];
+
+    // board outline
+    ctx.strokeStyle = '#3a4a60';
+    ctx.lineWidth = 1;
+    const [x0, y0] = tx(minX + pad, minY + pad);
+    const [x1, y1] = tx(maxX - pad, maxY - pad);
+    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
+
+    // components
+    for (const c of comps) {
+      const [x, y] = tx(c.x, c.y);
+      const w = Math.max(2, (c.w || 0.8) * scale);
+      const h = Math.max(2, (c.h || 0.8) * scale);
+      ctx.fillStyle = c.locked ? (String(c.ref).match(/^D\d/i) ? '#e85d4c' : '#6b4c7a') : '#4c78a8';
+      if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x - w / 2, y - h / 2, w, h);
+      ctx.globalAlpha = 1;
+    }
+
+    // routes by net color
+    const NET_C = {
+      power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
+      differential: '#9467bd', signal: '#8c564b', other: '#7aa2f7',
+    };
+    const meta = board?.net_meta || {};
+    if (route?.segments) {
+      for (const s of route.segments) {
+        const cls = meta[s.net]?.class || 'signal';
+        ctx.strokeStyle = NET_C[cls] || NET_C.other;
+        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.4);
+        ctx.lineCap = 'round';
+        const a = tx(s.x1, s.y1), b = tx(s.x2, s.y2);
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+      }
+    }
+    if (route?.vias) {
+      for (const v of route.vias) {
+        const [x, y] = tx(v.x, v.y);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(2.5, (v.size_mm || 0.6) * scale / 2), 0, Math.PI * 2);
+        ctx.strokeStyle = '#d4a017';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // title
+    ctx.fillStyle = '#8b9bb4';
+    ctx.font = '11px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText(
+      `${name || '—'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias`,
+      8, 14,
+    );
+  }
+
+  function fillNetReports(route) {
+    const el = $('#netReportTable');
+    if (!el) return;
+    const reports = route?.net_reports;
+    if (!reports?.length) {
+      el.innerHTML = '';
+      return;
+    }
+    const rows = reports.slice(0, 30).map(r =>
+      `<tr>
+        <td>${esc(r.net)}</td>
+        <td>${esc(r.status)}</td>
+        <td>${fmt(r.length_mm, 2)}</td>
+        <td>${r.vias ?? 0}</td>
+        <td class="muted">${esc(r.method || '')}</td>
+      </tr>`
+    ).join('');
+    el.innerHTML = `<table class="compact"><thead><tr><th>Net</th><th>Status</th><th>mm</th><th>Vias</th><th>Method</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // ---------- Jobs dock ----------
@@ -1158,9 +1572,13 @@
     $('#routeSel').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
     $('#layerToggles').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
     $('#btnResetCam').addEventListener('click', () => {
-      three.glbUrl = null;
-      state.sceneKey = '';
-      rebuildScene();
+      if (three.lastBox) {
+        frameCameraToBox(three.lastBox, { fill: 0.88, elevation: 0.62, azimuth: 0.9 });
+      } else {
+        three.glbUrl = null;
+        state.sceneKey = '';
+        rebuildScene();
+      }
     });
     $('#btnExport3d')?.addEventListener('click', () => {
       startJob('export_board_3d').catch(e => alert(e.message));

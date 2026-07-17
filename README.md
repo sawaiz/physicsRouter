@@ -21,45 +21,47 @@ Labeled nets + fixed mechanicals + free passives
         │
         ▼
 Multi-objective place (SA) — unlocked parts only
-   energy: HPWL · loop L · IR drop · return path · CPX match
-           · density · thermal · EMI · spice/OpenEMS proxies
         │
         ▼
-TopoR free-angle route → rubberband cleanup
-   stackup + net-class clearance / width / via from KiCad
+TopoR free-angle route (no illegal soft copper by default)
+   · pad keepouts · inflated paint clearance · same-layer audit
+   · open edge preferred over overlapping tracks
         │
         ▼
-Write .kicad_pcb copper  ──►  kicad-cli pcb drc  (oracle)
-        │                              │
-        │◄── copper_violation gate ────┘
-        ▼
-Physics budget (dashboard) + optional FreeRouting baseline
+Pick variant in UI (2D preview) → Apply to .kicad_pcb
+        │
+        ├──► kicad-cli pcb drc   (every apply / autoroute)
+        ├──► kicad-cli sch erc  (when schematic found)
+        └──► optional GLB rebuild (tracks + STEP models + mask/silk)
         │
         ▼
-CI regression (score + guide length) · STEP/OpenEMS when needed
+Physics budget · CI regression · OpenEMS/STEP when needed
 ```
 
 | Gate | What “good” means | Tooling today |
 |------|-------------------|---------------|
-| **Legal copper** | Clearance, track min, via annular, unconnected nets | `physics-router drc` / `route --drc` → official KiCad JSON |
-| **Manufacturable** | Min hole, annular ring floors from `.kicad_pro`; fab stackup respected | `design_rules` + `rules` CLI; DRC warnings tracked |
-| **Best free placement** | Unlock passives/decaps/local drivers; fix ring LEDs, battery, pogo, connectors | Region + `fixed` flags in YAML; SA only moves free footprints |
-| **EE-correct power/signal** | Small +3V/GND loops, low IR on CPX spokes, return path on HS/EMI nets | Placement energy + `score` (loop L, IR, return path, CPX match) |
-| **Honest benchmark** | Side-by-side vs FreeRouting / golden HALO copper | `export-dsn` + `compare-routes` + length/via/DRC metrics |
-| **No silent regressions** | Score / guide length stay within tolerance on PR | GitHub Actions + `scripts/ci_regression.py` |
+| **Legal copper** | Clearance, track min, via annular, unconnected nets | Soft-fallback **off** for clearance routes; `audit_same_layer_clearance`; official **DRC** on apply |
+| **Schematic parity** | ERC clean before fab | `run_erc` / control-plane **ERC** job when `.kicad_sch` is next to the PCB |
+| **Shared coordinates** | 3D GLB, 2D route preview, and overlays use **KiCad mm, Z-up** | GLB scaled m→mm only (not re-centered); routes drawn in the same XY |
+| **Manufacturable** | Min hole, annular, stackup | `design_rules` from `.kicad_pro` / board |
+| **Best free placement** | Unlock passives; lock LED ring / mechanicals | `lock_ref_prefixes: ["D"]` on HALO-90 |
+| **No silent regressions** | Score / guide length gates | GitHub Actions + `ci_regression.py` |
 
-**Unlocked placement policy (EE-first):**
+**Routing policy (anti-overlap):**
 
-1. **Lock** mechanical and product constraints first (board outline, LED ring, CR2032, programming pogo, mic position, case-critical parts).  
-2. **Free** decoupling, series resistors, local power parts, and non-critical passives.  
-3. **Score moves** with power-loop inductance, IR drop, return-path continuity, thermal density, and EMI—not just half-perimeter wirelength.  
-4. **Re-place after route** when vias/WL/copper DRC fail (post-route metrics → next SA seed).  
-5. **Never undercut** KiCad min clearance / track / via; soft router flags are not a substitute for the DRC oracle.
+1. **Never paint a straight illegal segment** in clearance mode (`soft_fallback=False`) — leave the edge open and report `partial` / `unrouted` instead of stacked copper.  
+2. **Inflate keepouts** slightly when painting accepted traces so the next net cannot hug the previous.  
+3. **Post-route clearance audit** samples foreign nets on the same layer and feeds the quality grade.  
+4. **Apply → DRC/ERC** runs automatically after autoroute when a PCB is loaded, and on **Apply to KiCad** / **Apply + rebuild 3D**.  
+5. Soft fallback remains only for **guide** previews (not for manufacturable copper).
 
 ```bash
-# Official KiCad DRC on written copper (close the legality loop)
+# Autoroute + write copper + official DRC
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
   --out-pcb board_routed.kicad_pcb --drc
+
+# Or in the control plane: Route → Clearance → pick variant → Apply + rebuild 3D
+physics-router serve --port 8765
 physics-router drc --pcb board_routed.kicad_pcb --out-dir drc_out
 ```
 
@@ -120,10 +122,10 @@ physics-router serve --port 8765
 ```
 
 Defaults to the **HALO-90** board when `third_party/halo-90` is present (all **D1–D90 LEDs
-locked** plus mechanicals). Live **three.js** loads a KiCad **GLB** built from footprint
-**STEP** models plus **soldermask, silkscreen, copper (all layers), pads, and zones**
-(`export_board_3d` / auto on first open). Route overlays and EMI remain available on top.
-Guided steps: Setup → Place → Route → Simulate → Validate.
+locked** plus mechanicals). Live **three.js** loads a KiCad **GLB** (footprint **STEP** models +
+**soldermask / silkscreen / all copper**) in the **same mm XY as the 2D route preview** (Z-up;
+GLB only converted m→mm, not re-centered). Route step: run Guide/Clearance, **pick a variant**,
+**Apply to KiCad** (writes copper, runs **DRC** + **ERC**), optionally **rebuild 3D**.
 
 ```bash
 python scripts/build_viewer_demo.py   # static demo assets
