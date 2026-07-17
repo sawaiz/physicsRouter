@@ -1,0 +1,14 @@
+{
+  "synthetic": {
+    "score_total": 9472.96630542241,
+    "guide_length_mm": 180.2430475795562,
+    "components": 9,
+    "nets": 7
+  },
+  "halo-90": {
+    "score_total": 153464.77825614356,
+    "guide_length_mm": 854.1043505865932,
+    "components": 111,
+    "nets": 23
+  }
+}

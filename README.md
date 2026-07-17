@@ -1,13 +1,67 @@
 # Physics-Aware KiCad Placement & Routing Engine
 
-A **KiCad placement and routing engine** that combines topological (TopoR-style) layout with **physics simulations** (Ngspice, OpenEMS) so boards are not only fully routed, but also validated for real-world electrical behavior.
+A **KiCad placement and routing engine** that combines topological (TopoR-style) layout with **physics simulations** (Ngspice, OpenEMS) so boards are not only fully routed, but also validated for real-world electrical behavior—and, critically, **closed-loop checked** with official KiCad DRC so copper is manufacturable, not just “pretty paths.”
 
 Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) and the rubberband topological literature (Dayan 1997; Dai et al. 1991)—gridless free-angle routing, no preferred directions, clearance-aware multi-layer paths with vias—and by modern multi-objective / RL placement research that rewards **post-route and physical** quality rather than raw HPWL alone.
 
-**Inputs that unlock best results:** full KiCad projects (`.kicad_pcb` / `.kicad_sch`) plus **well-labeled nets** with **weights** and **notes**. Labels can be authored in YAML or **imported** from KiCad netclasses and schematic fields.
+**Inputs that unlock best results:** full KiCad projects (`.kicad_pcb` / `.kicad_sch`) plus **well-labeled nets** with **weights** and **notes**. Labels can be authored in YAML or **imported** from KiCad netclasses and schematic fields. **Unlocked components** (passives, decaps, local power parts) are free to move under EE rules; **fixed mechanicals** (connectors, battery, LED ring, pogo jigs) stay locked.
 
 > **Deep dive:** algorithm survey, paper notes, and full bibliography → **[RESEARCH.md](RESEARCH.md)**  
-> **Training data:** corpora and conversion paths → **[DATASETS.md](DATASETS.md)**
+> **Training data:** corpora and conversion paths → **[DATASETS.md](DATASETS.md)**  
+> **Interactive demo:** [viewer/](viewer/) · [physics budget dashboard](viewer/dashboard.html) · [TopoR vs FreeRouting compare](docs/route_comparison.md)
+
+---
+
+## Closed-loop quality (ERC / DRC / manufacturable copper)
+
+The product goal is not “autoroute something.” It is a loop that ends in a board that **passes design rules**, is **manufacturable**, and places free parts according to **electrical engineering physics**—not wirelength alone.
+
+```
+Labeled nets + fixed mechanicals + free passives
+        │
+        ▼
+Multi-objective place (SA) — unlocked parts only
+   energy: HPWL · loop L · IR drop · return path · CPX match
+           · density · thermal · EMI · spice/OpenEMS proxies
+        │
+        ▼
+TopoR free-angle route → rubberband cleanup
+   stackup + net-class clearance / width / via from KiCad
+        │
+        ▼
+Write .kicad_pcb copper  ──►  kicad-cli pcb drc  (oracle)
+        │                              │
+        │◄── copper_violation gate ────┘
+        ▼
+Physics budget (dashboard) + optional FreeRouting baseline
+        │
+        ▼
+CI regression (score + guide length) · STEP/OpenEMS when needed
+```
+
+| Gate | What “good” means | Tooling today |
+|------|-------------------|---------------|
+| **Legal copper** | Clearance, track min, via annular, unconnected nets | `physics-router drc` / `route --drc` → official KiCad JSON |
+| **Manufacturable** | Min hole, annular ring floors from `.kicad_pro`; fab stackup respected | `design_rules` + `rules` CLI; DRC warnings tracked |
+| **Best free placement** | Unlock passives/decaps/local drivers; fix ring LEDs, battery, pogo, connectors | Region + `fixed` flags in YAML; SA only moves free footprints |
+| **EE-correct power/signal** | Small +3V/GND loops, low IR on CPX spokes, return path on HS/EMI nets | Placement energy + `score` (loop L, IR, return path, CPX match) |
+| **Honest benchmark** | Side-by-side vs FreeRouting / golden HALO copper | `export-dsn` + `compare-routes` + length/via/DRC metrics |
+| **No silent regressions** | Score / guide length stay within tolerance on PR | GitHub Actions + `scripts/ci_regression.py` |
+
+**Unlocked placement policy (EE-first):**
+
+1. **Lock** mechanical and product constraints first (board outline, LED ring, CR2032, programming pogo, mic position, case-critical parts).  
+2. **Free** decoupling, series resistors, local power parts, and non-critical passives.  
+3. **Score moves** with power-loop inductance, IR drop, return-path continuity, thermal density, and EMI—not just half-perimeter wirelength.  
+4. **Re-place after route** when vias/WL/copper DRC fail (post-route metrics → next SA seed).  
+5. **Never undercut** KiCad min clearance / track / via; soft router flags are not a substitute for the DRC oracle.
+
+```bash
+# Official KiCad DRC on written copper (close the legality loop)
+physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
+  --out-pcb board_routed.kicad_pcb --drc
+physics-router drc --pcb board_routed.kicad_pcb --out-dir drc_out
+```
 
 ---
 
@@ -56,6 +110,15 @@ Synthetic demo (no PCB file):
 physics-router place --config examples/placement_config.yaml
 physics-router route --config examples/placement_config.yaml --clearance 0.2
 physics-router export-openems --config examples/placement_config.yaml --out-dir openems_export
+```
+
+Productization demo (DSN, comparison, dashboard, viewer):
+
+```bash
+python scripts/build_viewer_demo.py
+# open viewer/index.html and viewer/dashboard.html (or: cd viewer && python3 -m http.server)
+physics-router export-dsn --config examples/placement_config.yaml -o examples/demo/board.dsn
+pytest && python scripts/ci_regression.py
 ```
 
 ---
@@ -121,10 +184,10 @@ Commercial and research systems increasingly treat placement as a **constrained 
 Labeled nets (classes, weights, notes)
         │
         ▼
-Floorplan seed (regions + fixed parts + optional spectral clusters)
+Floorplan seed (regions + fixed mechanicals + free passives)
         │
         ▼
-Global place — multi-candidate SA (→ future RL policy)
+Global place — multi-candidate SA on unlocked parts only
    energy: HPWL, loop L, IR drop, return path, CPX match,
            overlap, density, thermal, EMI
         │
@@ -132,17 +195,23 @@ Global place — multi-candidate SA (→ future RL policy)
 Physics rank — Ngspice + OpenEMS proxies; STEP for accurate 3D
         │
         ▼
-TopoR free-angle route + rubberband cleanup + KiCad DRC
+TopoR free-angle route + rubberband cleanup
         │
         ▼
-Post-route metrics / DRC → re-place if vias/WL/copper fails
+KiCad DRC oracle + physics-budget dashboard
+        │
+        ▼
+Optional FreeRouting baseline (DSN) · CI score regression
+        │
+        ▼
+Post-route metrics / copper fails → re-place free parts
 ```
 
 ### How physicsRouter maps to the research
 
 | Literature method | Our implementation (today) |
 |-------------------|----------------------------|
-| SA multi-objective place | `placement.py` multi-candidate SA |
+| SA multi-objective place | `placement.py` multi-candidate SA (**unlocked** footprints only) |
 | Net criticality / weights | `NetLabel` + `import-nets` from KiCad |
 | Net-separation / regions | Region constraints + density term (full NS-Place MILP: future) |
 | Dayan/TopoR free-angle | `router.py` LOS → detours → A\* → **rubberband cleanup** + vias |
@@ -150,7 +219,9 @@ Post-route metrics / DRC → re-place if vias/WL/copper fails
 | Post-route / physical rewards | IR, loop L, return path, CPX match; spice/EMI; **KiCad DRC** |
 | Accurate EM geometry | `export-step` tracks/pads/mask/silk for OpenEMS/FEM |
 | RL placement/routing | Architecture ready; SA baseline first (as in DATE 2024 comparisons) |
-| FreeRouting / Specctra | DSN path documented; optional external baseline |
+| FreeRouting / Specctra | **`export-dsn`** + **`compare-routes`** (SES/JSON baseline) |
+| Physics budget UI | **`dashboard`** HTML + three.js **`viewer/`** |
+| Regression gates | **GitHub Actions** + `scripts/ci_regression.py` |
 | PCBench / open corpora | [DATASETS.md](DATASETS.md) |
 
 ### Community & industry signals (X and practice)
@@ -305,6 +376,86 @@ physics-router export-openems \
 | **Return-path score** | placement energy | HS/EMI nets near GND reference |
 | **CPX length match** | placement energy | Uniform LED matrix drive paths |
 | **KiCad renders** | `render`, `generate_kicad_renders.py` | pcbnew plots + 3D PNGs |
+| **Specctra DSN / FreeRouting** | `export-dsn`, `compare-routes` | Honest autorouter baseline |
+| **Physics budget dashboard** | `dashboard` | One HTML page: score, IR, EMI, routes |
+| **Interactive 3D viewer** | `viewer-data` + [viewer/](viewer/) | Multi-layer routes + EMI heat |
+| **CI score regression** | `.github/workflows/ci.yml` | Fail PR if place/route metrics regress |
+
+## Productization (viewer · dashboard · FreeRouting · CI)
+
+These close the **engineering loop** for reviewers and for continuous quality—not just CLI experiments.
+
+### Specctra DSN → FreeRouting baseline
+
+Export a Specctra DSN, autoroute with [FreeRouting](https://github.com/freerouting/freerouting) (or any Specctra-class tool), then compare length / vias / violations to TopoR.
+
+```bash
+physics-router export-dsn \
+  --config examples/placement_config.yaml \
+  -o examples/demo/board.dsn
+# → also writes examples/demo/FREEROUTING.md
+
+# After FreeRouting produces board.ses (or a metrics JSON):
+physics-router compare-routes \
+  --topor examples/demo/topor_route.json \
+  --ses path/to/board.ses \
+  --out examples/demo/comparison.json \
+  --md docs/route_comparison.md
+```
+
+Demo comparison (TopoR metrics; FR blank until SES is provided): [`docs/route_comparison.md`](docs/route_comparison.md) · [`examples/demo/`](examples/demo/).
+
+### Physics-budget dashboard
+
+Single HTML page for score breakdown, route stats, and optional TopoR vs FreeRouting winner table.
+
+```bash
+physics-router dashboard --config examples/placement_config.yaml -o dashboard.html
+# Or from prebuilt viewer payload:
+physics-router dashboard --viewer-data viewer/viewer_data.json -o viewer/dashboard.html
+```
+
+Open: [`viewer/dashboard.html`](viewer/dashboard.html).
+
+### Interactive three.js viewer
+
+Multi-layer copper paths, component markers, EMI/geometry overlays, optional GLB board mesh (when `kicad-cli pcb export glb` is available).
+
+```bash
+# Full demo bundle (routes, DSN, comparison, dashboard, viewer_data)
+python scripts/build_viewer_demo.py
+
+# Or export data only
+physics-router viewer-data --config examples/placement_config.yaml \
+  --route-json topor=examples/demo/topor_route.json \
+  -o viewer/viewer_data.json
+
+# Serve locally (three.js loads CDN + local JSON)
+cd viewer && python3 -m http.server 8765
+# → http://localhost:8765/
+```
+
+| File | Role |
+|------|------|
+| [`viewer/index.html`](viewer/index.html) | three.js canvas UI |
+| [`viewer/viewer_data.json`](viewer/viewer_data.json) | Board + routes + physics payload |
+| [`viewer/dashboard.html`](viewer/dashboard.html) | Score / budget HTML |
+
+### Continuous integration
+
+On every push/PR to `main`:
+
+1. `pytest`  
+2. `scripts/ci_regression.py` — synthetic always; HALO-90 if `third_party/halo-90` is present  
+3. `scripts/build_viewer_demo.py` — dashboard + viewer artifacts  
+
+Baselines live in [`ci/baselines/scores.json`](ci/baselines/scores.json). Update intentionally after intentional score changes:
+
+```bash
+python scripts/ci_regression.py --update-baselines
+```
+
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Architecture
 
@@ -316,11 +467,15 @@ physics-router export-openems \
 | `design_rules` | Stackup + DRC + net classes from `.kicad_pcb` / `.kicad_pro` |
 | `kicad_io` | Read/write footprints; attach copper layers / rules |
 | `physics` | Multi-objective cost + Ngspice/OpenEMS backends |
-| `placement` | Multi-candidate SA + ranking |
-| `router` | Clearance-aware free-angle TopoR core |
+| `placement` | Multi-candidate SA + ranking (unlocked parts) |
+| `router` | Clearance-aware free-angle TopoR core + rubberband |
 | `routing_strategies` | Pre-route tests, net order, multilayer DRC policy |
 | `openems_export` | Mesh/geometry from **KiCad stackup** + Gerbers |
 | `kicad_tools` | **DRC**, **SVG/3D render**, **STEP** (tracks/mask/silk), pcbnew plot |
+| `dsn_export` | Specctra DSN for FreeRouting |
+| `compare` | TopoR vs FreeRouting (SES/JSON) metrics |
+| `dashboard` | HTML physics-budget page |
+| `viewer_export` | JSON payload for three.js viewer |
 | `cli` | `physics-router` entry point |
 
 ## Setup
@@ -452,6 +607,95 @@ Direct pcbnew plots are also stored under `docs/images/kicad/pcbnew_*.svg`.
 ## Training data
 
 See **[DATASETS.md](DATASETS.md)** for PCBench, Open Schematics, Gerbers, and conversion paths used to train or evaluate place/route models.
+
+---
+
+## Roadmap: highest-impact next ideas (HALO-90 class)
+
+Prioritized by **insight per effort**, with emphasis on ideas that **close the test loop** so the final board is ERC/DRC-clean, manufacturable, and places unlocked parts under EE physics—not locked copper cosmetics.
+
+### Ship-first (close the manufacturability loop)
+
+| Priority | Idea | Why it matters | Status |
+|---------:|------|----------------|--------|
+| **1** | **KiCad DRC CLI close-loop + stricter clearance** | Turns “soft violations” into real quality; gate CI/export on copper errors | **Done** (`drc`, `route --drc`); tighten fab floors further |
+| **2** | **CPX bundle router + length match** | Domain win on charlieplex: 10 lines as a concurrent bundle, not 10 sequential nets | Partial (length-match score); concurrent bundle: next |
+| **3** | **IR-drop / loop-L score for +3V / GND / CPX** | Physics that matches coin-cell + matrix product story | **Done** (placement energy + score); copper current-density maps: next |
+| **4** | **Rubberband cleanup after free-angle** | Better looking + shorter copper without full re-search | **Done** (Dayan-style cleanup in multilayer route) |
+| **5** | **Golden copper diff vs stock HALO-90** | Honest autorouter benchmark figure (length/vias/DRC vs released board) | Partial (`compare-routes` + DSN); golden overlay: next |
+| **6** | **FreeRouting side-by-side + physics dashboard + CI + viewer** | Productization so quality is visible and non-regressing | **Done** (this release) |
+
+### Physics & “more real” simulations (routing/placement signal)
+
+| Idea | Helps placement/route how | Effort |
+|------|---------------------------|--------|
+| Partial inductance of power + CPX loops (PEEC-lite / FastHenry-style) | Charlieplex + coin cell is loop **L** and IR, not just geometry | Medium |
+| IR-drop / current-density maps on copper | Which CPX spokes starve LEDs → wider tracks / layer choice | Medium |
+| Return-path continuity score | Penalize layer hops without nearby GND (uses parsed 4L stackup) | Low–medium · **in score today** |
+| Crosstalk matrix between CPX lines | Rewards spacing / layer separation of matrix nets | Medium |
+| Thermal map (2D heat from LED duty + MCU) | Wearable hotspots next to ear / battery | Medium |
+| Battery ESR + LED Vf Monte Carlo | Firmware 2–12 mA → brightness/runtime under aging cell | Low (circuit) |
+| Acoustic / mic SNR proxy | MIC net length + distance to CPX as noise-pickup score | Low |
+| Focused OpenEMS ports (SWIM/USB-like pads) | SI/EMI without whole-board FDTD every time | Medium |
+| Power-integrity AC Z at MCU VDD (decap C1/C2) | Classic PI; ngspice + package models | Low–medium |
+
+### Routing / placement creativity (not “more A*” alone)
+
+1. **Rubberband continuous optimization** after discrete route — fix topology, minimize length under clearance (**in engine**).  
+2. **Rip-up & reroute with conflict learning** — nets that violate get higher priority next pass.  
+3. **Concurrent multi-net / multi-commodity** for the 10 CPX lines as a bundle.  
+4. **Topology templates for HALO** — “star from U1”, “ring bus”, “two-semicircle spines”; enumerate 3–5, score with physics.  
+5. **Diff-pair / I2C co-router** — move SDA+SCL as a rigid pair.  
+6. **Via budget auction** — only *N* vias; optimizer chooses which nets may layer-change.  
+7. **Push-aside / shape-based cleanup** (FreeRouting-like) for DRC legality without losing topology.  
+8. **Human-in-the-loop sketch** — designer guides as soft rubberbands.
+
+### Tests & validation (make quality measurable)
+
+| Test | Purpose |
+|------|---------|
+| **DRC oracle** | `kicad-cli pcb drc` on every written board · **wired** |
+| **Golden comparison** | Length/vias/DRC vs released HALO-90 copper |
+| **Ablation radar charts** | Turn off EMI / loop / region terms; show contribution |
+| **Monte Carlo part variance** | ±10% cap, ESR, LED Vf → yield of min brightness |
+| **Fault injection** | Open one CPX spoke → how many LEDs die (matrix robustness) |
+| **Pogo contact resistance** | Programming jig force/contact if pads move |
+| **Manufacturability** | Annular ring, min hole-to-hole, panelization, 0402 tombstone risk |
+| **CI regression** | Synthetic (+ HALO) score/length · **wired** |
+
+### ML / learning (when data + rewards exist)
+
+| Idea | Data already available |
+|------|------------------------|
+| Imitation of open boards (PCBench / Open Schematics) | Placement as graph → coords |
+| RL with physics reward | Loop L + DRC + post-route length (DATE / RL_PCB style) |
+| Learned A\* costs (Unet-Astar) | Congestion heatmaps from failed routes |
+| GNN affinity clustering | Netlist → floorplan regions before SA |
+| Diffusion placement of free passives | Fixed ring LEDs as hard constraints |
+| LLM constraint extractor | Datasheet/readme → YAML labels (HALO was hand-labeled) |
+| Contrastive good vs DRC-fail boards | Synthetic corruptions of HALO |
+
+### Wearable / product-specific (HALO goldmine)
+
+- Flex / board stress near earring hook (simple beam FEA).  
+- Weight distribution of CR2032 + PCB (comfort).  
+- Magnetic field from LED currents (usually tiny; fun + marketing).  
+- Optical model: LEDs obscured by case lips → “dark” LED placement.  
+- UX: button reach, accidental presses, sleep current budget.  
+- Charlieplex timing: scan still &gt;1 kHz with longer copper delay (closed loop with length score).
+
+### Workflow / productization (status)
+
+| Idea | Status |
+|------|--------|
+| Specctra DSN → FreeRouting baseline vs TopoR | **Done** (`export-dsn`, `compare-routes`) |
+| Physics-budget HTML dashboard | **Done** (`dashboard`, `viewer/dashboard.html`) |
+| CI on each PR (HALO + synthetic) | **Done** (GitHub Actions) |
+| Interactive multi-layer / EMI / 3D viewer | **Done** (`viewer/`) |
+| Constraint mini-DSL (`keep MIC 3mm from CPX*`) | Future |
+| Golden copper overlay figure in README | Future |
+
+**Default investment order for the next few milestones:** (1) stricter DRC-gated export + copper current-density maps, (2) CPX concurrent bundle + length match, (3) golden HALO copper diff figure, (4) rip-up/conflict learning, (5) PI AC impedance for MCU decaps—always with **unlocked-only placement** and **KiCad DRC as the legality oracle**.
 
 ---
 

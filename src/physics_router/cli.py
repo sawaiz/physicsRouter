@@ -583,5 +583,176 @@ def export_openems_cmd(
         click.echo(f"  {k}: {p}")
 
 
+@main.command("export-dsn")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("board.dsn"))
+def export_dsn_cmd(config_path: Path | None, pcb_path: Path | None, output: Path) -> None:
+    """Export Specctra DSN for FreeRouting baseline autorouting."""
+    from physics_router.dsn_export import export_dsn, write_freerouting_readme
+
+    config = load_config(config_path) if config_path else example_config()
+    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    rules = load_design_rules(pcb_path) if pcb_path else None
+    path = export_dsn(board, output, config=config, rules=rules)
+    write_freerouting_readme(output.parent)
+    click.echo(f"Wrote DSN → {path}")
+    click.echo(f"FreeRouting notes → {output.parent / 'FREEROUTING.md'}")
+
+
+@main.command("compare-routes")
+@click.option("--topor", "topor_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--baseline-json", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--ses", "ses_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--out", "out_json", type=click.Path(path_type=Path), default=Path("comparison.json"))
+@click.option("--md", "out_md", type=click.Path(path_type=Path), default=Path("comparison.md"))
+def compare_routes_cmd(
+    topor_path: Path,
+    baseline_json: Path | None,
+    ses_path: Path | None,
+    out_json: Path,
+    out_md: Path,
+) -> None:
+    """Side-by-side TopoR vs FreeRouting (SES or JSON) metrics."""
+    from physics_router.compare import (
+        compare_metrics,
+        load_route_metrics,
+        parse_ses_metrics,
+        write_comparison_markdown,
+    )
+
+    topor = load_route_metrics(topor_path)
+    baseline = None
+    if baseline_json:
+        baseline = load_route_metrics(baseline_json)
+    elif ses_path:
+        baseline = parse_ses_metrics(ses_path)
+    cmp = compare_metrics(topor, baseline)
+    out_json.write_text(json.dumps(cmp, indent=2) + "\n", encoding="utf-8")
+    write_comparison_markdown(cmp, out_md)
+    click.echo(json.dumps(cmp.get("winner") or cmp.get("notes"), indent=2))
+    click.echo(f"Wrote {out_json} and {out_md}")
+
+
+@main.command("dashboard")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--viewer-data", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("dashboard.html"))
+@click.option("--viewer-url", default="viewer/index.html")
+def dashboard_cmd(
+    config_path: Path | None,
+    pcb_path: Path | None,
+    viewer_data: Path | None,
+    output: Path,
+    viewer_url: str,
+) -> None:
+    """Write HTML physics-budget dashboard (score, IR, EMI, routes)."""
+    from physics_router.dashboard import write_dashboard
+    from physics_router.physics import (
+        GeometricSpiceProxy,
+        OpenEMSBackend,
+        apply_simulation_scores,
+        geometric_score,
+    )
+
+    routes = {}
+    comparison = None
+    board_meta = {}
+    if viewer_data:
+        payload = json.loads(Path(viewer_data).read_text(encoding="utf-8"))
+        physics = payload.get("physics") or {}
+        routes = payload.get("routes") or {}
+        comparison = payload.get("comparison")
+        b = payload.get("board") or {}
+        board_meta = {
+            "components": len(b.get("components") or []),
+            "nets": len(b.get("nets") or {}),
+            "layers": ", ".join(b.get("copper_layers") or []),
+        }
+    else:
+        config = load_config(config_path) if config_path else example_config()
+        board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+        sb = geometric_score(board, config)
+        sb = apply_simulation_scores(
+            board, config, sb, spice=GeometricSpiceProxy(), openems=OpenEMSBackend()
+        )
+        physics = {"score": sb.as_dict(), "notes": sb.notes}
+        board_meta = {
+            "components": len(board.components),
+            "nets": len(board.nets),
+            "layers": ", ".join(board.copper_layers),
+        }
+    write_dashboard(
+        output,
+        physics,
+        title="Physics budget",
+        board_meta=board_meta,
+        routes=routes,
+        comparison=comparison,
+        viewer_url=viewer_url,
+    )
+    click.echo(f"Wrote dashboard → {output}")
+
+
+@main.command("viewer-data")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("viewer_data.json"))
+@click.option("--route-json", multiple=True, help="name=path.json for additional route variants")
+def viewer_data_cmd(
+    config_path: Path | None,
+    pcb_path: Path | None,
+    output: Path,
+    route_json: tuple[str, ...],
+) -> None:
+    """Export viewer_data.json for the interactive three.js viewer."""
+    from physics_router.router import RouteResult, RouteSegment, Via
+    from physics_router.viewer_export import build_viewer_payload, write_viewer_data
+
+    config = load_config(config_path) if config_path else example_config()
+    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    routes = {"guide": topological_guide_route(board, config)}
+    for item in route_json:
+        if "=" not in item:
+            raise click.UsageError("--route-json expects name=path")
+        name, path = item.split("=", 1)
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        segs = [
+            RouteSegment(
+                x1=s["x1"],
+                y1=s["y1"],
+                x2=s["x2"],
+                y2=s["y2"],
+                layer=s.get("layer", "F.Cu"),
+                net=s.get("net", ""),
+                width_mm=s.get("width_mm", 0.25),
+            )
+            for s in data.get("segments") or []
+        ]
+        vias = [
+            Via(
+                x=v["x"],
+                y=v["y"],
+                net=v.get("net", ""),
+                size_mm=v.get("size_mm", 0.8),
+                drill_mm=v.get("drill_mm", 0.4),
+            )
+            for v in data.get("vias") or []
+        ]
+        routes[name] = RouteResult(
+            segments=segs,
+            vias=vias,
+            via_count=int(data.get("via_count") or len(vias)),
+            total_length_mm=float(data.get("total_length_mm") or 0),
+            unrouted_nets=list(data.get("unrouted_nets") or []),
+            clearance_violations=int(data.get("clearance_violations") or 0),
+            notes=list(data.get("notes") or []),
+        )
+    payload = build_viewer_payload(board, config, routes=routes)
+    write_viewer_data(payload, output)
+    click.echo(f"Wrote {output} ({len(routes)} route variants)")
+
+
 if __name__ == "__main__":
     main()
