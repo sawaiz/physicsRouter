@@ -43,3 +43,4 @@ native/build-*/
 *.dylib
 *.a
 !**/pr_native*.so
+docs/images/topor/*.pdf

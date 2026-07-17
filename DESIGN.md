@@ -8,8 +8,8 @@ This document records **why** the system is shaped the way it is, and what we de
 
 1. **Closed loop to manufacturable copper** — not autoroute aesthetics. KiCad DRC (and ERC when a schematic exists) is the oracle.
 2. **Physics-informed placement** — multi-objective cost (wirelength, loop L, IR, return path, CPX match, EMI proxies) on **unlocked** parts only.
-3. **TopoR-style free-angle routing** — topology and clearance first; no forced 45°/90° preferred directions.
-4. **Interactive engineering UI** — guided place → route → apply → DRC → 3D, with variant compare.
+3. **TopoR-style free-angle routing** — topology and clearance first; no forced 45°/90° preferred directions. Product model: [docs/TOPOR.md](docs/TOPOR.md). Architecture (topology + sparse graph + geometry, negotiated congestion): [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md).
+4. **Interactive engineering UI** — guided place → route (2D) → apply → DRC → Simulate (3D EMS), with variant compare.
 5. **Optional native speed** — C++ core for hot paths; Python remains the product shell (CLI, server, KiCad I/O).
 
 Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on dense charlieplex without human cleanup, learned RL policies in production.
@@ -63,6 +63,12 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 **Decision:** Board coordinates stay KiCad mm. GLB is scaled m→mm when needed; display may apply a **view-only 180°** so HALO matches KiCad (hook at top). The board is flattened so its thin axis is world **+Z** (parallel to the ground grid).
 
 **Why:** Re-centering the GLB without matching route space caused overlays to drift; edge-on GLB exports made the PCB look vertical.
+
+### 3b. 2D for routing; 3D only after route for EMS
+
+**Decision:** The main left visualization is **2D** for Setup / Place / Route / Validate. **Three.js 3D** loads only on the **Simulate** step (KiCad GLB + OpenEMS EMI volumes). Route apply never rebuilds GLB from the Route panel.
+
+**Why:** Live TopoR feedback is a copper map problem, not a 3D CAD problem. Keeping 3D out of the routing loop cuts load cost and makes the control plane match engineer mental model: route → apply → then EMS viz.
 
 ### 4. Lock product geometry; place only free parts
 

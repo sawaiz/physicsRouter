@@ -234,3 +234,6 @@ data/
 - EasyEDA→KiCad: https://github.com/wokwi/easyeda2kicad  
 - OSHWHub: https://oshwhub.com/  
 - TopoR (routing paradigm reference): https://en.wikipedia.org/wiki/TopoR  
+- Eremex TopoR product + image/doc cache: [docs/TOPOR.md](docs/TOPOR.md) · https://www.eremex.com/products/topor/  
+- TopoR 6.1 user manual (public PDF): https://www.eremex.com/support/documentation/461750.pdf  
+ 
