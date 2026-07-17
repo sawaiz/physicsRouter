@@ -64,11 +64,12 @@ void GridMap::paint_rect(double cx, double cy, double w, double h, int layer, in
 
 void GridMap::paint_trace(double x1, double y1, double x2, double y2, double width_mm,
                           int layer, int net_id) {
+  // width_mm should already include track + 2*clearance when called from router
   double dx = x2 - x1, dy = y2 - y1;
   double len = std::hypot(dx, dy);
-  double step = std::max(width_mm * 0.75, grid_);
+  double step = std::max(width_mm * 0.35, grid_ * 0.5);
   int n = std::max(1, static_cast<int>(std::ceil(len / step)));
-  n = std::min(n, 64);
+  n = std::min(n, 128);
   for (int i = 0; i <= n; ++i) {
     double t = static_cast<double>(i) / n;
     paint_rect(x1 + dx * t, y1 + dy * t, width_mm, width_mm, layer, net_id);
