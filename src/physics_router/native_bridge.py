@@ -1,12 +1,6 @@
-"""Bridge to the C++/OpenMP/OpenCL native core (optional).
+"""Optional C++ core (`pr_native`). Falls back silently if not built.
 
-Build::
-
-    cmake -S native -B native/build -DPR_BUILD_PYTHON=ON
-    cmake --build native/build -j
-    # copy pr_native*.so into site-packages or PYTHONPATH=native/build
-
-If the extension is missing, callers fall back to pure Python.
+Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 """
 
 from __future__ import annotations
@@ -39,11 +33,10 @@ def info() -> dict[str, Any]:
     m = _try_load()
     if m is None:
         return {"available": False, "error": _load_error}
-    gpu = m.gpu_probe()
     return {
         "available": True,
         "version": m.version(),
-        "gpu": dict(gpu),
+        "gpu": dict(m.gpu_probe()),
     }
 
 
@@ -57,7 +50,7 @@ def route_board_native(
     allow_vias: bool = True,
     use_gpu: bool = True,
 ) -> dict[str, Any] | None:
-    """Run native router; return a dict compatible with RouteResult.to_dict()."""
+    """Run native router; return a dict compatible with ``RouteResult.to_dict()``."""
     m = _try_load()
     if m is None:
         return None
@@ -66,7 +59,6 @@ def route_board_native(
 
     x0, x1, y0, y1 = board_extent(board)
     layers = list(getattr(board, "copper_layers", None) or ["F.Cu", "B.Cu"])
-    layer_index = {ly: i for i, ly in enumerate(layers)}
 
     cfg = m.RouteConfig()
     cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max = x0, x1, y0, y1
@@ -78,16 +70,14 @@ def route_board_native(
     cfg.use_gpu = bool(use_gpu)
     cfg.max_expansions = 4000
 
-    # net id map
     net_names = list(board.nets.keys())
     name_to_id = {n: i for i, n in enumerate(net_names)}
 
     nets = []
     for name in net_names:
-        pins = board.nets[name]
         anchors = []
-        seen = set()
-        for ref, _pad in pins:
+        seen: set[tuple[float, float]] = set()
+        for ref, _pad in board.nets[name]:
             c = board.components.get(ref)
             if c is None:
                 continue
@@ -116,65 +106,60 @@ def route_board_native(
         nets.append(ns)
 
     obstacles = []
-    for ref, c in board.components.items():
+    for _ref, c in board.components.items():
         nets_on = {p.get("net") for p in (c.pads or []) if p.get("net")}
-        if len(nets_on) == 1:
-            nid = name_to_id.get(next(iter(nets_on)), -1)
-        else:
-            nid = -1
-        if len(nets_on) == 1:
-            ob = m.RectObs()
-            ob.cx, ob.cy = c.x_mm, c.y_mm
-            ob.w = max(min(c.width_mm, c.height_mm) * 0.35, 0.4)
-            ob.h = ob.w
-            ob.net_id = nid
-            obstacles.append(ob)
+        if len(nets_on) != 1:
+            continue
+        nid = name_to_id.get(next(iter(nets_on)), -1)
+        ob = m.RectObs()
+        ob.cx, ob.cy = c.x_mm, c.y_mm
+        ob.w = max(min(c.width_mm, c.height_mm) * 0.35, 0.4)
+        ob.h = ob.w
+        ob.net_id = nid
+        obstacles.append(ob)
 
     result = m.route_board(nets, cfg, obstacles)
-
     id_to_name = {i: n for n, i in name_to_id.items()}
-    segments = []
-    for s in result.segments:
-        segments.append(
-            {
-                "net": id_to_name.get(s.net_id, str(s.net_id)),
-                "x1": s.x1,
-                "y1": s.y1,
-                "x2": s.x2,
-                "y2": s.y2,
-                "layer": layers[s.layer] if 0 <= s.layer < len(layers) else layers[0],
-                "width_mm": s.width_mm,
-            }
-        )
-    vias = []
-    for v in result.vias:
-        vias.append(
-            {
-                "net": id_to_name.get(v.net_id, str(v.net_id)),
-                "x": v.x,
-                "y": v.y,
-                "size_mm": v.size_mm,
-                "drill_mm": v.size_mm * 0.5,
-                "layers": [
-                    layers[v.layer_a] if 0 <= v.layer_a < len(layers) else layers[0],
-                    layers[v.layer_b] if 0 <= v.layer_b < len(layers) else layers[-1],
-                ],
-            }
-        )
-    net_reports = []
-    for nr in result.net_reports:
-        net_reports.append(
-            {
-                "net": nr.name,
-                "pins": nr.pins,
-                "length_mm": nr.length_mm,
-                "segments": nr.segments,
-                "vias": nr.vias,
-                "status": nr.status,
-                "method": nr.method,
-                "notes": [],
-            }
-        )
+
+    segments = [
+        {
+            "net": id_to_name.get(s.net_id, str(s.net_id)),
+            "x1": s.x1,
+            "y1": s.y1,
+            "x2": s.x2,
+            "y2": s.y2,
+            "layer": layers[s.layer] if 0 <= s.layer < len(layers) else layers[0],
+            "width_mm": s.width_mm,
+        }
+        for s in result.segments
+    ]
+    vias = [
+        {
+            "net": id_to_name.get(v.net_id, str(v.net_id)),
+            "x": v.x,
+            "y": v.y,
+            "size_mm": v.size_mm,
+            "drill_mm": v.size_mm * 0.5,
+            "layers": [
+                layers[v.layer_a] if 0 <= v.layer_a < len(layers) else layers[0],
+                layers[v.layer_b] if 0 <= v.layer_b < len(layers) else layers[-1],
+            ],
+        }
+        for v in result.vias
+    ]
+    net_reports = [
+        {
+            "net": nr.name,
+            "pins": nr.pins,
+            "length_mm": nr.length_mm,
+            "segments": nr.segments,
+            "vias": nr.vias,
+            "status": nr.status,
+            "method": nr.method,
+            "notes": [],
+        }
+        for nr in result.net_reports
+    ]
 
     return {
         "total_length_mm": result.total_length_mm,
@@ -185,7 +170,10 @@ def route_board_native(
         "quality": {
             "score": result.quality_score,
             "grade": result.quality_grade,
-            "summary": f"grade {result.quality_grade} ({result.quality_score:.0f}/100) native {result.elapsed_ms:.1f}ms",
+            "summary": (
+                f"grade {result.quality_grade} ({result.quality_score:.0f}/100) "
+                f"native {result.elapsed_ms:.1f}ms"
+            ),
         },
         "net_reports": net_reports,
         "segments": segments,

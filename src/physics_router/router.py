@@ -1,14 +1,8 @@
-"""Clearance-aware TopoR-style free-angle topological router.
+"""Clearance-aware TopoR-style free-angle router.
 
-Strategy:
-1. Pad-level obstacle map (foreign nets only), inflated by clearance.
-2. Route nets in priority order (critical / high weight first).
-3. Free-angle path: direct LOS → 8-direction A* → detour via obstacle corners.
-4. Layer change via vias when same-layer path fails.
-5. Paint routed copper so later nets keep clearance.
-6. Structured per-net feedback + optional progress callback for live UIs.
-
-Board coordinates may be corner-origin (0..W) or center-origin (HALO-style ±W/2).
+Priority-ordered nets, LOS / detour / grid A*, optional vias, rubberband cleanup.
+Supports corner- or center-origin boards. Uses C++ ``pr_native`` when available.
+See DESIGN.md for policy decisions (soft fallback, DRC loop).
 """
 
 from __future__ import annotations
