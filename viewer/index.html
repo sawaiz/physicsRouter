@@ -15,7 +15,6 @@
     html, body { margin: 0; height: 100%; font-family: "IBM Plex Sans", system-ui, sans-serif;
       background: var(--bg); color: var(--text); font-size: 14px; }
     #app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; min-height: 0; }
-
     header {
       display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 1rem;
       border-bottom: 1px solid var(--line); background: var(--panel);
@@ -28,85 +27,68 @@
     .pill.ok { color: var(--good); border-color: #2a5a44; }
     .pill.err { color: var(--bad); border-color: #5a2a2a; }
     .pill.run { color: var(--run); border-color: #2a3a5a; }
-
-    /* Guided step bar */
     #steps {
       display: flex; gap: 0; border-bottom: 1px solid var(--line); background: #0e141c;
       overflow-x: auto;
     }
     .step {
-      flex: 1; min-width: 120px; padding: 0.65rem 0.75rem; border: none; background: transparent;
+      flex: 1; min-width: 110px; padding: 0.6rem 0.7rem; border: none; background: transparent;
       color: var(--muted); cursor: pointer; font: inherit; text-align: left;
-      border-bottom: 3px solid transparent; position: relative;
+      border-bottom: 3px solid transparent;
     }
     .step:hover { background: #151c27; color: var(--text); }
     .step.active { color: var(--text); border-bottom-color: var(--accent); background: #151c27; }
     .step.done .n { background: #1a4a35; color: var(--good); }
     .step .n {
-      display: inline-flex; width: 1.35rem; height: 1.35rem; border-radius: 50%;
-      align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700;
-      background: #1a2433; color: var(--muted); margin-right: 0.4rem;
+      display: inline-flex; width: 1.3rem; height: 1.3rem; border-radius: 50%;
+      align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700;
+      background: #1a2433; color: var(--muted); margin-right: 0.35rem;
     }
     .step.active .n { background: #2563a8; color: #fff; }
-    .step .t { font-weight: 600; font-size: 0.82rem; }
-    .step .d { display: block; font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; margin-left: 1.75rem; }
-
-    /* Main: board | right column */
+    .step .t { font-weight: 600; font-size: 0.8rem; }
+    .step .d { display: block; font-size: 0.65rem; color: var(--muted); margin-top: 0.12rem; margin-left: 1.65rem; }
     #workspace {
-      display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+      display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.85fr);
       min-height: 0; overflow: hidden;
     }
     @media (max-width: 900px) {
-      #workspace { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
+      #workspace { grid-template-columns: 1fr; grid-template-rows: 48vh 1fr; }
     }
-
     #viz {
       display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line);
-      background: #0b0f14;
+      background: #070a0e;
     }
     #vizHeader {
-      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
-      padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel);
+      display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;
+      padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    #vizHeader label { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; gap: 0.3rem; }
+    #vizHeader label { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.28rem; }
     #vizHeader select { background: #0f1419; color: var(--text); border: 1px solid var(--line);
-      border-radius: 6px; padding: 0.25rem 0.4rem; font: inherit; }
-    #boardCanvas { flex: 1; width: 100%; min-height: 200px; display: block; cursor: crosshair; }
+      border-radius: 6px; padding: 0.22rem 0.35rem; font: inherit; }
+    #c3d { flex: 1; min-height: 200px; position: relative; }
+    #c3d canvas { display: block; width: 100% !important; height: 100% !important; }
     #vizFooter {
-      padding: 0.4rem 0.75rem; border-top: 1px solid var(--line); background: var(--panel);
-      font-size: 0.78rem; color: var(--muted);
+      padding: 0.35rem 0.7rem; border-top: 1px solid var(--line); background: var(--panel);
+      font-size: 0.75rem; color: var(--muted);
     }
-
-    #right {
-      display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel);
-    }
-    #metrics {
-      padding: 0.75rem; border-bottom: 1px solid var(--line); flex-shrink: 0;
-    }
-    #metrics .total-row { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.5rem; }
-    #metrics .big { font-size: 1.6rem; font-weight: 700; color: var(--good); }
-    #scoreChartWrap { height: 160px; position: relative; }
-    #scoreChartWrap canvas { max-height: 160px; }
-    #simStrip {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-top: 0.55rem;
-    }
+    #right { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel); }
+    #metrics { padding: 0.7rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    #metrics .total-row { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.4rem; }
+    #metrics .big { font-size: 1.55rem; font-weight: 700; color: var(--good); }
+    #scoreChartWrap { height: 140px; position: relative; }
+    #simStrip { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; margin-top: 0.45rem; }
     .sim-chip {
-      background: #0f1419; border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem;
-      font-size: 0.72rem; color: var(--muted);
+      background: #0f1419; border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.45rem;
+      font-size: 0.7rem; color: var(--muted);
     }
-    .sim-chip strong { display: block; color: var(--text); font-size: 0.9rem; margin-top: 0.1rem; }
-
-    #stepPanel {
-      flex: 1; overflow: auto; padding: 0.85rem 0.9rem;
-    }
-    #stepPanel h2 {
-      margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 600;
-    }
-    #stepPanel .hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 0.85rem; line-height: 1.4; }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.85rem; }
+    .sim-chip strong { display: block; color: var(--text); font-size: 0.85rem; margin-top: 0.08rem; }
+    #stepPanel { flex: 1; overflow: auto; padding: 0.8rem 0.85rem; }
+    #stepPanel h2 { margin: 0 0 0.45rem; font-size: 0.92rem; font-weight: 600; }
+    #stepPanel .hint { color: var(--muted); font-size: 0.78rem; margin: 0 0 0.75rem; line-height: 1.4; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.45rem 0 0.75rem; }
     button.btn {
       background: #1e3a55; color: var(--text); border: 1px solid #2d5a84;
-      border-radius: 8px; padding: 0.45rem 0.75rem; font: inherit; cursor: pointer;
+      border-radius: 8px; padding: 0.4rem 0.7rem; font: inherit; cursor: pointer;
     }
     button.btn:hover { background: #274a6b; }
     button.btn.primary { background: #2563a8; border-color: #3a7abd; }
@@ -114,44 +96,37 @@
     button.btn.warn { background: #4a3a12; border-color: #7a5a20; }
     button.btn.ghost { background: transparent; }
     button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    label.field { display: block; font-size: 0.75rem; color: var(--muted); margin: 0.45rem 0 0.2rem; }
+    label.field { display: block; font-size: 0.72rem; color: var(--muted); margin: 0.4rem 0 0.18rem; }
     input, select, textarea {
       width: 100%; background: #0f1419; color: var(--text); border: 1px solid var(--line);
-      border-radius: 8px; padding: 0.4rem 0.5rem; font: inherit;
+      border-radius: 8px; padding: 0.38rem 0.48rem; font: inherit;
     }
-    textarea { font-family: ui-monospace, Menlo, monospace; font-size: 11px; min-height: 160px; }
-    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-    .chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
-    .chk input { width: auto; }
-    table.compact { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-    table.compact th, table.compact td { text-align: left; padding: 0.3rem 0.2rem; border-bottom: 1px solid var(--line); }
+    textarea { font-family: ui-monospace, Menlo, monospace; font-size: 11px; min-height: 140px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
+    table.compact { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+    table.compact th, table.compact td { text-align: left; padding: 0.28rem 0.18rem; border-bottom: 1px solid var(--line); }
     table.compact th { color: var(--muted); font-weight: 500; }
-    .notes { font-size: 0.75rem; color: var(--muted); max-height: 100px; overflow: auto; margin: 0; padding-left: 1rem; }
-    .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.4rem; align-items: center;
-      font-size: 0.72rem; margin: 0.2rem 0; }
-    .weight-row input[type=range] { width: 100%; }
-
-    /* Bottom progress dock — updates without redrawing main UI */
+    .notes { font-size: 0.72rem; color: var(--muted); max-height: 90px; overflow: auto; margin: 0; padding-left: 1rem; }
+    .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.35rem; align-items: center;
+      font-size: 0.7rem; margin: 0.18rem 0; }
     #dock {
       border-top: 1px solid var(--line); background: #0e141c;
-      display: grid; grid-template-columns: 1fr 1.2fr; max-height: 160px; min-height: 0;
+      display: grid; grid-template-columns: 1fr 1.2fr; max-height: 150px; min-height: 0;
     }
-    @media (max-width: 900px) { #dock { grid-template-columns: 1fr; max-height: 200px; } }
-    #dockJobs, #dockLog {
-      overflow: auto; padding: 0.5rem 0.75rem; min-height: 0;
-    }
+    @media (max-width: 900px) { #dock { grid-template-columns: 1fr; max-height: 190px; } }
+    #dockJobs, #dockLog { overflow: auto; padding: 0.45rem 0.7rem; min-height: 0; }
     #dockJobs { border-right: 1px solid var(--line); }
     #dock h3 {
-      margin: 0 0 0.4rem; font-size: 0.68rem; text-transform: uppercase;
+      margin: 0 0 0.35rem; font-size: 0.65rem; text-transform: uppercase;
       letter-spacing: 0.05em; color: var(--muted); font-weight: 600;
     }
     .job {
-      border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem;
-      margin-bottom: 0.35rem; background: #0f1419; cursor: pointer; font-size: 0.78rem;
+      border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.45rem;
+      margin-bottom: 0.3rem; background: #0f1419; cursor: pointer; font-size: 0.76rem;
     }
     .job.sel { border-color: var(--accent); }
-    .job .top { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; }
-    .bar { height: 5px; background: #1a2433; border-radius: 3px; margin-top: 0.3rem; overflow: hidden; }
+    .job .top { display: flex; justify-content: space-between; gap: 0.35rem; align-items: center; }
+    .bar { height: 5px; background: #1a2433; border-radius: 3px; margin-top: 0.28rem; overflow: hidden; }
     .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #3a7abd, #5b9fd4);
       transition: width 0.2s; }
     .bar.done > i { background: var(--good); }
@@ -161,16 +136,25 @@
       color: #b8c4d4; white-space: pre-wrap; word-break: break-word;
     }
     #offline {
-      display: none; background: #3a2a10; color: var(--warn); padding: 0.35rem 1rem;
-      font-size: 0.8rem; border-bottom: 1px solid #5a4a20;
+      display: none; background: #3a2a10; color: var(--warn); padding: 0.32rem 1rem;
+      font-size: 0.78rem; border-bottom: 1px solid #5a4a20;
     }
     #offline.show { display: block; }
     .muted { color: var(--muted); }
-    .tag { font-size: 0.65rem; padding: 0.08rem 0.3rem; border-radius: 4px; background: #1a2433; margin-left: 0.25rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: 0.55rem; font-size: 0.68rem; color: var(--muted); }
+    .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.25rem; vertical-align: middle; }
   </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
-  <div id="offline">Offline — start with <code>physics-router serve</code> to run jobs. Showing static data if available.</div>
+  <div id="offline">Offline — run <code>physics-router serve</code> for jobs. Static data still loads in 3D.</div>
   <div id="app">
     <header>
       <h1>physicsRouter</h1>
@@ -181,54 +165,57 @@
 
     <nav id="steps">
       <button type="button" class="step active" data-step="0">
-        <span class="n">1</span><span class="t">Setup</span>
-        <span class="d">Board &amp; config</span>
+        <span class="n">1</span><span class="t">Setup</span><span class="d">HALO-90 default</span>
       </button>
       <button type="button" class="step" data-step="1">
-        <span class="n">2</span><span class="t">Place</span>
-        <span class="d">Unlocked parts</span>
+        <span class="n">2</span><span class="t">Place</span><span class="d">Free parts only</span>
       </button>
       <button type="button" class="step" data-step="2">
-        <span class="n">3</span><span class="t">Route</span>
-        <span class="d">TopoR copper</span>
+        <span class="n">3</span><span class="t">Route</span><span class="d">3D copper</span>
       </button>
       <button type="button" class="step" data-step="3">
-        <span class="n">4</span><span class="t">Simulate</span>
-        <span class="d">Physics &amp; EMI</span>
+        <span class="n">4</span><span class="t">Simulate</span><span class="d">Physics · EMI</span>
       </button>
       <button type="button" class="step" data-step="4">
-        <span class="n">5</span><span class="t">Validate</span>
-        <span class="d">DRC · tests · CI</span>
+        <span class="n">5</span><span class="t">Validate</span><span class="d">DRC · tests</span>
       </button>
     </nav>
 
     <div id="workspace">
-      <!-- Always-visible board visualization -->
       <section id="viz">
         <div id="vizHeader">
-          <strong style="font-size:0.8rem">Board</strong>
-          <label>Route
-            <select id="routeSel"><option value="">—</option></select>
-          </label>
+          <strong style="font-size:0.78rem">3D board</strong>
+          <label>Route <select id="routeSel"><option value="">—</option></select></label>
           <label><input type="checkbox" id="showComps" checked/> Parts</label>
           <label><input type="checkbox" id="showRoutes" checked/> Copper</label>
           <label><input type="checkbox" id="showVias" checked/> Vias</label>
           <label><input type="checkbox" id="showEMI"/> EMI</label>
-          <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.4rem"></span>
+          <label><input type="checkbox" id="showLabels" checked/> Labels</label>
+          <label><input type="checkbox" id="showBoard" checked/> Substrate</label>
+          <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.35rem"></span>
+          <button type="button" class="btn ghost" id="btnResetCam" style="padding:0.25rem 0.5rem;font-size:0.72rem">Reset cam</button>
         </div>
-        <canvas id="boardCanvas"></canvas>
-        <div id="vizFooter"><span id="boardStats">No board loaded</span></div>
+        <div id="c3d"></div>
+        <div id="vizFooter">
+          <div class="legend">
+            <span><i style="background:#e85d4c"></i>LED locked</span>
+            <span><i style="background:#6b4c7a"></i>Mech locked</span>
+            <span><i style="background:#4c78a8"></i>Free</span>
+            <span><i style="background:#e45756"></i>MCU / batt</span>
+            <span><i style="background:#d4a017"></i>Via</span>
+          </div>
+          <div id="boardStats" style="margin-top:0.25rem">No board</div>
+        </div>
       </section>
 
-      <!-- Metrics (stable) + step guide -->
       <aside id="right">
         <div id="metrics">
           <div class="total-row">
             <div>
-              <div class="muted" style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em">Physics cost</div>
+              <div class="muted" style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em">Physics cost</div>
               <div class="big" id="scoreTotal">—</div>
             </div>
-            <div class="muted" style="font-size:0.75rem;line-height:1.35" id="scoreMeta">Run Score or Place to fill metrics</div>
+            <div class="muted" style="font-size:0.72rem;line-height:1.35" id="scoreMeta">Load HALO-90 to begin</div>
           </div>
           <div id="scoreChartWrap"><canvas id="scoreChart"></canvas></div>
           <div id="simStrip">
@@ -245,7 +232,7 @@
     <footer id="dock">
       <div id="dockJobs">
         <h3>Progress</h3>
-        <div id="jobList"><p class="muted" style="font-size:0.78rem;margin:0">No jobs yet</p></div>
+        <div id="jobList"><p class="muted" style="font-size:0.76rem;margin:0">No jobs yet</p></div>
       </div>
       <div id="dockLog">
         <h3>Log · result</h3>
@@ -254,19 +241,22 @@
     </footer>
   </div>
 
-  <script>
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
   const NET_COLORS = {
-    power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
-    differential: '#9467bd', signal: '#8c564b', reset: '#e377c2', clock: '#17becf',
-    rf: '#bcbd22', other: '#888888'
+    power: 0xd62728, ground: 0x1f77b4, high_speed: 0xff7f0e, analog: 0x2ca02c,
+    differential: 0x9467bd, signal: 0x8c564b, reset: 0xe377c2, clock: 0x17becf,
+    rf: 0xbcbd22, other: 0x888888,
   };
 
   const STEPS = [
-    { id: 'setup', title: '1 · Setup', hint: 'Pick a board preset. Unlocked parts will move later; mechanicals stay fixed.' },
-    { id: 'place', title: '2 · Place', hint: 'Score the board, then run simulated annealing on free components only.' },
-    { id: 'route', title: '3 · Route', hint: 'Free-angle guide first, then clearance-aware TopoR. Watch copper update on the left.' },
-    { id: 'sim', title: '4 · Simulate', hint: 'Physics proxies: IR/loop L (in score), spice/PI, OpenEMS EMI geometry on the board.' },
-    { id: 'validate', title: '5 · Validate', hint: 'Close the loop: unit tests, CI regression, and official KiCad DRC when a PCB is loaded.' },
+    { title: '1 · Setup', hint: 'HALO-90 is the default. All D1–D90 LEDs are locked with mechanicals; only free parts would move under Place.' },
+    { title: '2 · Place', hint: 'Score physics, then SA on unlocked footprints only (LED ring stays fixed).' },
+    { title: '3 · Route', hint: 'TopoR free-angle copper draws in 3D by layer height. Switch route variants in the toolbar.' },
+    { title: '4 · Simulate', hint: 'IR/loop L, spice/PI, OpenEMS EMI volumes in the same 3D scene.' },
+    { title: '5 · Validate', hint: 'pytest, CI regression, and KiCad DRC close the manufacturability loop.' },
   ];
 
   const state = {
@@ -276,11 +266,27 @@
     viewer: null,
     selectedJob: null,
     chart: null,
-    chartKey: '',          // only redraw chart when score fingerprint changes
+    chartKey: '',
     layersBuilt: false,
-    boardDirty: true,
     lastJobSig: '',
     pollBusy: false,
+    sceneKey: '',
+  };
+
+  // three.js
+  const three = {
+    renderer: null,
+    scene: null,
+    camera: null,
+    controls: null,
+    root: null,
+    gComps: null,
+    gRoutes: null,
+    gVias: null,
+    gEmi: null,
+    gBoard: null,
+    gLabels: null,
+    anim: 0,
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -302,11 +308,329 @@
   }
 
   function statusPill(st) {
-    const c = st === 'done' ? 'ok' : st === 'error' ? 'err' : st === 'running' || st === 'pending' ? 'run' : '';
+    const c = st === 'done' ? 'ok' : st === 'error' ? 'err' : (st === 'running' || st === 'pending') ? 'run' : '';
     return `<span class="pill ${c}">${st}</span>`;
   }
 
-  // ---------- Step panel (only rebuilt when step changes or user action) ----------
+  // ---------- Three.js scene ----------
+  function initThree() {
+    const host = $('#c3d');
+    const w = host.clientWidth || 640;
+    const h = host.clientHeight || 480;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    renderer.setClearColor(0x070a0e, 1);
+    host.innerHTML = '';
+    host.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x070a0e, 80, 220);
+
+    const camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 500);
+    camera.position.set(28, 32, 36);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 0);
+
+    scene.add(new THREE.AmbientLight(0x8aa0b8, 0.55));
+    const key = new THREE.DirectionalLight(0xffffff, 1.05);
+    key.position.set(40, 60, 30);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x6688aa, 0.35);
+    fill.position.set(-30, 20, -20);
+    scene.add(fill);
+
+    const grid = new THREE.GridHelper(60, 30, 0x2a3548, 0x1a2332);
+    grid.position.y = -0.02;
+    scene.add(grid);
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    three.renderer = renderer;
+    three.scene = scene;
+    three.camera = camera;
+    three.controls = controls;
+    three.root = root;
+    three.gComps = new THREE.Group(); three.gComps.name = 'comps';
+    three.gRoutes = new THREE.Group(); three.gRoutes.name = 'routes';
+    three.gVias = new THREE.Group(); three.gVias.name = 'vias';
+    three.gEmi = new THREE.Group(); three.gEmi.name = 'emi';
+    three.gBoard = new THREE.Group(); three.gBoard.name = 'board';
+    three.gLabels = new THREE.Group(); three.gLabels.name = 'labels';
+    root.add(three.gBoard, three.gComps, three.gRoutes, three.gVias, three.gEmi, three.gLabels);
+
+    function animate() {
+      three.anim = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+
+  function resizeThree() {
+    if (!three.renderer) return;
+    const host = $('#c3d');
+    const w = host.clientWidth || 640;
+    const h = host.clientHeight || 480;
+    three.camera.aspect = w / h;
+    three.camera.updateProjectionMatrix();
+    three.renderer.setSize(w, h, false);
+  }
+
+  function clearGroup(g) {
+    if (!g) return;
+    while (g.children.length) {
+      const o = g.children.pop();
+      o.traverse?.(ch => {
+        if (ch.geometry) ch.geometry.dispose();
+        if (ch.material) {
+          if (Array.isArray(ch.material)) ch.material.forEach(m => m.dispose());
+          else ch.material.dispose();
+        }
+      });
+    }
+  }
+
+  function netColor(net) {
+    const meta = state.viewer?.board?.net_meta?.[net];
+    const cls = meta?.class || 'signal';
+    return NET_COLORS[cls] ?? NET_COLORS.other;
+  }
+
+  function layerZ(layer, layers) {
+    const i = Math.max(0, layers.indexOf(layer));
+    // stack upward: F.Cu near top, B.Cu near bottom of thin board
+    const n = Math.max(layers.length - 1, 1);
+    return 0.15 + (n - i) * 0.35;
+  }
+
+  function isLed(ref) {
+    return /^D\d+$/i.test(ref || '');
+  }
+
+  function sceneFingerprint() {
+    const b = state.viewer?.board;
+    const r = state.viewer?.routes || {};
+    const rname = $('#routeSel')?.value || '';
+    const route = r[rname];
+    return JSON.stringify({
+      n: b?.components?.length,
+      nets: Object.keys(b?.nets || {}).length,
+      r: rname,
+      segs: route?.segments?.length,
+      vias: route?.vias?.length,
+      emi: state.viewer?.emi_geometry?.primitives?.length,
+      locks: (b?.components || []).filter(c => c.locked).length,
+    });
+  }
+
+  function rebuildScene() {
+    if (!three.root || !state.viewer?.board) return;
+    const fp = sceneFingerprint();
+    if (fp === state.sceneKey) {
+      applyVisibility();
+      return;
+    }
+    state.sceneKey = fp;
+
+    clearGroup(three.gBoard);
+    clearGroup(three.gComps);
+    clearGroup(three.gRoutes);
+    clearGroup(three.gVias);
+    clearGroup(three.gEmi);
+    clearGroup(three.gLabels);
+
+    const board = state.viewer.board;
+    const layers = board.copper_layers || ['F.Cu', 'B.Cu'];
+    const comps = board.components || [];
+
+    // bounds
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of comps) {
+      minX = Math.min(minX, c.x - c.w / 2);
+      maxX = Math.max(maxX, c.x + c.w / 2);
+      minY = Math.min(minY, c.y - c.h / 2);
+      maxY = Math.max(maxY, c.y + c.h / 2);
+    }
+    if (!isFinite(minX)) {
+      minX = -(board.width_mm || 24) / 2;
+      maxX = (board.width_mm || 24) / 2;
+      minY = -(board.height_mm || 26) / 2;
+      maxY = (board.height_mm || 26) / 2;
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const bw = Math.max(maxX - minX, board.width_mm || 24);
+    const bh = Math.max(maxY - minY, board.height_mm || 26);
+
+    // PCB substrate (green FR4 disk-ish box)
+    const boardMat = new THREE.MeshStandardMaterial({
+      color: 0x1a4a32, roughness: 0.75, metalness: 0.05,
+    });
+    const boardMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(bw + 1.2, 0.8, bh + 1.2),
+      boardMat,
+    );
+    boardMesh.position.set(cx, 0, cy);
+    three.gBoard.add(boardMesh);
+    // edge outline
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(bw + 1.2, 0.8, bh + 1.2)),
+      new THREE.LineBasicMaterial({ color: 0x3ecf8e }),
+    );
+    edge.position.copy(boardMesh.position);
+    three.gBoard.add(edge);
+
+    // Components
+    for (const c of comps) {
+      const led = isLed(c.ref);
+      let color = 0x4c78a8; // free
+      if (c.locked && led) color = 0xe85d4c;
+      else if (c.locked) color = 0x6b4c7a;
+      if (c.ref === 'U1' || c.ref === 'BT1') color = 0xe45756;
+      const w = Math.max(c.w || 0.5, led ? 0.55 : 0.4);
+      const d = Math.max(c.h || 0.5, led ? 0.55 : 0.4);
+      const t = led ? 0.35 : (c.ref === 'U1' ? 0.9 : 0.5);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: led ? 0.35 : 0.2,
+        roughness: led ? 0.35 : 0.55,
+        emissive: led ? 0x401008 : 0x000000,
+        emissiveIntensity: led ? 0.35 : 0,
+      });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), mat);
+      const zTop = 0.4 + t / 2;
+      mesh.position.set(c.x, zTop, c.y);
+      mesh.rotation.y = -((c.rot || 0) * Math.PI) / 180;
+      mesh.userData = { ref: c.ref, locked: c.locked, led };
+      three.gComps.add(mesh);
+
+      // Labels for non-LED or important parts
+      if ($('#showLabels')?.checked && (!led || c.ref === 'D1' || c.ref === 'D45' || c.ref === 'D90')) {
+        if (!led || ['D1', 'D23', 'D45', 'D68', 'D90'].includes(c.ref)) {
+          // sprite-like simple canvas texture for a few labels
+        }
+      }
+      if (!led && c.ref && (c.ref.length <= 4 || ['U1', 'BT1', 'MK1', 'U2', 'S1'].includes(c.ref))) {
+        const spr = makeTextSprite(c.ref, c.locked ? '#c9b0d8' : '#d0e4ff');
+        spr.position.set(c.x, zTop + t / 2 + 0.6, c.y);
+        three.gLabels.add(spr);
+      }
+    }
+
+    // Routes
+    const rname = $('#routeSel')?.value;
+    const route = state.viewer.routes?.[rname];
+    if (route?.segments) {
+      const layersOn = activeLayers();
+      for (const s of route.segments) {
+        if (layersOn.size && !layersOn.has(s.layer)) continue;
+        const dx = s.x2 - s.x1;
+        const dy = s.y2 - s.y1;
+        const len = Math.hypot(dx, dy) || 0.01;
+        const width = Math.max(s.width_mm || 0.2, 0.12);
+        const y = layerZ(s.layer, layers);
+        const mat = new THREE.MeshStandardMaterial({
+          color: netColor(s.net),
+          metalness: 0.85,
+          roughness: 0.28,
+        });
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(len, width * 0.35, width),
+          mat,
+        );
+        mesh.position.set((s.x1 + s.x2) / 2, y, (s.y1 + s.y2) / 2);
+        mesh.rotation.y = -Math.atan2(dy, dx);
+        three.gRoutes.add(mesh);
+      }
+    }
+
+    // Vias
+    if (route?.vias) {
+      for (const v of route.vias) {
+        const r = Math.max((v.size_mm || 0.6) / 2, 0.2);
+        const mesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(r, r, 1.4, 12),
+          new THREE.MeshStandardMaterial({ color: 0xd4a017, metalness: 0.7, roughness: 0.35 }),
+        );
+        mesh.position.set(v.x, 0.7, v.y);
+        three.gVias.add(mesh);
+      }
+    }
+
+    // EMI
+    if (state.viewer.emi_geometry?.primitives) {
+      for (const p of state.viewer.emi_geometry.primitives) {
+        if (p.kind !== 'box') continue;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(p.w_mm || 1, p.t_mm || 0.4, p.h_mm || 1),
+          new THREE.MeshStandardMaterial({
+            color: 0xc0a060, transparent: true, opacity: 0.28, metalness: 0.4, roughness: 0.4,
+          }),
+        );
+        mesh.position.set(p.cx_mm || 0, (p.cz_mm || 0.5) + 0.5, p.cy_mm || 0);
+        three.gEmi.add(mesh);
+      }
+    }
+
+    // Camera framing on first build or reset
+    const span = Math.max(bw, bh, 20);
+    three.controls.target.set(cx, 0, cy);
+    three.camera.position.set(cx + span * 0.7, span * 0.85, cy + span * 0.75);
+    three.controls.update();
+
+    applyVisibility();
+    updateBoardStats(route, rname, comps);
+  }
+
+  function makeTextSprite(text, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 128, 64);
+    ctx.font = 'bold 28px system-ui';
+    ctx.fillStyle = color || '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 64, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(2.2, 1.1, 1);
+    return spr;
+  }
+
+  function activeLayers() {
+    return new Set($$('#layerToggles input:checked').map(e => e.dataset.layer));
+  }
+
+  function applyVisibility() {
+    if (three.gComps) three.gComps.visible = $('#showComps').checked;
+    if (three.gRoutes) three.gRoutes.visible = $('#showRoutes').checked;
+    if (three.gVias) three.gVias.visible = $('#showVias').checked;
+    if (three.gEmi) three.gEmi.visible = $('#showEMI').checked;
+    if (three.gBoard) three.gBoard.visible = $('#showBoard').checked;
+    if (three.gLabels) three.gLabels.visible = $('#showLabels').checked;
+    // layer filter requires rebuild for routes — mark dirty when layers change
+  }
+
+  function updateBoardStats(route, rname, comps) {
+    comps = comps || state.viewer?.board?.components || [];
+    const free = comps.filter(c => !c.locked).length;
+    const leds = comps.filter(c => isLed(c.ref)).length;
+    let stats = `${comps.length} parts · ${free} free · ${leds} LEDs locked · ${Object.keys(state.viewer?.board?.nets || {}).length} nets`;
+    if (route) {
+      stats += ` · ${rname}: ${fmt(route.total_length_mm)} mm, ${route.via_count} vias`;
+    }
+    $('#boardStats').textContent = stats;
+  }
+
+  // ---------- Steps ----------
   function renderStepPanel() {
     const panel = $('#stepPanel');
     const s = STEPS[state.step];
@@ -316,65 +640,59 @@
     else if (state.step === 2) body = panelRoute();
     else if (state.step === 3) body = panelSim();
     else body = panelValidate();
-
     panel.innerHTML = `
       <h2>${s.title}</h2>
       <p class="hint">${s.hint}</p>
       ${body}
-      <div class="actions" style="margin-top:1rem;border-top:1px solid var(--line);padding-top:0.75rem">
+      <div class="actions" style="margin-top:0.9rem;border-top:1px solid var(--line);padding-top:0.7rem">
         <button type="button" class="btn ghost" id="btnPrev" ${state.step === 0 ? 'disabled' : ''}>← Back</button>
         <button type="button" class="btn primary" id="btnNext">${state.step === 4 ? 'Done' : 'Next →'}</button>
-      </div>
-    `;
+      </div>`;
     bindStepPanel();
   }
 
   function panelSetup() {
-    const presets = state.snap?.presets || [{ id: 'synthetic', label: 'synthetic' }];
+    const presets = state.snap?.presets || [{ id: 'halo-90', label: 'HALO-90' }];
     const sess = state.snap?.session || {};
     return `
       <label class="field">Board preset</label>
       <select id="presetSel">
-        ${presets.map(p => `<option value="${p.id}" ${p.id === state.snap?.preset ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? ' · PCB' : ''}</option>`).join('')}
+        ${presets.map(p => `<option value="${p.id}" ${p.id === (state.snap?.preset || 'halo-90') ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? ' · PCB' : ''}</option>`).join('')}
       </select>
       <div class="actions">
         <button type="button" class="btn primary" id="btnLoadPreset">Load preset</button>
       </div>
       <table class="compact">
-        <tr><th>Project</th><td id="infoProject">${esc(state.snap?.config?.project_name || '—')}</td></tr>
-        <tr><th>Parts</th><td>${sess.components ?? '—'} total · <strong>${sess.movable ?? '—'}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
-        <tr><th>Nets</th><td>${sess.nets ?? '—'}</td></tr>
-        <tr><th>Layers</th><td>${(sess.copper_layers || []).join(', ') || '—'}</td></tr>
-        <tr><th>PCB</th><td style="word-break:break-all">${esc(state.snap?.pcb_path || 'synthetic (no file)')}</td></tr>
+        <tr><th>Project</th><td>${esc(state.snap?.config?.project_name || '—')}</td></tr>
+        <tr><th>Parts</th><td>${sess.components ?? '—'} · <strong>${sess.movable ?? '—'}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
+        <tr><th>Nets / layers</th><td>${sess.nets ?? '—'} · ${(sess.copper_layers || []).join(', ') || '—'}</td></tr>
+        <tr><th>LED lock</th><td>prefixes: ${(state.snap?.config?.lock_ref_prefixes || []).join(', ') || '—'}</td></tr>
+        <tr><th>PCB</th><td style="word-break:break-all;font-size:0.7rem">${esc(state.snap?.pcb_path || '—')}</td></tr>
       </table>
-      <details style="margin-top:0.75rem">
-        <summary class="muted" style="cursor:pointer;font-size:0.8rem">Advanced: edit YAML config</summary>
-        <textarea id="yamlEditor" style="margin-top:0.4rem">${esc(state.snap?.config_text || '')}</textarea>
-        <div class="actions">
-          <button type="button" class="btn" id="btnApplyYaml">Apply YAML</button>
-        </div>
-      </details>
-    `;
+      <details style="margin-top:0.65rem">
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced YAML</summary>
+        <textarea id="yamlEditor" style="margin-top:0.35rem">${esc(state.snap?.config_text || '')}</textarea>
+        <button type="button" class="btn" id="btnApplyYaml" style="margin-top:0.35rem">Apply YAML</button>
+      </details>`;
   }
 
   function panelPlace() {
     const cfg = state.snap?.config || {};
     return `
       <div class="row2">
-        <div><label class="field">Candidates</label><input type="number" id="rtCand" min="1" max="16" value="${cfg.num_candidates ?? 4}"/></div>
-        <div><label class="field">SA iterations</label><input type="number" id="rtSa" min="100" value="${Math.min(cfg.sa_iterations || 800, 2000)}"/></div>
+        <div><label class="field">Candidates</label><input type="number" id="rtCand" min="1" max="16" value="${Math.min(cfg.num_candidates ?? 4, 8)}"/></div>
+        <div><label class="field">SA iterations</label><input type="number" id="rtSa" min="100" value="${Math.min(cfg.sa_iterations || 600, 1500)}"/></div>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-job="score">1. Score now</button>
-        <button type="button" class="btn primary" data-job="place">2. Place free parts</button>
+        <button type="button" class="btn" data-job="score">1. Score</button>
+        <button type="button" class="btn primary" data-job="place">2. Place free</button>
       </div>
-      <p class="hint">Only unlocked footprints move. Fixed connectors / LED ring / battery stay put.</p>
+      <p class="hint">On HALO-90, LEDs + mechanicals are locked — Place re-scores geometry with nothing free, or unlock passives in YAML first.</p>
       <details>
-        <summary class="muted" style="cursor:pointer;font-size:0.8rem">Physics weights</summary>
-        <div id="weightBox" style="margin-top:0.4rem"></div>
-        <button type="button" class="btn" id="btnApplyWeights" style="margin-top:0.4rem">Apply weights</button>
-      </details>
-    `;
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Physics weights</summary>
+        <div id="weightBox" style="margin-top:0.35rem"></div>
+        <button type="button" class="btn" id="btnApplyWeights" style="margin-top:0.35rem">Apply weights</button>
+      </details>`;
   }
 
   function panelRoute() {
@@ -384,31 +702,26 @@
         <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.1" value="0.5"/></div>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-job="pre_route">Pre-route check</button>
-        <button type="button" class="btn" data-job="route_guide">Guide (fast)</button>
+        <button type="button" class="btn" data-job="pre_route">Pre-route</button>
+        <button type="button" class="btn" data-job="route_guide">Guide</button>
         <button type="button" class="btn primary" data-job="route_clearance">Clearance route</button>
       </div>
-      <p class="hint">Copper appears on the board view. Switch route variants in the toolbar above the canvas.</p>
-      <div id="routeTable"></div>
-    `;
+      <div id="routeTable"></div>`;
   }
 
   function panelSim() {
     return `
-      <p class="hint" style="margin-top:0">Metrics above update when jobs finish. EMI boxes draw on the board when OpenEMS runs.</p>
       <div class="actions">
-        <button type="button" class="btn primary" data-job="score">Full physics score</button>
-        <button type="button" class="btn" data-job="spice">Spice / PI proxy</button>
+        <button type="button" class="btn primary" data-job="score">Physics score</button>
+        <button type="button" class="btn" data-job="spice">Spice / PI</button>
         <button type="button" class="btn" data-job="openems">OpenEMS + EMI</button>
       </div>
       <div class="actions">
-        <button type="button" class="btn ghost" data-job="export_dsn">Export DSN</button>
-        <button type="button" class="btn ghost" data-job="export_step">Export STEP</button>
-        <button type="button" class="btn ghost" data-job="compare_routes">Compare routes</button>
+        <button type="button" class="btn ghost" data-job="export_dsn">DSN</button>
+        <button type="button" class="btn ghost" data-job="export_step">STEP</button>
+        <button type="button" class="btn ghost" data-job="compare_routes">Compare</button>
       </div>
-      <h2 style="font-size:0.78rem;margin-top:0.75rem;color:var(--muted)">Latest notes</h2>
-      <ul class="notes" id="simNotes"><li>Run a simulation…</li></ul>
-    `;
+      <ul class="notes" id="simNotes"><li>Run a simulation…</li></ul>`;
   }
 
   function panelValidate() {
@@ -419,67 +732,52 @@
         <button type="button" class="btn warn" data-job="drc">KiCad DRC</button>
       </div>
       <div class="actions">
-        <button type="button" class="btn good" data-job="pipeline">Run full pipeline</button>
-        <button type="button" class="btn ghost" data-job="rebuild_viewer">Refresh viewer data</button>
+        <button type="button" class="btn good" data-job="pipeline">Full pipeline</button>
       </div>
-      <p class="hint">Full pipeline: score → place → guide → clearance → spice → openems. Progress stays in the dock below.</p>
-      <label class="field">pytest -k filter (optional)</label>
-      <input id="testK" placeholder="e.g. router or server"/>
-      <button type="button" class="btn" id="btnTestsK" style="margin-top:0.4rem">Run filtered tests</button>
-    `;
+      <label class="field">pytest -k</label>
+      <input id="testK" placeholder="router or halo"/>
+      <button type="button" class="btn" id="btnTestsK" style="margin-top:0.35rem">Filtered tests</button>`;
   }
 
   function bindStepPanel() {
     $('#btnPrev')?.addEventListener('click', () => setStep(Math.max(0, state.step - 1)));
-    $('#btnNext')?.addEventListener('click', () => {
-      if (state.step < 4) setStep(state.step + 1);
-    });
+    $('#btnNext')?.addEventListener('click', () => { if (state.step < 4) setStep(state.step + 1); });
     $('#btnLoadPreset')?.addEventListener('click', async () => {
-      if (!state.live) return alert('Start: physics-router serve');
-      const id = $('#presetSel').value;
-      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: id }) });
+      if (!state.live) return alert('physics-router serve');
+      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: $('#presetSel').value }) });
       state.viewer = await api('/api/viewer-data');
       state.layersBuilt = false;
-      state.boardDirty = true;
+      state.sceneKey = '';
       state.chartKey = '';
-      updateMetrics();
-      updateRouteSelect();
       updateLayers();
-      drawBoard();
+      updateRouteSelect();
+      updateMetrics();
+      rebuildScene();
       renderStepPanel();
       updateHeader();
     });
     $('#btnApplyYaml')?.addEventListener('click', async () => {
       if (!state.live) return;
-      state.snap = await api('/api/config/apply', {
-        method: 'POST', body: JSON.stringify({ config_text: $('#yamlEditor').value }),
-      });
+      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config_text: $('#yamlEditor').value }) });
       state.viewer = await api('/api/viewer-data');
-      state.layersBuilt = false;
-      state.boardDirty = true;
+      state.sceneKey = '';
       state.chartKey = '';
       updateMetrics();
-      drawBoard();
+      rebuildScene();
       renderStepPanel();
     });
     $$('[data-job]').forEach(btn => {
       btn.addEventListener('click', () => startJob(btn.dataset.job).catch(e => alert(e.message)));
     });
-    $('#btnTestsK')?.addEventListener('click', () => {
-      startJob('tests', { k: $('#testK')?.value }).catch(e => alert(e.message));
-    });
-    // weights
+    $('#btnTestsK')?.addEventListener('click', () => startJob('tests', { k: $('#testK')?.value }).catch(e => alert(e.message)));
     const box = $('#weightBox');
     if (box) {
       const w = state.snap?.config?.physics || {};
-      const keys = Object.keys(w);
-      box.innerHTML = keys.map(k => {
+      box.innerHTML = Object.keys(w).map(k => {
         const v = Number(w[k] ?? 1);
-        return `<div class="weight-row" data-k="${k}">
-          <span>${k}</span>
+        return `<div class="weight-row"><span>${k}</span>
           <input type="range" min="0" max="20" step="0.1" value="${v}" data-w="${k}"/>
-          <span class="wval">${v.toFixed(1)}</span>
-        </div>`;
+          <span class="wval">${v.toFixed(1)}</span></div>`;
       }).join('');
       $$('input[data-w]', box).forEach(inp => {
         inp.oninput = () => { inp.parentElement.querySelector('.wval').textContent = (+inp.value).toFixed(1); };
@@ -487,9 +785,10 @@
       $('#btnApplyWeights')?.addEventListener('click', async () => {
         const physics = { ...(state.snap?.config?.physics || {}) };
         $$('input[data-w]').forEach(inp => { physics[inp.dataset.w] = parseFloat(inp.value); });
-        const cfg = { ...(state.snap.config || {}), physics };
-        state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
-        alert('Weights applied — re-run Score / Place');
+        state.snap = await api('/api/config/apply', {
+          method: 'POST', body: JSON.stringify({ config: { ...state.snap.config, physics } }),
+        });
+        alert('Weights applied');
       });
     }
     fillRouteTable();
@@ -505,27 +804,21 @@
     renderStepPanel();
   }
 
-  // ---------- Metrics: targeted updates, chart only if data changed ----------
+  // ---------- Metrics ----------
   function scoreFingerprint(score) {
     if (!score) return '';
     return Object.keys(score).sort().map(k => `${k}:${score[k]}`).join('|');
   }
 
   function updateMetrics() {
-    const score = state.snap?.last_score?.score
-      || state.viewer?.physics?.score
-      || {};
+    const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
     const total = score.total ?? state.snap?.last_score?.score_total;
     $('#scoreTotal').textContent = total == null ? '—' : fmt(total, 1);
     const sess = state.snap?.session || state.viewer?.session || {};
     $('#scoreMeta').textContent =
-      `${state.snap?.preset || state.viewer?.preset || '—'} · ${sess.movable ?? '—'} free / ${sess.components ?? '—'} parts`;
-
-    $('#mIr').textContent =
-      `IR ${fmt(score.ir_drop, 1)} · L ${fmt(score.loop_inductance, 1)}`;
-    $('#mSim').textContent =
-      `${fmt(score.spice_score, 1)} · ${fmt(score.openems_score, 1)}`;
-
+      `${state.snap?.preset || state.viewer?.preset || '—'} · ${sess.movable ?? '—'} free / ${sess.locked ?? '—'} locked`;
+    $('#mIr').textContent = `IR ${fmt(score.ir_drop, 1)} · L ${fmt(score.loop_inductance, 1)}`;
+    $('#mSim').textContent = `${fmt(score.spice_score, 1)} · ${fmt(score.openems_score, 1)}`;
     const routes = state.snap?.routes || state.viewer?.routes || {};
     const prefer = routes.topor || routes.guide || Object.values(routes)[0];
     if (prefer) {
@@ -535,7 +828,6 @@
       $('#mLen').textContent = '—';
       $('#mVia').textContent = '—';
     }
-
     const fp = scoreFingerprint(score);
     if (fp && fp !== state.chartKey) {
       state.chartKey = fp;
@@ -548,32 +840,20 @@
   function drawScoreChart(score) {
     const canvas = $('#scoreChart');
     if (!canvas || !window.Chart) return;
-    const labels = Object.keys(score).filter(k => k !== 'total' && (score[k] || 0) !== 0);
-    // show zeros for empty state
-    const labs = labels.length ? labels : Object.keys(score).filter(k => k !== 'total').slice(0, 8);
-    const values = labs.map(k => score[k] || 0);
+    const labs = Object.keys(score).filter(k => k !== 'total' && (score[k] || 0) !== 0);
+    const labels = labs.length ? labs : Object.keys(score).filter(k => k !== 'total').slice(0, 8);
+    const values = labels.map(k => score[k] || 0);
     if (state.chart) {
-      state.chart.data.labels = labs;
+      state.chart.data.labels = labels;
       state.chart.data.datasets[0].data = values;
-      state.chart.update('none'); // no animation flash
+      state.chart.update('none');
       return;
     }
     state.chart = new Chart(canvas, {
       type: 'bar',
-      data: {
-        labels: labs,
-        datasets: [{
-          label: 'Cost',
-          data: values,
-          backgroundColor: 'rgba(91, 159, 212, 0.75)',
-          borderRadius: 3,
-        }],
-      },
+      data: { labels, datasets: [{ data: values, backgroundColor: 'rgba(91,159,212,0.75)', borderRadius: 3 }] },
       options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: 'y',
+        animation: false, responsive: true, maintainAspectRatio: false, indexAxis: 'y',
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: '#8b9bb4', font: { size: 9 } }, grid: { color: '#2a3548' } },
@@ -587,9 +867,7 @@
     const ul = $('#simNotes');
     if (!ul) return;
     const notes = state.snap?.last_score?.notes || state.viewer?.physics?.notes || [];
-    ul.innerHTML = notes.length
-      ? notes.slice(0, 10).map(n => `<li>${esc(n)}</li>`).join('')
-      : '<li>No notes yet</li>';
+    ul.innerHTML = notes.length ? notes.slice(0, 10).map(n => `<li>${esc(n)}</li>`).join('') : '<li>No notes yet</li>';
   }
 
   function fillRouteTable() {
@@ -597,52 +875,39 @@
     if (!el) return;
     const routes = state.snap?.routes || state.viewer?.routes || {};
     const keys = Object.keys(routes);
-    if (!keys.length) {
-      el.innerHTML = '<p class="muted" style="font-size:0.78rem">No routes yet</p>';
-      return;
-    }
-    el.innerHTML = `<table class="compact"><thead><tr><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th></tr></thead><tbody>
-      ${keys.map(k => {
-        const r = routes[k];
-        return `<tr><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td></tr>`;
-      }).join('')}
-    </tbody></table>`;
+    el.innerHTML = keys.length
+      ? `<table class="compact"><thead><tr><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th></tr></thead><tbody>
+        ${keys.map(k => {
+          const r = routes[k];
+          return `<tr><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td></tr>`;
+        }).join('')}</tbody></table>`
+      : '<p class="muted" style="font-size:0.76rem">No routes yet</p>';
   }
 
-  // ---------- Jobs dock: only this re-renders on poll ----------
+  // ---------- Jobs dock ----------
   function updateJobsDock() {
     const jobs = state.snap?.jobs || [];
     const list = $('#jobList');
     if (!jobs.length) {
-      list.innerHTML = '<p class="muted" style="font-size:0.78rem;margin:0">No jobs yet</p>';
+      list.innerHTML = '<p class="muted" style="font-size:0.76rem;margin:0">No jobs yet</p>';
       return;
     }
     const sig = jobs.map(j => `${j.id}:${j.status}:${j.progress}:${j.stage}`).join(';');
-    // Always rebuild list — it's small; avoid thrashing log if same selection
     list.innerHTML = jobs.slice(0, 12).map(j => {
       const cls = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : '';
       return `<div class="job ${state.selectedJob === j.id ? 'sel' : ''}" data-jid="${j.id}">
         <div class="top"><span><strong>${esc(j.type)}</strong></span>${statusPill(j.status)}</div>
-        <div class="muted" style="font-size:0.72rem">${esc(j.stage)} · ${fmt(j.progress, 0)}%</div>
+        <div class="muted" style="font-size:0.7rem">${esc(j.stage)} · ${fmt(j.progress, 0)}%</div>
         <div class="bar ${cls}"><i style="width:${j.progress || 0}%"></i></div>
       </div>`;
     }).join('');
     $$('.job', list).forEach(el => {
-      el.onclick = () => {
-        state.selectedJob = el.dataset.jid;
-        updateJobsDock();
-        loadJobDetail(el.dataset.jid);
-      };
+      el.onclick = () => { state.selectedJob = el.dataset.jid; updateJobsDock(); loadJobDetail(el.dataset.jid); };
     });
-
     const running = jobs.filter(j => j.status === 'running' || j.status === 'pending').length;
     $('#jobPill').textContent = running ? `${running} running` : (jobs.length ? `${jobs.length} jobs` : 'idle');
-    $('#jobPill').className = 'pill' + (running ? ' run' : jobs.some(j => j.status === 'error') ? ' err' : jobs.length ? ' ok' : '');
-
-    // Auto-follow active job log
-    const active = jobs.find(j => j.id === state.selectedJob)
-      || jobs.find(j => j.status === 'running')
-      || jobs[0];
+    $('#jobPill').className = 'pill' + (running ? ' run' : '');
+    const active = jobs.find(j => j.id === state.selectedJob) || jobs.find(j => j.status === 'running') || jobs[0];
     if (active && (active.status === 'running' || active.id === state.selectedJob || sig !== state.lastJobSig)) {
       if (!state.selectedJob) state.selectedJob = active.id;
       loadJobDetail(state.selectedJob || active.id);
@@ -668,22 +933,18 @@
     }
   }
 
-  // ---------- Board canvas ----------
   function updateRouteSelect() {
     const sel = $('#routeSel');
     const routes = state.viewer?.routes || {};
     const cur = sel.value;
     const names = Object.keys(routes);
-    sel.innerHTML = names.length
-      ? names.map(n => `<option value="${n}">${n}</option>`).join('')
-      : '<option value="">(no routes)</option>';
+    sel.innerHTML = names.length ? names.map(n => `<option value="${n}">${n}</option>`).join('') : '<option value="">(no routes)</option>';
     if (cur && names.includes(cur)) sel.value = cur;
     else if (names.includes('topor')) sel.value = 'topor';
     else if (names.includes('guide')) sel.value = 'guide';
   }
 
   function updateLayers() {
-    if (state.layersBuilt && $('#layerToggles').children.length) return;
     const layers = state.viewer?.board?.copper_layers || ['F.Cu', 'B.Cu'];
     $('#layerToggles').innerHTML = layers.map(ly =>
       `<label><input type="checkbox" data-layer="${ly}" checked/> ${ly}</label>`
@@ -691,152 +952,21 @@
     state.layersBuilt = true;
   }
 
-  function netColor(net) {
-    const meta = state.viewer?.board?.net_meta?.[net];
-    return NET_COLORS[meta?.class || 'signal'] || NET_COLORS.other;
+  function updateHeader() {
+    const s = state.snap?.session || {};
+    $('#hdrMeta').textContent =
+      `${state.snap?.preset || '—'} · ${s.components || 0} parts · ${s.movable || 0} free · ${s.locked || 0} locked · ${s.nets || 0} nets`;
   }
 
-  function drawBoard() {
-    const canvas = $('#boardCanvas');
-    if (!canvas) return;
-    const data = state.viewer;
-    const ctx = canvas.getContext('2d');
-    const parent = canvas.parentElement;
-    const rect = { width: parent.clientWidth, height: Math.max(200, parent.clientHeight - 70) };
-    // account for header/footer roughly via flex — use canvas client box
-    const cr = canvas.getBoundingClientRect();
-    const w = cr.width || rect.width;
-    const h = cr.height || 400;
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0b0f14';
-    ctx.fillRect(0, 0, w, h);
-
-    if (!data?.board) {
-      ctx.fillStyle = '#8b9bb4';
-      ctx.font = '13px system-ui';
-      ctx.fillText('Load a preset to see the board', 24, 40);
-      $('#boardStats').textContent = 'No board';
-      return;
-    }
-
-    const comps = data.board.components || [];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const c of comps) {
-      minX = Math.min(minX, c.x - c.w / 2);
-      maxX = Math.max(maxX, c.x + c.w / 2);
-      minY = Math.min(minY, c.y - c.h / 2);
-      maxY = Math.max(maxY, c.y + c.h / 2);
-    }
-    if (!isFinite(minX)) {
-      minX = 0; minY = 0;
-      maxX = data.board.width_mm || 50;
-      maxY = data.board.height_mm || 40;
-    }
-    const pad = 2;
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-    const bw = maxX - minX, bh = maxY - minY;
-    const scale = 0.9 * Math.min(w / bw, h / bh);
-    const ox = w / 2 - scale * (minX + maxX) / 2;
-    const oy = h / 2 + scale * (minY + maxY) / 2;
-    const tx = (x, y) => [ox + scale * x, oy - scale * y];
-
-    ctx.strokeStyle = '#3a4a60';
-    ctx.lineWidth = 1;
-    const [x0, y0] = tx(minX + pad, minY + pad);
-    const [x1, y1] = tx(maxX - pad, maxY - pad);
-    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
-
-    const layersOn = new Set($$('#layerToggles input:checked').map(e => e.dataset.layer));
-    const rname = $('#routeSel').value;
-    const route = data.routes?.[rname];
-
-    if ($('#showEMI').checked && data.emi_geometry?.primitives) {
-      for (const p of data.emi_geometry.primitives) {
-        if (p.kind !== 'box') continue;
-        const [cx, cy] = tx(p.cx_mm, p.cy_mm);
-        ctx.globalAlpha = 0.22;
-        ctx.fillStyle = '#c0a060';
-        ctx.fillRect(cx - (p.w_mm * scale) / 2, cy - (p.h_mm * scale) / 2, p.w_mm * scale, p.h_mm * scale);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    if ($('#showRoutes').checked && route?.segments) {
-      for (const s of route.segments) {
-        if (layersOn.size && !layersOn.has(s.layer)) continue;
-        const a = tx(s.x1, s.y1), b = tx(s.x2, s.y2);
-        ctx.strokeStyle = netColor(s.net);
-        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.2);
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(a[0], a[1]);
-        ctx.lineTo(b[0], b[1]);
-        ctx.stroke();
-      }
-    }
-
-    if ($('#showVias').checked && route?.vias) {
-      for (const v of route.vias) {
-        const [x, y] = tx(v.x, v.y);
-        ctx.beginPath();
-        ctx.arc(x, y, Math.max(2, (v.size_mm || 0.6) * scale / 2), 0, Math.PI * 2);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
-
-    if ($('#showComps').checked) {
-      for (const c of comps) {
-        const [x, y] = tx(c.x, c.y);
-        const cw = Math.max(2, c.w * scale), ch = Math.max(2, c.h * scale);
-        ctx.fillStyle = c.locked ? '#6b4c7a' : '#4c78a8';
-        if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
-        if (c.ref && /^D\d/.test(c.ref)) ctx.fillStyle = '#f58518';
-        ctx.globalAlpha = 0.9;
-        ctx.fillRect(x - cw / 2, y - ch / 2, cw, ch);
-        ctx.globalAlpha = 1;
-        if (c.ref && !/^D\d/.test(c.ref)) {
-          ctx.fillStyle = '#fff';
-          ctx.font = '10px system-ui';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(c.ref, x, y);
-        }
-      }
-    }
-
-    const free = comps.filter(c => !c.locked).length;
-    let stats = `${comps.length} parts (${free} free) · ${Object.keys(data.board.nets || {}).length} nets`;
-    if (route) {
-      stats += ` · ${rname}: ${fmt(route.total_length_mm)} mm, ${route.via_count} vias, ${(route.segments || []).length} segs`;
-    }
-    $('#boardStats').textContent = stats;
-    state.boardDirty = false;
-  }
-
-  // ---------- Jobs ----------
   async function startJob(type, extra = {}) {
-    if (!state.live) {
-      alert('Start the server:\n  physics-router serve --port 8765');
-      return;
-    }
+    if (!state.live) return alert('Start: physics-router serve --port 8765');
     const params = { ...extra };
     if (type === 'place' || type === 'pipeline') {
-      const cand = $('#rtCand')?.value;
-      const sa = $('#rtSa')?.value;
+      const cand = $('#rtCand')?.value, sa = $('#rtSa')?.value;
       if (cand) params.num_candidates = parseInt(cand, 10);
       if (sa) params.sa_iterations = parseInt(sa, 10);
       if (type === 'pipeline') {
-        params.place_params = {
-          num_candidates: params.num_candidates || 4,
-          sa_iterations: params.sa_iterations || 800,
-        };
+        params.place_params = { num_candidates: params.num_candidates || 4, sa_iterations: params.sa_iterations || 600 };
         params.route_clearance_params = {
           clearance_mm: parseFloat($('#rtClear')?.value || '0.2'),
           grid_mm: parseFloat($('#rtGrid')?.value || '0.5'),
@@ -856,71 +986,40 @@
     await pollOnce(true);
   }
 
-  function updateHeader() {
-    const s = state.snap?.session || {};
-    $('#hdrMeta').textContent =
-      `${state.snap?.preset || '—'} · ${s.components || 0} parts · ${s.movable || 0} free · ${s.nets || 0} nets`;
-  }
-
-  // ---------- Poll: never re-render step panel or destroy chart ----------
   async function pollOnce(forceViewer = false) {
     if (!state.live || state.pollBusy) return;
     state.pollBusy = true;
     try {
-      const prevRoutes = JSON.stringify(Object.keys(state.snap?.routes || {}));
+      const prevRouteKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
       const prevScore = state.chartKey;
       state.snap = await api('/api/snapshot');
       updateHeader();
       updateJobsDock();
 
       const jobs = state.snap.jobs || [];
-      const justFinished = jobs.some(j =>
-        j.status === 'done' && j.ended_at && (Date.now() / 1000 - j.ended_at) < 3
-      );
+      const justFinished = jobs.some(j => j.status === 'done' && j.ended_at && (Date.now() / 1000 - j.ended_at) < 4);
       const running = jobs.some(j => j.status === 'running' || j.status === 'pending');
+      const routeKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
 
-      if (forceViewer || justFinished || !state.viewer) {
+      if (forceViewer || justFinished || !state.viewer || routeKeys !== prevRouteKeys) {
         state.viewer = await api('/api/viewer-data');
         updateRouteSelect();
         if (!state.layersBuilt) updateLayers();
         updateMetrics();
-        drawBoard();
+        state.sceneKey = '';
+        rebuildScene();
       } else if (running) {
-        // light metrics from snapshot only
         updateMetrics();
       } else {
-        // snapshot may have new score without full viewer
         const fp = scoreFingerprint(state.snap?.last_score?.score || {});
         if (fp && fp !== prevScore) {
           state.viewer = await api('/api/viewer-data');
-          updateRouteSelect();
           updateMetrics();
-          drawBoard();
+          state.sceneKey = '';
+          rebuildScene();
         }
       }
-
-      const newRoutes = JSON.stringify(Object.keys(state.snap?.routes || {}));
-      if (newRoutes !== prevRoutes) {
-        state.viewer = await api('/api/viewer-data');
-        updateRouteSelect();
-        updateMetrics();
-        drawBoard();
-      }
-
-      // mark completed steps softly
-      const hasScore = !!(state.snap?.last_score);
-      const hasPlace = !!(state.snap?.last_placement);
-      const hasRoute = Object.keys(state.snap?.routes || {}).length > 0;
-      $$('#steps .step').forEach((el, idx) => {
-        let done = false;
-        if (idx === 0) done = !!state.snap?.preset;
-        if (idx === 1) done = hasScore || hasPlace;
-        if (idx === 2) done = hasRoute;
-        if (idx === 3) done = hasScore && (state.snap?.last_score?.score?.spice_score != null);
-        if (idx < state.step) done = true;
-        el.classList.toggle('done', done && idx !== state.step);
-      });
-    } catch (e) {
+    } catch {
       $('#apiPill').textContent = 'API error';
       $('#apiPill').className = 'pill err';
     } finally {
@@ -929,14 +1028,18 @@
   }
 
   async function boot() {
-    $$('#steps .step').forEach(btn => {
-      btn.addEventListener('click', () => setStep(parseInt(btn.dataset.step, 10)));
+    initThree();
+    $$('#steps .step').forEach(btn => btn.addEventListener('click', () => setStep(+btn.dataset.step)));
+    ['showComps', 'showRoutes', 'showVias', 'showEMI', 'showLabels', 'showBoard'].forEach(id => {
+      $(`#${id}`).addEventListener('change', () => {
+        if (id === 'showLabels') { state.sceneKey = ''; rebuildScene(); }
+        else applyVisibility();
+      });
     });
-    ['routeSel', 'showComps', 'showRoutes', 'showVias', 'showEMI'].forEach(id => {
-      $(`#${id}`).addEventListener('change', drawBoard);
-    });
-    $('#layerToggles').addEventListener('change', drawBoard);
-    window.addEventListener('resize', () => drawBoard());
+    $('#routeSel').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
+    $('#layerToggles').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
+    $('#btnResetCam').addEventListener('click', () => { state.sceneKey = ''; rebuildScene(); });
+    window.addEventListener('resize', () => { resizeThree(); });
 
     try {
       await api('/api/health');
@@ -944,16 +1047,19 @@
       $('#apiPill').textContent = 'live';
       $('#apiPill').className = 'pill ok';
       state.snap = await api('/api/snapshot');
+      // Ensure HALO default if server started before this change
+      if (state.snap.preset !== 'halo-90' && (state.snap.presets || []).some(p => p.id === 'halo-90')) {
+        state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: 'halo-90' }) });
+      }
       state.viewer = await api('/api/viewer-data');
       updateHeader();
       updateLayers();
       updateRouteSelect();
       updateMetrics();
       renderStepPanel();
-      drawBoard();
+      rebuildScene();
       updateJobsDock();
 
-      // Poll jobs often when busy, slower when idle — never full-page refresh
       const tick = async () => {
         const busy = (state.snap?.jobs || []).some(j => j.status === 'running' || j.status === 'pending');
         await pollOnce(false);
@@ -976,18 +1082,17 @@
             routes: state.viewer.routes || {},
             last_score: state.viewer.physics,
             jobs: [],
-            presets: [],
+            presets: [{ id: 'halo-90', label: 'HALO-90' }],
           };
           updateHeader();
           updateLayers();
           updateRouteSelect();
           updateMetrics();
           renderStepPanel();
-          drawBoard();
+          rebuildScene();
         }
-      } catch (_) {
+      } catch {
         renderStepPanel();
-        drawBoard();
       }
     }
   }

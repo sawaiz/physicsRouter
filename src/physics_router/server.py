@@ -135,7 +135,13 @@ class AppState:
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
         WORK_DIR.mkdir(parents=True, exist_ok=True)
-        self._load_preset("synthetic")
+        # Prefer HALO-90 when the open test project is present
+        if HALO_CFG.exists() and HALO_PCB.exists():
+            self._load_preset("halo-90")
+        elif HALO_CFG.exists():
+            self._load_preset("halo-90")
+        else:
+            self._load_preset("synthetic")
 
     def log(self, job: Job, msg: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -873,30 +879,32 @@ class AppState:
 
 
 def list_presets() -> list[dict[str, Any]]:
-    presets = [
+    presets: list[dict[str, Any]] = []
+    if HALO_CFG.exists():
+        presets.append(
+            {
+                "id": "halo-90",
+                "label": "HALO-90 wearable (default)",
+                "has_pcb": HALO_PCB.exists(),
+                "config": str(HALO_CFG.relative_to(ROOT)),
+                "pcb": str(HALO_PCB.relative_to(ROOT)) if HALO_PCB.exists() else None,
+            }
+        )
+    presets.append(
         {
             "id": "synthetic",
             "label": "Synthetic demo_buck",
             "has_pcb": False,
             "config": "built-in",
-        },
-        {
-            "id": "demo",
-            "label": "examples/placement_config.yaml",
-            "has_pcb": False,
-            "config": str((EXAMPLES / "placement_config.yaml").relative_to(ROOT))
-            if (EXAMPLES / "placement_config.yaml").exists()
-            else None,
-        },
-    ]
-    if HALO_CFG.exists():
+        }
+    )
+    if (EXAMPLES / "placement_config.yaml").exists():
         presets.append(
             {
-                "id": "halo-90",
-                "label": "HALO-90 wearable",
-                "has_pcb": HALO_PCB.exists(),
-                "config": str(HALO_CFG.relative_to(ROOT)),
-                "pcb": str(HALO_PCB.relative_to(ROOT)) if HALO_PCB.exists() else None,
+                "id": "demo",
+                "label": "examples/placement_config.yaml",
+                "has_pcb": False,
+                "config": str((EXAMPLES / "placement_config.yaml").relative_to(ROOT)),
             }
         )
     return presets
