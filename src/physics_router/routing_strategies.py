@@ -171,6 +171,7 @@ def multilayer_route(
     allow_vias: bool = True,
     guide_only: bool = False,
     use_layer_directions: bool = True,
+    progress_cb=None,
 ) -> RouteResult:
     """DRC-aware multilayer route using KiCad rules + research heuristics.
 
@@ -209,6 +210,8 @@ def multilayer_route(
             # through vias still allowed when blind/buried disabled
         ),
         guide_only=False,
+        soft_fallback=False,  # never paint illegal copper
+        progress_cb=progress_cb,
     )
 
     # Dayan-style rubberband cleanup (shorten free-angle paths under DRC clearance)

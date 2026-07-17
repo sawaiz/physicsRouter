@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Physics budget — synthetic — physicsRouter</title>
+  <title>Physics budget — halo-90 — physicsRouter</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -45,7 +45,7 @@
 </head>
 <body>
   <header>
-    <h1>Physics budget — synthetic</h1>
+    <h1>Physics budget — halo-90</h1>
     <div>
       <a href="index.html">Open interactive viewer →</a>
     </div>
@@ -53,12 +53,12 @@
   <main>
     <section class="card">
       <h2>Total physics cost</h2>
-      <div class="total">11289.44</div>
+      <div class="total">126658.86</div>
       <p class="muted">Lower is better (weighted multi-objective)</p>
     </section>
     <section class="card">
       <h2>Board</h2>
-      <ul class="muted"><li><strong>label:</strong> synthetic</li></ul>
+      <ul class="muted"><li><strong>board_source:</strong> pcb</li><li><strong>pcb_path:</strong> /Users/sawaiz/physicsRouter/third_party/halo-90/pcb/halo-90.kicad_pcb</li><li><strong>components:</strong> 111</li><li><strong>nets:</strong> 23</li><li><strong>movable:</strong> 90</li><li><strong>locked:</strong> 21</li><li><strong>copper_layers:</strong> ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']</li></ul>
     </section>
     <section class="card wide">
       <h2>Score breakdown</h2>
@@ -66,41 +66,23 @@
     </section>
     <section class="card">
       <h2>IR / EMI / loop notes</h2>
-      <ul><li>ir_drop ok</li><li>loop_L buck1:80.1nH</li><li>return_path nets=4 gnd_centroid=(17.8,19.0)</li><li>matrix_match n/a</li><li>spice_proxy L≈14.53nH loop_area=330.0mm² power_len=85.0mm; ngspice_ok</li><li>em_proxy emi=254.50; em_nets=2; openEMS_binary_present(export_via_cli)</li></ul>
+      <ul><li>ir_drop ok</li><li>loop_L coin_cell:27.3nH,charlieplex:77.4nH</li><li>return_path nets=12 gnd_centroid=(0.3,1.6)</li><li>matrix_match CPX:skew=9.2mm(24%),charlieplex:skew=9.2mm(24%)</li><li>spice_proxy L≈18.12nH loop_area=512.9mm² power_len=38.2mm; ngspice_ok</li><li>em_proxy emi=3342.50; em_nets=10; openEMS_binary_present(export_via_cli)</li></ul>
     </section>
     <section class="card">
       <h2>Route variants</h2>
       <table>
         <thead><tr><th>Name</th><th>Length mm</th><th>Vias</th><th>Viol.</th><th>Unrouted</th></tr></thead>
-        <tbody><tr><td>topor</td><td>180.2430475795562</td><td>0</td><td>12</td><td>0</td></tr><tr><td>guide</td><td>180.2430475795562</td><td>0</td><td>12</td><td>0</td></tr></tbody>
+        <tbody><tr><td>guide</td><td>942.4607699611097</td><td>0</td><td>207</td><td>0</td></tr><tr><td>topor</td><td>942.5952515847507</td><td>0</td><td>206</td><td>0</td></tr></tbody>
       </table>
     </section>
     <section class="card wide">
       <h2>TopoR vs FreeRouting</h2>
-      <pre class='cmp'>{
-  "topor": {
-    "source": "examples/demo/topor_route.json",
-    "total_length_mm": 180.2430475795562,
-    "via_count": 0,
-    "segments": 12,
-    "unrouted_nets": [],
-    "clearance_violations": 12,
-    "notes": [
-      "clearance_mm=0.2 free_angle+via layers=['F.Cu', 'B.Cu']"
-    ]
-  },
-  "winner": {},
-  "deltas": {},
-  "freerouting": null,
-  "notes": [
-    "No freerouting result provided. Run FreeRouting on the exported DSN and re-run compare with --ses or --baseline-json."
-  ]
-}</pre>
+      <p class='muted'>Run <code>physics-router compare-routes</code> to populate.</p>
     </section>
   </main>
   <script>
     const labels = ["weighted_wirelength", "power_loop_area", "critical_net_length", "overlap_penalty", "region_violation", "density_congestion", "thermal_spread", "emi_proxy", "spice_score", "openems_score", "ir_drop", "loop_inductance", "return_path", "matrix_length_match"];
-    const values = [1664.5, 330.0, 1664.5, 6.645187500000004, 0.0, 0.59984375, 0.00485071250072666, 254.5, 9.794397547853903, 353.5, 0.0, 80.12310181281595, 148.9495532385217, 0.0];
+    const values = [3889.888905376605, 512.8930187759544, 9133.044526883028, 807.8229669693277, 0.0, 20.843333333333334, 0.0, 3342.4957856505575, 9.499793813089742, 3496.363691283344, 0.0, 104.62875130236961, 359.08864107517616, 27.193434207742598];
     new Chart(document.getElementById('scoreChart'), {
       type: 'bar',
       data: {

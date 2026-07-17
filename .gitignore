@@ -34,3 +34,4 @@ viewer/runs/
 viewer/assets/*.glb
 viewer/assets/*.step
 viewer/assets/*.stp
+viewer/assets/*_routed*.kicad_pcb

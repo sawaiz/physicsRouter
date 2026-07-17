@@ -1,316 +1,2505 @@
 {
   "version": 1,
   "board": {
-    "width_mm": 50.0,
-    "height_mm": 40.0,
+    "width_mm": 24.0,
+    "height_mm": 26.0,
     "copper_layers": [
       "F.Cu",
+      "In1.Cu",
+      "In2.Cu",
       "B.Cu"
     ],
     "components": [
       {
-        "ref": "U1",
-        "x": 15.0,
-        "y": 20.0,
+        "ref": "TP6",
+        "x": -6.2,
+        "y": 1.0,
         "rot": 0.0,
-        "w": 5.0,
-        "h": 4.0,
+        "w": 1.0,
+        "h": 1.0,
         "layer": "F.Cu",
-        "footprint": "Package_SO:SOIC-8",
-        "locked": false
-      },
-      {
-        "ref": "L1",
-        "x": 20.0,
-        "y": 18.0,
-        "rot": 0.0,
-        "w": 2.0,
-        "h": 1.2,
-        "layer": "F.Cu",
-        "footprint": "Inductor_SMD:L_0805",
-        "locked": false
-      },
-      {
-        "ref": "C_IN",
-        "x": 12.0,
-        "y": 15.0,
-        "rot": 0.0,
-        "w": 2.0,
-        "h": 1.2,
-        "layer": "F.Cu",
-        "footprint": "Capacitor_SMD:C_0805",
-        "locked": false
-      },
-      {
-        "ref": "C_OUT",
-        "x": 25.0,
-        "y": 15.0,
-        "rot": 0.0,
-        "w": 2.0,
-        "h": 1.2,
-        "layer": "F.Cu",
-        "footprint": "Capacitor_SMD:C_0805",
-        "locked": false
-      },
-      {
-        "ref": "D1",
-        "x": 18.0,
-        "y": 25.0,
-        "rot": 0.0,
-        "w": 2.5,
-        "h": 1.5,
-        "layer": "F.Cu",
-        "footprint": "Diode_SMD:D_SOD-123",
-        "locked": false
-      },
-      {
-        "ref": "X1",
-        "x": 35.0,
-        "y": 30.0,
-        "rot": 0.0,
-        "w": 3.2,
-        "h": 2.5,
-        "layer": "F.Cu",
-        "footprint": "Crystal:Crystal_SMD",
-        "locked": false
-      },
-      {
-        "ref": "U2",
-        "x": 35.0,
-        "y": 25.0,
-        "rot": 0.0,
-        "w": 9.0,
-        "h": 9.0,
-        "layer": "F.Cu",
-        "footprint": "Package_QFP:LQFP-48",
-        "locked": false
-      },
-      {
-        "ref": "J1",
-        "x": 2.0,
-        "y": 20.0,
-        "rot": 0.0,
-        "w": 9.0,
-        "h": 8.0,
-        "layer": "F.Cu",
-        "footprint": "Connector:USB_C",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
         "locked": true
       },
       {
-        "ref": "R_AIN",
-        "x": 40.0,
-        "y": 10.0,
+        "ref": "D30",
+        "x": 9.8867,
+        "y": -4.8221,
+        "rot": 26.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D70",
+        "x": -10.9397,
+        "y": 1.1498,
+        "rot": -174.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D49",
+        "x": -2.287,
+        "y": -10.7596,
+        "rot": 102.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "R3",
+        "x": 5.1,
+        "y": 0.0,
+        "rot": 180.0,
+        "w": 1.6,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "passives:R-0402",
+        "locked": true
+      },
+      {
+        "ref": "U1",
+        "x": 0.0,
+        "y": 0.0,
+        "rot": -135.0,
+        "w": 4.075,
+        "h": 4.3,
+        "layer": "F.Cu",
+        "footprint": "STM8L15xxx:UFQFPN28",
+        "locked": true
+      },
+      {
+        "ref": "D12",
+        "x": 7.6412,
+        "y": 7.9127,
+        "rot": -46.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D76",
+        "x": -9.5263,
+        "y": 5.5,
+        "rot": -150.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D43",
+        "x": 2.287,
+        "y": -10.7596,
+        "rot": 78.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D21",
+        "x": 10.8329,
+        "y": 1.9101,
+        "rot": -10.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D67",
+        "x": -10.9397,
+        "y": -1.1498,
+        "rot": 174.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D47",
+        "x": -0.7673,
+        "y": -10.9732,
+        "rot": 94.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D83",
+        "x": -5.8291,
+        "y": 9.3285,
+        "rot": -122.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D90",
+        "x": -0.7673,
+        "y": 10.9732,
+        "rot": -94.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D31",
+        "x": 9.5263,
+        "y": -5.5,
+        "rot": 30.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "MH2",
+        "x": -2.8,
+        "y": -5.5,
+        "rot": 0.0,
+        "w": 1.3,
+        "h": 1.3,
+        "layer": "F.Cu",
+        "footprint": "tooling:1.152mm-ToolingHole",
+        "locked": true
+      },
+      {
+        "ref": "C1",
+        "x": 2.7,
+        "y": 3.6,
+        "rot": -90.0,
+        "w": 1.6,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "passives:C-0402",
+        "locked": true
+      },
+      {
+        "ref": "D50",
+        "x": -3.032,
+        "y": -10.5739,
+        "rot": 106.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D51",
+        "x": -3.7622,
+        "y": -10.3366,
+        "rot": 110.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "U2",
+        "x": 0.0,
+        "y": 4.8,
+        "rot": 0.0,
+        "w": 2.95,
+        "h": 2.45,
+        "layer": "F.Cu",
+        "footprint": "LSM6DSM:LGA-14_3x2.5mm_6-6",
+        "locked": true
+      },
+      {
+        "ref": "D32",
+        "x": 9.1194,
+        "y": -6.1511,
+        "rot": 34.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D40",
+        "x": 4.4741,
+        "y": -10.049,
+        "rot": 66.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D26",
+        "x": 10.8329,
+        "y": -1.9101,
+        "rot": 10.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D33",
+        "x": 8.6681,
+        "y": -6.7723,
+        "rot": 38.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D36",
+        "x": 7.0707,
+        "y": -8.4265,
+        "rot": 50.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D34",
+        "x": 8.1746,
+        "y": -7.3604,
+        "rot": 42.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D20",
+        "x": 10.6733,
+        "y": 2.6611,
+        "rot": -14.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D87",
+        "x": -3.032,
+        "y": 10.5739,
+        "rot": -106.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D62",
+        "x": -9.8867,
+        "y": -4.8221,
+        "rot": 154.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D89",
+        "x": -1.5309,
+        "y": 10.8929,
+        "rot": -98.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D25",
+        "x": 10.9397,
+        "y": -1.1498,
+        "rot": 6.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D28",
+        "x": 10.4616,
+        "y": -3.3992,
+        "rot": 18.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D71",
+        "x": -10.8329,
+        "y": 1.9101,
+        "rot": -170.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D42",
+        "x": 3.032,
+        "y": -10.5739,
+        "rot": 74.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D59",
+        "x": -8.6681,
+        "y": -6.7723,
+        "rot": 142.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "C2",
+        "x": -2.7,
+        "y": 3.6,
+        "rot": -90.0,
+        "w": 1.6,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "passives:C-0402",
+        "locked": true
+      },
+      {
+        "ref": "D85",
+        "x": -4.4741,
+        "y": 10.049,
+        "rot": -114.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D11",
+        "x": 7.0707,
+        "y": 8.4265,
+        "rot": -50.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "TP1",
+        "x": -6.2,
+        "y": -1.0,
+        "rot": 0.0,
+        "w": 1.0,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
+        "locked": true
+      },
+      {
+        "ref": "D44",
+        "x": 1.5309,
+        "y": -10.8929,
+        "rot": 82.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D18",
+        "x": 10.199,
+        "y": 4.1207,
+        "rot": -22.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "TP3",
+        "x": 2.8,
+        "y": 5.5,
+        "rot": 0.0,
+        "w": 1.0,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
+        "locked": true
+      },
+      {
+        "ref": "D16",
+        "x": 9.5263,
+        "y": 5.5,
+        "rot": -30.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D55",
+        "x": -6.4656,
+        "y": -8.8992,
+        "rot": 126.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D52",
+        "x": -4.4741,
+        "y": -10.049,
+        "rot": 114.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D10",
+        "x": 6.4656,
+        "y": 8.8992,
+        "rot": -54.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D77",
+        "x": -9.1194,
+        "y": 6.1511,
+        "rot": -146.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D58",
+        "x": -8.1746,
+        "y": -7.3604,
+        "rot": 138.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "TP2",
+        "x": 6.2,
+        "y": 1.0,
+        "rot": 0.0,
+        "w": 1.0,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
+        "locked": true
+      },
+      {
+        "ref": "D73",
+        "x": -10.4616,
+        "y": 3.3992,
+        "rot": -162.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D88",
+        "x": -2.287,
+        "y": 10.7596,
+        "rot": -102.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "R1",
+        "x": -1.3,
+        "y": 3.1,
+        "rot": 180.0,
+        "w": 1.6,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "passives:R-0402",
+        "locked": true
+      },
+      {
+        "ref": "D66",
+        "x": -10.8329,
+        "y": -1.9101,
+        "rot": 170.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D7",
+        "x": 4.4741,
+        "y": 10.049,
+        "rot": -66.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D17",
+        "x": 9.8867,
+        "y": 4.8221,
+        "rot": -26.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D5",
+        "x": 3.032,
+        "y": 10.5739,
+        "rot": -74.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "R2",
+        "x": 1.3,
+        "y": 3.1,
         "rot": 0.0,
         "w": 1.6,
-        "h": 0.8,
+        "h": 1.0,
         "layer": "F.Cu",
-        "footprint": "Resistor_SMD:R_0603",
-        "locked": false
+        "footprint": "passives:R-0402",
+        "locked": true
+      },
+      {
+        "ref": "S1",
+        "x": -4.25,
+        "y": 0.0,
+        "rot": 0.0,
+        "w": 3.8,
+        "h": 1.5,
+        "layer": "F.Cu",
+        "footprint": "KXT3:KXT3",
+        "locked": true
+      },
+      {
+        "ref": "D80",
+        "x": -7.6412,
+        "y": 7.9127,
+        "rot": -134.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D23",
+        "x": 10.9933,
+        "y": 0.3839,
+        "rot": -2.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "MH4",
+        "x": 5.5,
+        "y": 2.8,
+        "rot": 0.0,
+        "w": 1.3,
+        "h": 1.3,
+        "layer": "F.Cu",
+        "footprint": "tooling:1.152mm-ToolingHole",
+        "locked": true
+      },
+      {
+        "ref": "D74",
+        "x": -10.199,
+        "y": 4.1207,
+        "rot": -158.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D60",
+        "x": -9.1194,
+        "y": -6.1511,
+        "rot": 146.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D13",
+        "x": 8.1746,
+        "y": 7.3604,
+        "rot": -42.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D29",
+        "x": 10.199,
+        "y": -4.1207,
+        "rot": 22.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D14",
+        "x": 8.6681,
+        "y": 6.7723,
+        "rot": -38.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D1",
+        "x": 0.0,
+        "y": 11.0,
+        "rot": -90.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D3",
+        "x": 1.5309,
+        "y": 10.8929,
+        "rot": -82.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D22",
+        "x": 10.9397,
+        "y": 1.1498,
+        "rot": -6.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D46",
+        "x": 0.0,
+        "y": -11.0,
+        "rot": 90.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D37",
+        "x": 6.4656,
+        "y": -8.8992,
+        "rot": 54.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D63",
+        "x": -10.199,
+        "y": -4.1207,
+        "rot": 158.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "MH1",
+        "x": 2.8,
+        "y": -5.5,
+        "rot": 0.0,
+        "w": 1.3,
+        "h": 1.3,
+        "layer": "F.Cu",
+        "footprint": "tooling:1.152mm-ToolingHole",
+        "locked": true
+      },
+      {
+        "ref": "D78",
+        "x": -8.6681,
+        "y": 6.7723,
+        "rot": -142.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "MH3",
+        "x": -5.5,
+        "y": 2.8,
+        "rot": 0.0,
+        "w": 1.3,
+        "h": 1.3,
+        "layer": "F.Cu",
+        "footprint": "tooling:1.152mm-ToolingHole",
+        "locked": true
+      },
+      {
+        "ref": "D86",
+        "x": -3.7622,
+        "y": 10.3366,
+        "rot": -110.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D84",
+        "x": -5.1642,
+        "y": 9.7124,
+        "rot": -118.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D53",
+        "x": -5.1642,
+        "y": -9.7124,
+        "rot": 118.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "TP4",
+        "x": -2.8,
+        "y": 5.5,
+        "rot": 0.0,
+        "w": 1.0,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
+        "locked": true
+      },
+      {
+        "ref": "D41",
+        "x": 3.7622,
+        "y": -10.3366,
+        "rot": 70.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D27",
+        "x": 10.6733,
+        "y": -2.6611,
+        "rot": 14.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D19",
+        "x": 10.4616,
+        "y": 3.3992,
+        "rot": -18.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D38",
+        "x": 5.8291,
+        "y": -9.3285,
+        "rot": 58.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D9",
+        "x": 5.8291,
+        "y": 9.3285,
+        "rot": -58.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D82",
+        "x": -6.4656,
+        "y": 8.8992,
+        "rot": -126.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D39",
+        "x": 5.1642,
+        "y": -9.7124,
+        "rot": 62.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D56",
+        "x": -7.0707,
+        "y": -8.4265,
+        "rot": 130.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "MK1",
+        "x": 0.0,
+        "y": -4.6,
+        "rot": 90.0,
+        "w": 2.25,
+        "h": 2.85,
+        "layer": "F.Cu",
+        "footprint": "SPW2430HR5H-B:SPW2430HR5H-B",
+        "locked": true
+      },
+      {
+        "ref": "D2",
+        "x": 0.7673,
+        "y": 10.9732,
+        "rot": -86.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D79",
+        "x": -8.1746,
+        "y": 7.3604,
+        "rot": -138.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D54",
+        "x": -5.8291,
+        "y": -9.3285,
+        "rot": 122.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D72",
+        "x": -10.6733,
+        "y": 2.6611,
+        "rot": -166.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D45",
+        "x": 0.7673,
+        "y": -10.9732,
+        "rot": 86.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D15",
+        "x": 9.1194,
+        "y": 6.1511,
+        "rot": -34.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D8",
+        "x": 5.1642,
+        "y": 9.7124,
+        "rot": -62.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D68",
+        "x": -10.9933,
+        "y": -0.3839,
+        "rot": 178.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D35",
+        "x": 7.6412,
+        "y": -7.9127,
+        "rot": 46.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D64",
+        "x": -10.4616,
+        "y": -3.3992,
+        "rot": 162.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "TP5",
+        "x": 6.2,
+        "y": -1.0,
+        "rot": 0.0,
+        "w": 1.0,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "tooling:TestPoint_Pad_D1.0mm",
+        "locked": true
+      },
+      {
+        "ref": "D6",
+        "x": 3.7622,
+        "y": 10.3366,
+        "rot": -70.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D48",
+        "x": -1.5309,
+        "y": -10.8929,
+        "rot": 98.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D57",
+        "x": -7.6412,
+        "y": -7.9127,
+        "rot": 134.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D61",
+        "x": -9.5263,
+        "y": -5.5,
+        "rot": 150.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D69",
+        "x": -10.9933,
+        "y": 0.3839,
+        "rot": -178.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D75",
+        "x": -9.8867,
+        "y": 4.8221,
+        "rot": -154.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D65",
+        "x": -10.6733,
+        "y": -2.6611,
+        "rot": 166.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D4",
+        "x": 2.287,
+        "y": 10.7596,
+        "rot": -78.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "H1",
+        "x": 0.0,
+        "y": -13.0,
+        "rot": 0.0,
+        "w": 1.5,
+        "h": 1.5,
+        "layer": "F.Cu",
+        "footprint": "earringHookWire:earringHookWire",
+        "locked": true
+      },
+      {
+        "ref": "D24",
+        "x": 10.9933,
+        "y": -0.3839,
+        "rot": 2.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "D81",
+        "x": -7.0707,
+        "y": 8.4265,
+        "rot": -130.0,
+        "w": 1.4500000000000002,
+        "h": 1.0,
+        "layer": "F.Cu",
+        "footprint": "BL-HUB37A-AV-TRB:D-0402",
+        "locked": true
+      },
+      {
+        "ref": "BT1",
+        "x": 0.0,
+        "y": 0.0,
+        "rot": 0.0,
+        "w": 24.0,
+        "h": 12.0,
+        "layer": "F.Cu",
+        "footprint": "BAT-HLD-001:BAT-HLD-001-HALO",
+        "locked": true
       }
     ],
     "nets": {
-      "+5V": [
+      "RX": [
+        {
+          "ref": "TP6",
+          "pad": "1"
+        },
+        {
+          "ref": "U1",
+          "pad": "16"
+        },
+        {
+          "ref": "U1",
+          "pad": "23"
+        }
+      ],
+      "CPX-7": [
+        {
+          "ref": "D30",
+          "pad": "1"
+        },
+        {
+          "ref": "D70",
+          "pad": "2"
+        },
+        {
+          "ref": "U1",
+          "pad": "3"
+        },
+        {
+          "ref": "D12",
+          "pad": "1"
+        },
+        {
+          "ref": "D21",
+          "pad": "1"
+        },
+        {
+          "ref": "D67",
+          "pad": "2"
+        },
+        {
+          "ref": "D83",
+          "pad": "1"
+        },
+        {
+          "ref": "D71",
+          "pad": "2"
+        },
+        {
+          "ref": "D66",
+          "pad": "2"
+        },
+        {
+          "ref": "D74",
+          "pad": "1"
+        },
+        {
+          "ref": "D3",
+          "pad": "1"
+        },
+        {
+          "ref": "D39",
+          "pad": "1"
+        },
+        {
+          "ref": "D72",
+          "pad": "2"
+        },
+        {
+          "ref": "D68",
+          "pad": "2"
+        },
+        {
+          "ref": "D64",
+          "pad": "2"
+        },
+        {
+          "ref": "D48",
+          "pad": "1"
+        },
+        {
+          "ref": "D57",
+          "pad": "1"
+        },
+        {
+          "ref": "D69",
+          "pad": "2"
+        },
+        {
+          "ref": "D65",
+          "pad": "2"
+        }
+      ],
+      "CPX-3": [
+        {
+          "ref": "D30",
+          "pad": "2"
+        },
+        {
+          "ref": "U1",
+          "pad": "5"
+        },
+        {
+          "ref": "D31",
+          "pad": "2"
+        },
+        {
+          "ref": "D51",
+          "pad": "1"
+        },
+        {
+          "ref": "D32",
+          "pad": "2"
+        },
+        {
+          "ref": "D33",
+          "pad": "2"
+        },
+        {
+          "ref": "D36",
+          "pad": "2"
+        },
+        {
+          "ref": "D34",
+          "pad": "2"
+        },
+        {
+          "ref": "D87",
+          "pad": "1"
+        },
+        {
+          "ref": "D25",
+          "pad": "1"
+        },
+        {
+          "ref": "D28",
+          "pad": "2"
+        },
+        {
+          "ref": "D42",
+          "pad": "1"
+        },
+        {
+          "ref": "D16",
+          "pad": "1"
+        },
+        {
+          "ref": "D7",
+          "pad": "1"
+        },
+        {
+          "ref": "D60",
+          "pad": "1"
+        },
+        {
+          "ref": "D29",
+          "pad": "2"
+        },
+        {
+          "ref": "D78",
+          "pad": "1"
+        },
+        {
+          "ref": "D35",
+          "pad": "2"
+        },
+        {
+          "ref": "D69",
+          "pad": "1"
+        }
+      ],
+      "CPX-2": [
+        {
+          "ref": "D70",
+          "pad": "1"
+        },
+        {
+          "ref": "U1",
+          "pad": "15"
+        },
+        {
+          "ref": "D43",
+          "pad": "1"
+        },
+        {
+          "ref": "D21",
+          "pad": "2"
+        },
+        {
+          "ref": "D26",
+          "pad": "2"
+        },
+        {
+          "ref": "D34",
+          "pad": "1"
+        },
+        {
+          "ref": "D20",
+          "pad": "2"
+        },
+        {
+          "ref": "D25",
+          "pad": "2"
+        },
+        {
+          "ref": "D52",
+          "pad": "1"
+        },
+        {
+          "ref": "D88",
+          "pad": "1"
+        },
+        {
+          "ref": "D17",
+          "pad": "1"
+        },
+        {
+          "ref": "D23",
+          "pad": "2"
+        },
+        {
+          "ref": "D22",
+          "pad": "2"
+        },
+        {
+          "ref": "D27",
+          "pad": "2"
+        },
+        {
+          "ref": "D19",
+          "pad": "2"
+        },
+        {
+          "ref": "D79",
+          "pad": "1"
+        },
+        {
+          "ref": "D8",
+          "pad": "1"
+        },
+        {
+          "ref": "D61",
+          "pad": "1"
+        },
+        {
+          "ref": "D24",
+          "pad": "2"
+        }
+      ],
+      "CPX-6": [
+        {
+          "ref": "D49",
+          "pad": "1"
+        },
+        {
+          "ref": "U1",
+          "pad": "11"
+        },
+        {
+          "ref": "D31",
+          "pad": "1"
+        },
+        {
+          "ref": "D40",
+          "pad": "1"
+        },
+        {
+          "ref": "D62",
+          "pad": "2"
+        },
+        {
+          "ref": "D59",
+          "pad": "2"
+        },
+        {
+          "ref": "D55",
+          "pad": "2"
+        },
+        {
+          "ref": "D58",
+          "pad": "2"
+        },
+        {
+          "ref": "D66",
+          "pad": "1"
+        },
+        {
+          "ref": "D60",
+          "pad": "2"
+        },
+        {
+          "ref": "D13",
+          "pad": "1"
+        },
+        {
+          "ref": "D22",
+          "pad": "1"
+        },
+        {
+          "ref": "D63",
+          "pad": "2"
+        },
+        {
+          "ref": "D84",
+          "pad": "1"
+        },
+        {
+          "ref": "D56",
+          "pad": "2"
+        },
+        {
+          "ref": "D57",
+          "pad": "2"
+        },
+        {
+          "ref": "D61",
+          "pad": "2"
+        },
+        {
+          "ref": "D75",
+          "pad": "1"
+        },
+        {
+          "ref": "D4",
+          "pad": "1"
+        }
+      ],
+      "CPX-5": [
+        {
+          "ref": "D49",
+          "pad": "2"
+        },
+        {
+          "ref": "U1",
+          "pad": "10"
+        },
+        {
+          "ref": "D76",
+          "pad": "1"
+        },
+        {
+          "ref": "D67",
+          "pad": "1"
+        },
+        {
+          "ref": "D47",
+          "pad": "2"
+        },
+        {
+          "ref": "D50",
+          "pad": "2"
+        },
+        {
+          "ref": "D51",
+          "pad": "2"
+        },
+        {
+          "ref": "D32",
+          "pad": "1"
+        },
+        {
+          "ref": "D85",
+          "pad": "1"
+        },
+        {
+          "ref": "D52",
+          "pad": "2"
+        },
+        {
+          "ref": "D58",
+          "pad": "1"
+        },
+        {
+          "ref": "D5",
+          "pad": "1"
+        },
+        {
+          "ref": "D23",
+          "pad": "1"
+        },
+        {
+          "ref": "D14",
+          "pad": "1"
+        },
+        {
+          "ref": "D46",
+          "pad": "2"
+        },
+        {
+          "ref": "D53",
+          "pad": "2"
+        },
+        {
+          "ref": "D41",
+          "pad": "1"
+        },
+        {
+          "ref": "D54",
+          "pad": "2"
+        },
+        {
+          "ref": "D48",
+          "pad": "2"
+        }
+      ],
+      "+3V": [
+        {
+          "ref": "R3",
+          "pad": "1"
+        },
+        {
+          "ref": "U1",
+          "pad": "7"
+        },
+        {
+          "ref": "C1",
+          "pad": "1"
+        },
+        {
+          "ref": "U2",
+          "pad": "1"
+        },
+        {
+          "ref": "U2",
+          "pad": "2"
+        },
+        {
+          "ref": "U2",
+          "pad": "3"
+        },
+        {
+          "ref": "U2",
+          "pad": "5"
+        },
+        {
+          "ref": "U2",
+          "pad": "8"
+        },
+        {
+          "ref": "U2",
+          "pad": "12"
+        },
+        {
+          "ref": "C2",
+          "pad": "1"
+        },
+        {
+          "ref": "R1",
+          "pad": "2"
+        },
+        {
+          "ref": "R2",
+          "pad": "2"
+        },
+        {
+          "ref": "TP4",
+          "pad": "1"
+        },
+        {
+          "ref": "MK1",
+          "pad": "4"
+        },
+        {
+          "ref": "BT1",
+          "pad": "1"
+        },
+        {
+          "ref": "BT1",
+          "pad": "1"
+        }
+      ],
+      "Net-(R3-Pad2)": [
+        {
+          "ref": "R3",
+          "pad": "2"
+        },
         {
           "ref": "U1",
           "pad": "1"
         },
         {
-          "ref": "C_OUT",
+          "ref": "TP5",
+          "pad": "1"
+        }
+      ],
+      "CPX-0": [
+        {
+          "ref": "U1",
+          "pad": "2"
+        },
+        {
+          "ref": "D90",
           "pad": "1"
         },
         {
+          "ref": "D36",
+          "pad": "1"
+        },
+        {
+          "ref": "D18",
+          "pad": "1"
+        },
+        {
+          "ref": "D7",
+          "pad": "2"
+        },
+        {
+          "ref": "D5",
+          "pad": "2"
+        },
+        {
+          "ref": "D1",
+          "pad": "2"
+        },
+        {
+          "ref": "D3",
+          "pad": "2"
+        },
+        {
+          "ref": "D63",
+          "pad": "1"
+        },
+        {
+          "ref": "D27",
+          "pad": "1"
+        },
+        {
+          "ref": "D9",
+          "pad": "2"
+        },
+        {
+          "ref": "D2",
+          "pad": "2"
+        },
+        {
+          "ref": "D54",
+          "pad": "1"
+        },
+        {
+          "ref": "D72",
+          "pad": "1"
+        },
+        {
+          "ref": "D45",
+          "pad": "1"
+        },
+        {
+          "ref": "D8",
+          "pad": "2"
+        },
+        {
+          "ref": "D6",
+          "pad": "2"
+        },
+        {
+          "ref": "D4",
+          "pad": "2"
+        },
+        {
+          "ref": "D81",
+          "pad": "1"
+        }
+      ],
+      "CPX-1": [
+        {
+          "ref": "U1",
+          "pad": "4"
+        },
+        {
+          "ref": "D12",
+          "pad": "2"
+        },
+        {
+          "ref": "D26",
+          "pad": "1"
+        },
+        {
+          "ref": "D62",
+          "pad": "1"
+        },
+        {
+          "ref": "D89",
+          "pad": "1"
+        },
+        {
+          "ref": "D71",
+          "pad": "1"
+        },
+        {
+          "ref": "D11",
+          "pad": "2"
+        },
+        {
+          "ref": "D44",
+          "pad": "1"
+        },
+        {
+          "ref": "D18",
+          "pad": "2"
+        },
+        {
+          "ref": "D16",
+          "pad": "2"
+        },
+        {
+          "ref": "D10",
+          "pad": "2"
+        },
+        {
+          "ref": "D17",
+          "pad": "2"
+        },
+        {
+          "ref": "D80",
+          "pad": "1"
+        },
+        {
+          "ref": "D13",
+          "pad": "2"
+        },
+        {
+          "ref": "D14",
+          "pad": "2"
+        },
+        {
+          "ref": "D53",
+          "pad": "1"
+        },
+        {
+          "ref": "D9",
+          "pad": "1"
+        },
+        {
+          "ref": "D15",
+          "pad": "2"
+        },
+        {
+          "ref": "D35",
+          "pad": "1"
+        }
+      ],
+      "MIC": [
+        {
+          "ref": "U1",
+          "pad": "8"
+        },
+        {
+          "ref": "MK1",
+          "pad": "1"
+        }
+      ],
+      "CPX-4": [
+        {
+          "ref": "U1",
+          "pad": "9"
+        },
+        {
+          "ref": "D43",
+          "pad": "2"
+        },
+        {
+          "ref": "D50",
+          "pad": "1"
+        },
+        {
+          "ref": "D40",
+          "pad": "2"
+        },
+        {
+          "ref": "D33",
+          "pad": "1"
+        },
+        {
+          "ref": "D42",
+          "pad": "2"
+        },
+        {
+          "ref": "D59",
+          "pad": "1"
+        },
+        {
+          "ref": "D44",
+          "pad": "2"
+        },
+        {
+          "ref": "D77",
+          "pad": "1"
+        },
+        {
+          "ref": "D37",
+          "pad": "2"
+        },
+        {
+          "ref": "D86",
+          "pad": "1"
+        },
+        {
+          "ref": "D41",
+          "pad": "2"
+        },
+        {
+          "ref": "D38",
+          "pad": "2"
+        },
+        {
+          "ref": "D39",
+          "pad": "2"
+        },
+        {
+          "ref": "D45",
+          "pad": "2"
+        },
+        {
+          "ref": "D15",
+          "pad": "1"
+        },
+        {
+          "ref": "D68",
+          "pad": "1"
+        },
+        {
+          "ref": "D6",
+          "pad": "1"
+        },
+        {
+          "ref": "D24",
+          "pad": "1"
+        }
+      ],
+      "SW-A": [
+        {
+          "ref": "U1",
+          "pad": "13"
+        },
+        {
+          "ref": "S1",
+          "pad": "1"
+        }
+      ],
+      "TX": [
+        {
+          "ref": "U1",
+          "pad": "14"
+        },
+        {
+          "ref": "U1",
+          "pad": "24"
+        },
+        {
+          "ref": "TP1",
+          "pad": "1"
+        }
+      ],
+      "CPX-9": [
+        {
+          "ref": "U1",
+          "pad": "17"
+        },
+        {
+          "ref": "D83",
+          "pad": "2"
+        },
+        {
+          "ref": "D90",
+          "pad": "2"
+        },
+        {
+          "ref": "D87",
+          "pad": "2"
+        },
+        {
+          "ref": "D89",
+          "pad": "2"
+        },
+        {
+          "ref": "D28",
+          "pad": "1"
+        },
+        {
+          "ref": "D85",
+          "pad": "2"
+        },
+        {
+          "ref": "D55",
+          "pad": "1"
+        },
+        {
+          "ref": "D10",
+          "pad": "1"
+        },
+        {
+          "ref": "D73",
+          "pad": "1"
+        },
+        {
+          "ref": "D88",
+          "pad": "2"
+        },
+        {
+          "ref": "D1",
+          "pad": "1"
+        },
+        {
+          "ref": "D46",
+          "pad": "1"
+        },
+        {
+          "ref": "D37",
+          "pad": "1"
+        },
+        {
+          "ref": "D86",
+          "pad": "2"
+        },
+        {
+          "ref": "D84",
+          "pad": "2"
+        },
+        {
+          "ref": "D19",
+          "pad": "1"
+        },
+        {
+          "ref": "D82",
+          "pad": "2"
+        },
+        {
+          "ref": "D64",
+          "pad": "1"
+        }
+      ],
+      "SW-B": [
+        {
+          "ref": "U1",
+          "pad": "18"
+        },
+        {
+          "ref": "S1",
+          "pad": "2"
+        }
+      ],
+      "CPX-8": [
+        {
+          "ref": "U1",
+          "pad": "19"
+        },
+        {
+          "ref": "D76",
+          "pad": "2"
+        },
+        {
+          "ref": "D47",
+          "pad": "1"
+        },
+        {
+          "ref": "D20",
+          "pad": "1"
+        },
+        {
+          "ref": "D11",
+          "pad": "1"
+        },
+        {
+          "ref": "D77",
+          "pad": "2"
+        },
+        {
+          "ref": "D73",
+          "pad": "2"
+        },
+        {
+          "ref": "D80",
+          "pad": "2"
+        },
+        {
+          "ref": "D74",
+          "pad": "2"
+        },
+        {
+          "ref": "D29",
+          "pad": "1"
+        },
+        {
+          "ref": "D78",
+          "pad": "2"
+        },
+        {
+          "ref": "D38",
+          "pad": "1"
+        },
+        {
+          "ref": "D82",
+          "pad": "1"
+        },
+        {
+          "ref": "D56",
+          "pad": "1"
+        },
+        {
+          "ref": "D2",
+          "pad": "1"
+        },
+        {
+          "ref": "D79",
+          "pad": "2"
+        },
+        {
+          "ref": "D75",
+          "pad": "2"
+        },
+        {
+          "ref": "D65",
+          "pad": "1"
+        },
+        {
+          "ref": "D81",
+          "pad": "2"
+        }
+      ],
+      "XL-INT1": [
+        {
+          "ref": "U1",
+          "pad": "20"
+        },
+        {
           "ref": "U2",
-          "pad": "VDD"
+          "pad": "4"
+        }
+      ],
+      "SDA": [
+        {
+          "ref": "U1",
+          "pad": "21"
+        },
+        {
+          "ref": "U2",
+          "pad": "14"
+        },
+        {
+          "ref": "R1",
+          "pad": "1"
+        }
+      ],
+      "SCL": [
+        {
+          "ref": "U1",
+          "pad": "22"
+        },
+        {
+          "ref": "U2",
+          "pad": "13"
+        },
+        {
+          "ref": "R2",
+          "pad": "1"
+        }
+      ],
+      "XL-INT2": [
+        {
+          "ref": "U1",
+          "pad": "25"
+        },
+        {
+          "ref": "U2",
+          "pad": "9"
+        }
+      ],
+      "Net-(TP2-Pad1)": [
+        {
+          "ref": "U1",
+          "pad": "28"
+        },
+        {
+          "ref": "TP2",
+          "pad": "1"
         }
       ],
       "GND": [
         {
-          "ref": "U1",
-          "pad": "2"
-        },
-        {
-          "ref": "C_IN",
-          "pad": "2"
-        },
-        {
-          "ref": "C_OUT",
+          "ref": "C1",
           "pad": "2"
         },
         {
           "ref": "U2",
-          "pad": "GND"
+          "pad": "6"
         },
         {
-          "ref": "J1",
-          "pad": "GND"
-        }
-      ],
-      "SW": [
-        {
-          "ref": "U1",
-          "pad": "SW"
+          "ref": "U2",
+          "pad": "7"
         },
         {
-          "ref": "L1",
+          "ref": "C2",
+          "pad": "2"
+        },
+        {
+          "ref": "TP3",
           "pad": "1"
         },
         {
-          "ref": "D1",
-          "pad": "A"
-        }
-      ],
-      "CLK_MCU": [
-        {
-          "ref": "U2",
-          "pad": "OSC_IN"
+          "ref": "MK1",
+          "pad": "2"
         },
         {
-          "ref": "X1",
-          "pad": "1"
-        }
-      ],
-      "USB_DP": [
-        {
-          "ref": "J1",
-          "pad": "D+"
+          "ref": "MK1",
+          "pad": "3"
         },
         {
-          "ref": "U2",
-          "pad": "USB_DP"
-        }
-      ],
-      "USB_DM": [
-        {
-          "ref": "J1",
-          "pad": "D-"
-        },
-        {
-          "ref": "U2",
-          "pad": "USB_DM"
-        }
-      ],
-      "AIN0": [
-        {
-          "ref": "U2",
-          "pad": "PA0"
-        },
-        {
-          "ref": "R_AIN",
-          "pad": "1"
+          "ref": "BT1",
+          "pad": "2"
         }
       ]
     },
     "net_meta": {
-      "+5V": {
-        "class": "power",
-        "weight": 4.0,
-        "critical": true,
-        "emi_sensitive": false,
-        "power_loop_group": "buck1",
-        "pair_with": null,
-        "notes": "Main 5V rail after buck; keep short to load and bulk cap."
-      },
-      "GND": {
-        "class": "ground",
-        "weight": 4.0,
-        "critical": true,
-        "emi_sensitive": false,
-        "power_loop_group": "buck1",
-        "pair_with": null,
-        "notes": "Return for buck loop; minimize loop area with SW node."
-      },
-      "SW": {
+      "+3V": {
         "class": "power",
         "weight": 5.0,
         "critical": true,
-        "emi_sensitive": true,
-        "power_loop_group": "buck1",
+        "emi_sensitive": false,
+        "power_loop_group": "coin_cell",
         "pair_with": null,
-        "notes": "Switcher node: place inductor and diode/FET tight."
+        "notes": "Battery positive / VDD rail (readme: programmer pad \"3V0\" ties Batt+ and power). CR2032 through BAT-HLD-001 sheet-metal holder; metal can is anode, PCB pad cathode path completes GND. Must star/short to U1 VDD and bulk/decoupling C1/C2. No LED series resistors \u2014 rail IR drop and battery ESR set LED current. Keep low impedance to MCU and decoupling; avoid long loops with GND.\n"
       },
-      "CLK_MCU": {
-        "class": "clock",
+      "GND": {
+        "class": "ground",
+        "weight": 5.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": "coin_cell",
+        "pair_with": null,
+        "notes": "System ground / battery return. Programmer pad GND. Decoupling C1/C2 return here. Minimize +3V\u2013GND loop area under U1 and around battery. LED returns go through charlieplex matrix (not a shared LED GND plane).\n"
+      },
+      "CPX-0": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 0 (U1 PA2). One of ten matrix rows/cols driving 0402 LEDs. High peak GPIO current, no series R; length-match preference to other CPX lines for uniform brightness. Keep clear of MIC analog path.\n"
+      },
+      "CPX-1": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 1 (U1 PA4). Same class as CPX-0; matrix interconnect to LED ring."
+      },
+      "CPX-2": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 2 (U1 PB3). Matrix interconnect."
+      },
+      "CPX-3": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 3 (U1 PA5). Matrix interconnect."
+      },
+      "CPX-4": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 4 (U1 PD1). Matrix interconnect."
+      },
+      "CPX-5": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 5 (U1 PD2). Matrix interconnect."
+      },
+      "CPX-6": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 6 (U1 PD3). Matrix interconnect."
+      },
+      "CPX-7": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 7 (U1 PA3). Matrix interconnect."
+      },
+      "CPX-8": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 8 (U1 PB7). Matrix interconnect."
+      },
+      "CPX-9": {
+        "class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "charlieplex",
+        "pair_with": null,
+        "notes": "Charlieplex line 9 (U1 PB5). Matrix interconnect."
+      },
+      "MIC": {
+        "class": "analog",
         "weight": 3.5,
         "critical": true,
         "emi_sensitive": false,
         "power_loop_group": null,
         "pair_with": null,
-        "notes": "MCU crystal net; place X1 and load caps adjacent."
+        "notes": "Amplified MEMS mic output to STM8L 12-bit ADC (U1 PD0). Audio-reactive firmware mode depends on clean samples. Keep short, away from CPX switching and digital edges; do not run under LED ring currents. MK1 at (0, -4.6) mm toward hook side.\n"
       },
-      "USB_DP": {
+      "SDA": {
         "class": "differential",
         "weight": 3.0,
         "critical": true,
         "emi_sensitive": false,
         "power_loop_group": null,
-        "pair_with": "USB_DM",
-        "notes": "USB 2.0 D+; length-match with USB_DM."
+        "pair_with": "SCL",
+        "notes": "I2C data (U1 PC0 \u2194 U2). 10k pull-up R1 to +3V when IMU populated. Keep matched length with SCL; route as a pair away from CPX if IMU fitted.\n"
       },
-      "USB_DM": {
+      "SCL": {
         "class": "differential",
         "weight": 3.0,
         "critical": true,
         "emi_sensitive": false,
         "power_loop_group": null,
-        "pair_with": "USB_DP",
-        "notes": "USB 2.0 D-."
+        "pair_with": "SDA",
+        "notes": "I2C clock (U1 PC1 \u2194 U2). 10k pull-up R2 to +3V when IMU populated. Length-match SDA.\n"
       },
-      "AIN0": {
-        "class": "analog",
+      "XL-INT1": {
+        "class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "LSM6DSM INT1 \u2192 U1 PD4. Wake/interrupt from IMU. Optional (IMU often unpopulated). Prefer short path U2\u2192U1; low priority vs power/CPX/MIC.\n"
+      },
+      "XL-INT2": {
+        "class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "LSM6DSM INT2 \u2192 U1 PC4. Optional second IMU interrupt."
+      },
+      "SW-A": {
+        "class": "signal",
         "weight": 2.5,
         "critical": true,
         "emi_sensitive": false,
         "power_loop_group": null,
         "pair_with": null,
-        "notes": "Quiet analog input; keep away from SW node."
+        "notes": "Button side A (U1 PB1 \u2194 S1). Mode change on press; 500 ms hold \u2192 deep sleep (~15 uA). Short path; place switch at edge for nail access (product: S1 at x=-4.25).\n"
+      },
+      "SW-B": {
+        "class": "signal",
+        "weight": 2.5,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "Button side B (U1 PB6 \u2194 S1). Mate of SW-A on KXT3 footprint."
+      },
+      "TX": {
+        "class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "Serial out (readme: GPIO PB2 / also PC3 net). Programmer pad TX. Factory/test only; length secondary to pogo pad placement for balanced spring force.\n"
+      },
+      "RX": {
+        "class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "Serial in (readme: GPIO PB4 / also PC2 net). Programmer pad RX. Mate with TX pad geometry.\n"
+      },
+      "Net-(R3-Pad2)": {
+        "class": "reset",
+        "weight": 3.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "NRST node: U1 ~NRST, 10k pull-up R3 to +3V, programmer pad RST (TP5). Active-low reset. Keep short, clean pull-up; do not couple to CPX edges.\n"
+      },
+      "Net-(TP2-Pad1)": {
+        "class": "signal",
+        "weight": 2.5,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "SWIM programming interface (U1 SWIM pin \u2194 TP2). STLink-V2 SWIM flashing of STM8L. Critical for manufacturing; pad placement fixed by programmer jig geometry.\n"
       }
     },
-    "source_path": null
+    "source_path": "/Users/sawaiz/physicsRouter/third_party/halo-90/pcb/halo-90.kicad_pcb"
   },
   "routes": {},
   "assets": {
-    "glb": null,
+    "glb": "/assets/halo-90.glb",
     "step": null,
-    "emi_geometry": null
+    "emi_geometry": null,
+    "detail": "KiCad GLB: footprint STEP models + tracks + pads + zones + inner copper + soldermask + silkscreen"
   },
   "comparison": null,
   "physics": {
     "score": {
-      "weighted_wirelength": 1664.5,
-      "power_loop_area": 330.0,
-      "critical_net_length": 1664.5,
-      "overlap_penalty": 6.645187500000004,
+      "weighted_wirelength": 4244.9216,
+      "power_loop_area": 563.4952,
+      "critical_net_length": 10908.208,
+      "overlap_penalty": 1179.2143853975003,
       "region_violation": 0.0,
-      "density_congestion": 0.59984375,
-      "thermal_spread": 0.00485071250072666,
-      "emi_proxy": 254.5,
-      "spice_score": 9.794397547853903,
-      "openems_score": 353.5,
+      "density_congestion": 123.17666666666666,
+      "thermal_spread": 0.0,
+      "emi_proxy": 3775.316403960647,
+      "spice_score": 9.883794950858956,
+      "openems_score": 3944.3649639606474,
       "ir_drop": 0.0,
-      "loop_inductance": 80.12310181281595,
-      "return_path": 148.9495532385217,
+      "loop_inductance": 109.63053347594771,
+      "return_path": 17.133683992852355,
       "matrix_length_match": 0.0,
-      "total": 11289.438293161678
+      "total": 165337.40832782895
     },
     "notes": [
       "ir_drop ok",
-      "loop_L buck1:80.1nH",
-      "return_path nets=4 gnd_centroid=(17.8,19.0)",
-      "matrix_match n/a",
-      "spice_proxy L\u224814.53nH loop_area=330.0mm\u00b2 power_len=85.0mm; ngspice_ok",
-      "em_proxy emi=254.50; em_nets=2; openEMS_binary_present(export_via_cli)"
+      "loop_L coin_cell:27.3nH,charlieplex:82.4nH",
+      "return_path nets=12 gnd_centroid=(0.3,1.6)",
+      "matrix_match CPX:skew=0.7mm(2%),charlieplex:skew=0.7mm(2%)",
+      "spice_proxy L\u224818.99nH loop_area=563.5mm\u00b2 power_len=38.2mm; ngspice_ok",
+      "em_proxy emi=3775.32; em_nets=10; openEMS_binary_present(export_via_cli)"
     ],
     "weights": {
       "weighted_wirelength": 1.0,
-      "power_loop_area": 4.0,
-      "critical_net_length": 3.0,
-      "overlap_penalty": 50.0,
-      "region_violation": 10.0,
-      "density_congestion": 1.5,
-      "thermal_spread": 0.5,
-      "emi_proxy": 2.0,
-      "spice_score": 5.0,
-      "openems_score": 5.0,
+      "power_loop_area": 5.0,
+      "critical_net_length": 3.5,
+      "overlap_penalty": 80.0,
+      "region_violation": 12.0,
+      "density_congestion": 2.0,
+      "thermal_spread": 0.3,
+      "emi_proxy": 3.5,
+      "spice_score": 4.0,
+      "openems_score": 3.0,
       "ir_drop": 3.0,
       "loop_inductance": 3.5,
       "return_path": 2.5,
@@ -318,21 +2507,21 @@
     }
   },
   "config": {
-    "project_name": "demo_buck",
-    "board_width_mm": 50.0,
-    "board_height_mm": 40.0,
-    "grid_mm": 0.5,
+    "project_name": "halo-90",
+    "board_width_mm": 24.0,
+    "board_height_mm": 26.0,
+    "grid_mm": 0.1,
     "nets": [
       {
-        "name": "+5V",
+        "name": "+3V",
         "net_class": "power",
-        "weight": 4.0,
+        "weight": 5.0,
         "critical": true,
         "max_length_mm": null,
         "target_impedance_ohm": null,
         "pair_with": null,
-        "notes": "Main 5V rail after buck; keep short to load and bulk cap.",
-        "power_loop_group": "buck1",
+        "notes": "Battery positive / VDD rail (readme: programmer pad \"3V0\" ties Batt+ and power). CR2032 through BAT-HLD-001 sheet-metal holder; metal can is anode, PCB pad cathode path completes GND. Must star/short to U1 VDD and bulk/decoupling C1/C2. No LED series resistors \u2014 rail IR drop and battery ESR set LED current. Keep low impedance to MCU and decoupling; avoid long loops with GND.\n",
+        "power_loop_group": "coin_cell",
         "simulate_spice": true,
         "simulate_em": false,
         "emi_sensitive": false
@@ -340,82 +2529,306 @@
       {
         "name": "GND",
         "net_class": "ground",
-        "weight": 4.0,
-        "critical": true,
-        "max_length_mm": null,
-        "target_impedance_ohm": null,
-        "pair_with": null,
-        "notes": "Return for buck loop; minimize loop area with SW node.",
-        "power_loop_group": "buck1",
-        "simulate_spice": false,
-        "simulate_em": false,
-        "emi_sensitive": false
-      },
-      {
-        "name": "SW",
-        "net_class": "power",
         "weight": 5.0,
         "critical": true,
         "max_length_mm": null,
         "target_impedance_ohm": null,
         "pair_with": null,
-        "notes": "Switcher node: place inductor and diode/FET tight.",
-        "power_loop_group": "buck1",
+        "notes": "System ground / battery return. Programmer pad GND. Decoupling C1/C2 return here. Minimize +3V\u2013GND loop area under U1 and around battery. LED returns go through charlieplex matrix (not a shared LED GND plane).\n",
+        "power_loop_group": "coin_cell",
+        "simulate_spice": true,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "CPX-0",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 0 (U1 PA2). One of ten matrix rows/cols driving 0402 LEDs. High peak GPIO current, no series R; length-match preference to other CPX lines for uniform brightness. Keep clear of MIC analog path.\n",
+        "power_loop_group": "charlieplex",
         "simulate_spice": false,
         "simulate_em": true,
         "emi_sensitive": true
       },
       {
-        "name": "CLK_MCU",
-        "net_class": "clock",
-        "weight": 3.5,
+        "name": "CPX-1",
+        "net_class": "high_speed",
+        "weight": 4.0,
         "critical": true,
-        "max_length_mm": 15.0,
+        "max_length_mm": 18.0,
         "target_impedance_ohm": null,
         "pair_with": null,
-        "notes": "MCU crystal net; place X1 and load caps adjacent.",
-        "power_loop_group": null,
-        "simulate_spice": false,
-        "simulate_em": false,
-        "emi_sensitive": false
-      },
-      {
-        "name": "USB_DP",
-        "net_class": "differential",
-        "weight": 3.0,
-        "critical": true,
-        "max_length_mm": null,
-        "target_impedance_ohm": 90.0,
-        "pair_with": "USB_DM",
-        "notes": "USB 2.0 D+; length-match with USB_DM.",
-        "power_loop_group": null,
+        "notes": "Charlieplex line 1 (U1 PA4). Same class as CPX-0; matrix interconnect to LED ring.",
+        "power_loop_group": "charlieplex",
         "simulate_spice": false,
         "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-2",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 2 (U1 PB3). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-3",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 3 (U1 PA5). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-4",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 4 (U1 PD1). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-5",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 5 (U1 PD2). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-6",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 6 (U1 PD3). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-7",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 7 (U1 PA3). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-8",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 8 (U1 PB7). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "CPX-9",
+        "net_class": "high_speed",
+        "weight": 4.0,
+        "critical": true,
+        "max_length_mm": 18.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Charlieplex line 9 (U1 PB5). Matrix interconnect.",
+        "power_loop_group": "charlieplex",
+        "simulate_spice": false,
+        "simulate_em": true,
+        "emi_sensitive": true
+      },
+      {
+        "name": "MIC",
+        "net_class": "analog",
+        "weight": 3.5,
+        "critical": true,
+        "max_length_mm": 8.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Amplified MEMS mic output to STM8L 12-bit ADC (U1 PD0). Audio-reactive firmware mode depends on clean samples. Keep short, away from CPX switching and digital edges; do not run under LED ring currents. MK1 at (0, -4.6) mm toward hook side.\n",
+        "power_loop_group": null,
+        "simulate_spice": true,
+        "simulate_em": false,
         "emi_sensitive": false
       },
       {
-        "name": "USB_DM",
+        "name": "SDA",
         "net_class": "differential",
         "weight": 3.0,
         "critical": true,
-        "max_length_mm": null,
-        "target_impedance_ohm": 90.0,
-        "pair_with": "USB_DP",
-        "notes": "USB 2.0 D-.",
+        "max_length_mm": 10.0,
+        "target_impedance_ohm": null,
+        "pair_with": "SCL",
+        "notes": "I2C data (U1 PC0 \u2194 U2). 10k pull-up R1 to +3V when IMU populated. Keep matched length with SCL; route as a pair away from CPX if IMU fitted.\n",
         "power_loop_group": null,
         "simulate_spice": false,
         "simulate_em": false,
         "emi_sensitive": false
       },
       {
-        "name": "AIN0",
-        "net_class": "analog",
-        "weight": 2.5,
+        "name": "SCL",
+        "net_class": "differential",
+        "weight": 3.0,
         "critical": true,
-        "max_length_mm": null,
+        "max_length_mm": 10.0,
+        "target_impedance_ohm": null,
+        "pair_with": "SDA",
+        "notes": "I2C clock (U1 PC1 \u2194 U2). 10k pull-up R2 to +3V when IMU populated. Length-match SDA.\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "XL-INT1",
+        "net_class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "max_length_mm": 10.0,
         "target_impedance_ohm": null,
         "pair_with": null,
-        "notes": "Quiet analog input; keep away from SW node.",
+        "notes": "LSM6DSM INT1 \u2192 U1 PD4. Wake/interrupt from IMU. Optional (IMU often unpopulated). Prefer short path U2\u2192U1; low priority vs power/CPX/MIC.\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "XL-INT2",
+        "net_class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "max_length_mm": 10.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "LSM6DSM INT2 \u2192 U1 PC4. Optional second IMU interrupt.",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "SW-A",
+        "net_class": "signal",
+        "weight": 2.5,
+        "critical": true,
+        "max_length_mm": 8.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Button side A (U1 PB1 \u2194 S1). Mode change on press; 500 ms hold \u2192 deep sleep (~15 uA). Short path; place switch at edge for nail access (product: S1 at x=-4.25).\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "SW-B",
+        "net_class": "signal",
+        "weight": 2.5,
+        "critical": true,
+        "max_length_mm": 8.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Button side B (U1 PB6 \u2194 S1). Mate of SW-A on KXT3 footprint.",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "TX",
+        "net_class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "max_length_mm": 12.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Serial out (readme: GPIO PB2 / also PC3 net). Programmer pad TX. Factory/test only; length secondary to pogo pad placement for balanced spring force.\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "RX",
+        "net_class": "signal",
+        "weight": 2.0,
+        "critical": false,
+        "max_length_mm": 12.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "Serial in (readme: GPIO PB4 / also PC2 net). Programmer pad RX. Mate with TX pad geometry.\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "Net-(R3-Pad2)",
+        "net_class": "reset",
+        "weight": 3.0,
+        "critical": true,
+        "max_length_mm": 8.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "NRST node: U1 ~NRST, 10k pull-up R3 to +3V, programmer pad RST (TP5). Active-low reset. Keep short, clean pull-up; do not couple to CPX edges.\n",
+        "power_loop_group": null,
+        "simulate_spice": false,
+        "simulate_em": false,
+        "emi_sensitive": false
+      },
+      {
+        "name": "Net-(TP2-Pad1)",
+        "net_class": "signal",
+        "weight": 2.5,
+        "critical": true,
+        "max_length_mm": 10.0,
+        "target_impedance_ohm": null,
+        "pair_with": null,
+        "notes": "SWIM programming interface (U1 SWIM pin \u2194 TP2). STLink-V2 SWIM flashing of STM8L. Critical for manufacturing; pad placement fixed by programmer jig geometry.\n",
         "power_loop_group": null,
         "simulate_spice": false,
         "simulate_em": false,
@@ -424,129 +2837,276 @@
     ],
     "fixed": [
       {
-        "ref": "J1",
-        "x_mm": 2.0,
-        "y_mm": 20.0,
+        "ref": "U1",
+        "x_mm": 0.0,
+        "y_mm": 0.0,
+        "rotation_deg": -135.0,
+        "locked": true,
+        "notes": "STM8L151G4 UFQFPN28 \u2014 center of board; main compute + charlieplex driver."
+      },
+      {
+        "ref": "BT1",
+        "x_mm": 0.0,
+        "y_mm": 0.0,
         "rotation_deg": 0.0,
         "locked": true,
-        "notes": "USB connector fixed on board edge."
+        "notes": "BAT-HLD-001-HALO CR2032 holder \u2014 stacked on center; anode can / cathode pad."
+      },
+      {
+        "ref": "H1",
+        "x_mm": 0.0,
+        "y_mm": -13.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Earring hook/eyelet \u2014 top of product, extends ~2 mm beyond 24 mm disk."
+      },
+      {
+        "ref": "S1",
+        "x_mm": -4.25,
+        "y_mm": 0.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "KXT3 tactile \u2014 edge placement for nail actuation."
+      },
+      {
+        "ref": "MK1",
+        "x_mm": 0.0,
+        "y_mm": -4.6,
+        "rotation_deg": 90.0,
+        "locked": true,
+        "notes": "SPW2430 MEMS mic \u2014 acoustic port orientation fixed by case/face."
+      },
+      {
+        "ref": "U2",
+        "x_mm": 0.0,
+        "y_mm": 4.8,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "LSM6DSM IMU footprint (often DNP). Keep for optional populate."
+      },
+      {
+        "ref": "C1",
+        "x_mm": 2.7,
+        "y_mm": 3.6,
+        "rotation_deg": -90.0,
+        "locked": true,
+        "notes": "Decoupling cap (1 uF or 0.1 uF class) near U1 \u2014 +3V/GND loop."
+      },
+      {
+        "ref": "C2",
+        "x_mm": -2.7,
+        "y_mm": 3.6,
+        "rotation_deg": -90.0,
+        "locked": true,
+        "notes": "Second decoupling near U1."
+      },
+      {
+        "ref": "R3",
+        "x_mm": 5.1,
+        "y_mm": 0.0,
+        "rotation_deg": 180.0,
+        "locked": true,
+        "notes": "10k NRST pull-up to +3V."
+      },
+      {
+        "ref": "R1",
+        "x_mm": -1.3,
+        "y_mm": 3.1,
+        "rotation_deg": 180.0,
+        "locked": true,
+        "notes": "10k I2C SDA pull-up (IMU populate)."
+      },
+      {
+        "ref": "R2",
+        "x_mm": 1.3,
+        "y_mm": 3.1,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "10k I2C SCL pull-up (IMU populate)."
+      },
+      {
+        "ref": "TP1",
+        "x_mm": -6.2,
+        "y_mm": -1.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad TX"
+      },
+      {
+        "ref": "TP2",
+        "x_mm": 6.2,
+        "y_mm": 1.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad SWIM"
+      },
+      {
+        "ref": "TP3",
+        "x_mm": 2.8,
+        "y_mm": 5.5,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad (power/debug set)"
+      },
+      {
+        "ref": "TP4",
+        "x_mm": -2.8,
+        "y_mm": 5.5,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad (power/debug set)"
+      },
+      {
+        "ref": "TP5",
+        "x_mm": 6.2,
+        "y_mm": -1.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad RST"
+      },
+      {
+        "ref": "TP6",
+        "x_mm": -6.2,
+        "y_mm": 1.0,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Pogo pad RX"
+      },
+      {
+        "ref": "MH1",
+        "x_mm": 2.8,
+        "y_mm": -5.5,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Alignment / tooling hole"
+      },
+      {
+        "ref": "MH2",
+        "x_mm": -2.8,
+        "y_mm": -5.5,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Alignment / tooling hole"
+      },
+      {
+        "ref": "MH3",
+        "x_mm": -5.5,
+        "y_mm": 2.8,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Alignment / tooling hole"
+      },
+      {
+        "ref": "MH4",
+        "x_mm": 5.5,
+        "y_mm": 2.8,
+        "rotation_deg": 0.0,
+        "locked": true,
+        "notes": "Alignment / tooling hole"
       }
     ],
     "regions": [
       {
-        "name": "power",
-        "x_min_mm": 0.0,
-        "y_min_mm": 0.0,
-        "x_max_mm": 25.0,
-        "y_max_mm": 40.0,
+        "name": "core_electronics",
+        "x_min_mm": -6.0,
+        "y_min_mm": -6.0,
+        "x_max_mm": 6.0,
+        "y_max_mm": 6.0,
         "preferred_refs": [
           "U1",
-          "L1",
-          "C_IN",
-          "C_OUT",
-          "D1"
+          "BT1",
+          "C1",
+          "C2",
+          "R1",
+          "R2",
+          "R3",
+          "U2",
+          "MK1",
+          "S1"
         ],
         "preferred_net_classes": [
           "power",
-          "ground"
+          "ground",
+          "analog",
+          "reset"
         ],
-        "notes": "Buck converter and power passives."
+        "notes": "Center island \u2014 MCU, battery, decoupling, mic, button, optional IMU. Prefer short power and reset here.\n"
       },
       {
-        "name": "analog",
-        "x_min_mm": 30.0,
-        "y_min_mm": 0.0,
-        "x_max_mm": 50.0,
-        "y_max_mm": 20.0,
+        "name": "led_ring",
+        "x_min_mm": -12.0,
+        "y_min_mm": -12.0,
+        "x_max_mm": 12.0,
+        "y_max_mm": 12.0,
         "preferred_refs": [],
         "preferred_net_classes": [
-          "analog"
+          "high_speed"
         ],
-        "notes": "Keep analog sensors away from switcher."
+        "notes": "Annular zone for D1\u2013D90 at ~11 mm radius, 4\u00b0 spacing, cathodes toward center. CPX routing fans from U1 into this ring. LEDs are geometric product constraints (usually locked by construction scripts; re-place only with polar constraints).\n"
+      },
+      {
+        "name": "programmer_rim",
+        "x_min_mm": -7.0,
+        "y_min_mm": -7.0,
+        "x_max_mm": 7.0,
+        "y_max_mm": 7.0,
+        "preferred_refs": [
+          "TP1",
+          "TP2",
+          "TP3",
+          "TP4",
+          "TP5",
+          "TP6"
+        ],
+        "preferred_net_classes": [],
+        "notes": "\u23001 mm copper pogo pads balanced around board for spring-pin programmer."
       }
+    ],
+    "lock_ref_prefixes": [
+      "D"
     ],
     "physics": {
       "weighted_wirelength": 1.0,
-      "power_loop_area": 4.0,
-      "critical_net_length": 3.0,
-      "overlap_penalty": 50.0,
-      "region_violation": 10.0,
-      "density_congestion": 1.5,
-      "thermal_spread": 0.5,
-      "emi_proxy": 2.0,
-      "spice_score": 5.0,
-      "openems_score": 5.0,
+      "power_loop_area": 5.0,
+      "critical_net_length": 3.5,
+      "overlap_penalty": 80.0,
+      "region_violation": 12.0,
+      "density_congestion": 2.0,
+      "thermal_spread": 0.3,
+      "emi_proxy": 3.5,
+      "spice_score": 4.0,
+      "openems_score": 3.0,
       "ir_drop": 3.0,
       "loop_inductance": 3.5,
       "return_path": 2.5,
       "matrix_length_match": 3.0
     },
-    "num_candidates": 3,
-    "sa_iterations": 200,
-    "sa_initial_temp": 10.0,
+    "num_candidates": 4,
+    "sa_iterations": 800,
+    "sa_initial_temp": 8.0,
     "sa_cooling": 0.995,
-    "random_seed": 42,
+    "random_seed": 90,
     "use_spice": true,
     "use_openems": true,
     "spice_on_top_n": 3,
     "openems_on_top_n": 2,
-    "notes": "Demo: labeled nets with weights drive physics-aware placement."
+    "notes": "HALO-90 wearable LED earring. Dense circular layout: MCU + battery at center, 90 LEDs on a 4\u00b0 ring (cathodes toward center), programming pogo pads, optional LSM6DSM IMU. Power is severely constrained (CR2032, GPIO-driven LEDs with no series resistors). Charlieplex CPX lines carry pulsed LED current and switch at >1 kHz \u2014 treat as high-edge-rate / EMI-sensitive. Keep analog MIC and I2C quiet relative to CPX. Mechanicals (battery holder, hook, tooling holes, pogo pads) are fixed by product geometry.\n"
   },
-  "preset": "synthetic",
+  "preset": "halo-90",
   "session": {
-    "board_source": "synthetic",
-    "pcb_path": null,
-    "components": 9,
-    "nets": 7,
-    "movable": 8,
-    "locked": 1,
+    "board_source": "pcb",
+    "pcb_path": "/Users/sawaiz/physicsRouter/third_party/halo-90/pcb/halo-90.kicad_pcb",
+    "components": 111,
+    "nets": 23,
+    "movable": 0,
+    "locked": 111,
     "copper_layers": [
       "F.Cu",
+      "In1.Cu",
+      "In2.Cu",
       "B.Cu"
-    ]
-  },
-  "last_score_job": {
-    "score": {
-      "weighted_wirelength": 1664.5,
-      "power_loop_area": 330.0,
-      "critical_net_length": 1664.5,
-      "overlap_penalty": 6.645187500000004,
-      "region_violation": 0.0,
-      "density_congestion": 0.59984375,
-      "thermal_spread": 0.00485071250072666,
-      "emi_proxy": 254.5,
-      "spice_score": 9.794397547853903,
-      "openems_score": 353.5,
-      "ir_drop": 0.0,
-      "loop_inductance": 80.12310181281595,
-      "return_path": 148.9495532385217,
-      "matrix_length_match": 0.0,
-      "total": 11289.438293161678
-    },
-    "score_total": 11289.438293161678,
-    "notes": [
-      "ir_drop ok",
-      "loop_L buck1:80.1nH",
-      "return_path nets=4 gnd_centroid=(17.8,19.0)",
-      "matrix_match n/a",
-      "spice_proxy L\u224814.53nH loop_area=330.0mm\u00b2 power_len=85.0mm; ngspice_ok",
-      "em_proxy emi=254.50; em_nets=2; openEMS_binary_present(export_via_cli)"
     ],
-    "weights": {
-      "weighted_wirelength": 1.0,
-      "power_loop_area": 4.0,
-      "critical_net_length": 3.0,
-      "overlap_penalty": 50.0,
-      "region_violation": 10.0,
-      "density_congestion": 1.5,
-      "thermal_spread": 0.5,
-      "emi_proxy": 2.0,
-      "spice_score": 5.0,
-      "openems_score": 5.0,
-      "ir_drop": 3.0,
-      "loop_inductance": 3.5,
-      "return_path": 2.5,
-      "matrix_length_match": 3.0
-    }
+    "glb": "/assets/halo-90.glb",
+    "step": null
   }
 }
