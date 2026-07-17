@@ -233,7 +233,26 @@ def _pad_net_name(pad: list[Any]) -> str | None:
 
 
 def _estimate_size(fp: list[Any]) -> tuple[float, float]:
+    """Footprint AABB from pads (local coords). Prefer courtyard if present."""
     sizes: list[tuple[float, float]] = []
+    # Courtyard / fab outline first (accurate for 0402 LEDs etc.)
+    for line in _find_all(fp, "fp_line"):
+        layer = _find_first(line, "layer")
+        layer_s = str(layer[1]) if layer and len(layer) >= 2 else ""
+        if "CrtYd" not in layer_s and "Fab" not in layer_s:
+            continue
+        for tag in ("start", "end"):
+            pt = _find_first(line, tag)
+            if pt and len(pt) >= 3:
+                sizes.append((_as_float(pt[1]), _as_float(pt[2])))
+    if len(sizes) >= 2:
+        xs = [p[0] for p in sizes]
+        ys = [p[1] for p in sizes]
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if w > 0.05 and h > 0.05:
+            return w, h
+
+    sizes = []
     for pad in _find_all(fp, "pad"):
         size = _find_first(pad, "size")
         at = _find_first(pad, "at")
@@ -246,7 +265,9 @@ def _estimate_size(fp: list[Any]) -> tuple[float, float]:
         return 2.0, 2.0
     xs = [p[0] for p in sizes]
     ys = [p[1] for p in sizes]
-    return max(1.0, max(xs) - min(xs)), max(1.0, max(ys) - min(ys))
+    # Do not force 1mm minimum — that made 0402 LEDs nearly square and look
+    # mis-rotated on the HALO ring (true body ~1.0×0.5 mm).
+    return max(0.2, max(xs) - min(xs)), max(0.2, max(ys) - min(ys))
 
 
 def _edge_bbox(root: Any) -> tuple[float, float, float, float] | None:
