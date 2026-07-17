@@ -1,4 +1,4 @@
-"""CLI: physics-router place | score | init-config | route-guide."""
+"""CLI: place | score | route | import-nets | export-openems | init-config."""
 
 from __future__ import annotations
 
@@ -16,13 +16,17 @@ from physics_router.kicad_io import (
     load_board_from_kicad_pcb,
 )
 from physics_router.placement import optimize_placement, result_to_dict
-from physics_router.router import topological_guide_route
+from physics_router.router import (
+    append_routes_to_kicad_pcb,
+    clearance_aware_route,
+    topological_guide_route,
+)
 
 
 @click.group()
 @click.version_option(__version__, prog_name="physics-router")
 def main() -> None:
-    """Physics-aware KiCad placement and routing engine."""
+    """Physics-aware KiCad placement and topological routing engine."""
 
 
 @main.command("init-config")
@@ -38,6 +42,67 @@ def init_config(output: Path) -> None:
     cfg = example_config()
     save_config(cfg, output)
     click.echo(f"Wrote example config to {output}")
+
+
+@main.command("import-nets")
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--sch", "sch_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--project-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Scan directory for all .kicad_sch files",
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Existing config to merge into",
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    default=Path("placement_config.yaml"),
+)
+@click.option("--override/--no-override", default=False, help="Override existing net labels")
+def import_nets_cmd(
+    pcb_path: Path | None,
+    sch_path: Path | None,
+    project_dir: Path | None,
+    config_path: Path | None,
+    output: Path,
+    override: bool,
+) -> None:
+    """Import net labels/weights/notes from KiCad netclasses and schematic fields."""
+    from physics_router.net_import import import_labels_to_config
+
+    if not pcb_path and not sch_path and not project_dir:
+        raise click.UsageError("Provide --pcb and/or --sch and/or --project-dir")
+
+    base = load_config(config_path) if config_path and config_path.exists() else example_config()
+    # start from empty nets if no prior config path
+    if config_path is None:
+        base.nets = []
+        base.notes = "Auto-imported from KiCad netclasses / schematic labels."
+
+    cfg = import_labels_to_config(
+        base,
+        pcb_path=pcb_path,
+        schematic_path=sch_path,
+        project_dir=project_dir,
+        override=override,
+    )
+    save_config(cfg, output)
+    click.echo(f"Imported {len(cfg.nets)} labeled nets → {output}")
+    for n in cfg.nets[:12]:
+        click.echo(
+            f"  {n.name:16} class={n.net_class.value:12} w={n.weight:.1f} "
+            f"crit={n.critical}  {n.notes[:60]}"
+        )
+    if len(cfg.nets) > 12:
+        click.echo(f"  ... and {len(cfg.nets) - 12} more")
 
 
 @main.command("place")
@@ -94,15 +159,22 @@ def place_cmd(
 
     if pcb_path is not None:
         board = load_board_from_kicad_pcb(pcb_path, config)
-        click.echo(f"Loaded board from {pcb_path} ({len(board.components)} footprints, {len(board.nets)} nets)")
+        click.echo(
+            f"Loaded board from {pcb_path} "
+            f"({len(board.components)} footprints, {len(board.nets)} nets)"
+        )
     else:
         board = board_from_synthetic(config)
-        click.echo(f"Using synthetic demo board ({len(board.components)} parts, {len(board.nets)} nets)")
+        click.echo(
+            f"Using synthetic demo board ({len(board.components)} parts, {len(board.nets)} nets)"
+        )
 
     result = optimize_placement(board, config)
     report = result_to_dict(result)
     out_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    click.echo(f"Best candidate #{result.best.candidate_id} total_score={result.best.score.total:.3f}")
+    click.echo(
+        f"Best candidate #{result.best.candidate_id} total_score={result.best.score.total:.3f}"
+    )
     click.echo(f"  breakdown: {json.dumps(result.best.score.as_dict(), indent=2)}")
     if result.best.score.notes:
         click.echo("  physics notes:")
@@ -143,38 +215,156 @@ def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
     click.echo(json.dumps({"score": sb.as_dict(), "notes": sb.notes}, indent=2))
 
 
+@main.command("route")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--out-json", type=click.Path(path_type=Path), default=Path("route_result.json"))
+@click.option(
+    "--out-pcb",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Append segments/vias into a copy of the input PCB",
+)
+@click.option("--clearance", type=float, default=0.2, help="Clearance mm (0 = guide only)")
+@click.option("--grid", type=float, default=None, help="Routing grid mm")
+@click.option("--no-vias/--vias", default=False, help="Disable vias / multi-layer")
+@click.option("--guide-only", is_flag=True, help="Legacy free-angle guide without clearance")
+def route_cmd(
+    config_path: Path,
+    pcb_path: Path | None,
+    out_json: Path,
+    out_pcb: Path | None,
+    clearance: float,
+    grid: float | None,
+    no_vias: bool,
+    guide_only: bool,
+) -> None:
+    """Clearance-aware TopoR-style free-angle autorouter."""
+    config = load_config(config_path)
+    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+
+    if guide_only:
+        routes = topological_guide_route(board, config)
+    else:
+        routes = clearance_aware_route(
+            board,
+            config,
+            clearance_mm=clearance,
+            grid_mm=grid,
+            allow_vias=not no_vias,
+            guide_only=False,
+        )
+
+    out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
+    click.echo(
+        f"Routed: {len(routes.segments)} segments, {routes.via_count} vias, "
+        f"{routes.total_length_mm:.2f} mm, unrouted={len(routes.unrouted_nets)}"
+    )
+    if routes.notes:
+        for n in routes.notes:
+            click.echo(f"  note: {n}")
+    if routes.unrouted_nets:
+        click.echo(f"  unrouted nets: {', '.join(routes.unrouted_nets[:20])}")
+    click.echo(f"Wrote {out_json}")
+
+    if out_pcb is not None:
+        if pcb_path is None:
+            click.echo("Cannot write --out-pcb without --pcb", err=True)
+            sys.exit(2)
+        append_routes_to_kicad_pcb(str(pcb_path), str(out_pcb), routes)
+        click.echo(f"Wrote routed PCB to {out_pcb}")
+
+
 @main.command("route-guide")
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
 @click.option("--out-json", type=click.Path(path_type=Path), default=Path("route_guide.json"))
 def route_guide_cmd(config_path: Path, pcb_path: Path | None, out_json: Path) -> None:
-    """Emit free-angle topological guide routes for the current placement."""
+    """Emit free-angle topological guide routes (no clearance)."""
     config = load_config(config_path)
     board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
     routes = topological_guide_route(board, config)
-    payload = {
-        "total_length_mm": routes.total_length_mm,
-        "via_count_proxy": routes.via_count,
-        "unrouted_nets": routes.unrouted_nets,
-        "segments": [
-            {
-                "net": s.net,
-                "x1": s.x1,
-                "y1": s.y1,
-                "x2": s.x2,
-                "y2": s.y2,
-                "layer": s.layer,
-                "width_mm": s.width_mm,
-            }
-            for s in routes.segments
-        ],
-    }
-    out_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
     click.echo(
         f"Guide route: {len(routes.segments)} segments, "
         f"{routes.total_length_mm:.2f} mm, via_proxy={routes.via_count}"
     )
     click.echo(f"Wrote {out_json}")
+
+
+@main.command("export-openems")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--gerber",
+    "gerbers",
+    multiple=True,
+    type=str,
+    help="layer=path pairs, e.g. F.Cu=front.gbr (repeatable)",
+)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=Path("openems_export"),
+    help="Output directory for geometry + simulate_board.py",
+)
+@click.option("--route/--no-route", default=True, help="Run clearance-aware route before export")
+@click.option("--f0", type=float, default=1e9, help="Gaussian excite center Hz")
+@click.option("--fc", type=float, default=1e9, help="Gaussian excite width Hz")
+def export_openems_cmd(
+    config_path: Path | None,
+    pcb_path: Path | None,
+    gerbers: tuple[str, ...],
+    out_dir: Path,
+    route: bool,
+    f0: float,
+    fc: float,
+) -> None:
+    """Export OpenEMS mesh geometry from placement/routes and/or Gerbers."""
+    from physics_router.openems_export import export_openems_bundle
+
+    config = load_config(config_path) if config_path else example_config()
+    board = None
+    routes = None
+    if pcb_path or config_path:
+        board = (
+            load_board_from_kicad_pcb(pcb_path, config)
+            if pcb_path
+            else board_from_synthetic(config)
+        )
+        if route:
+            routes = clearance_aware_route(board, config, clearance_mm=0.2)
+
+    gerber_paths: dict[str, str] = {}
+    for item in gerbers:
+        if "=" not in item:
+            raise click.UsageError(f"--gerber expects layer=path, got {item!r}")
+        layer, path = item.split("=", 1)
+        gerber_paths[layer] = path
+
+    if board is None and not gerber_paths:
+        raise click.UsageError("Provide --pcb/--config and/or --gerber layer=path")
+
+    # Prefer EMI-sensitive nets if labeled
+    nets_filter = None
+    if config.nets and any(n.simulate_em or n.emi_sensitive for n in config.nets):
+        nets_filter = {
+            n.name for n in config.nets if n.simulate_em or n.emi_sensitive or n.critical
+        }
+
+    paths = export_openems_bundle(
+        out_dir,
+        board=board,
+        routes=routes,
+        config=config,
+        gerber_paths=gerber_paths or None,
+        nets_filter=nets_filter,
+        f0_hz=f0,
+        fc_hz=fc,
+    )
+    click.echo(f"OpenEMS export → {out_dir}")
+    for k, p in paths.items():
+        click.echo(f"  {k}: {p}")
 
 
 if __name__ == "__main__":
