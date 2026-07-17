@@ -119,10 +119,11 @@ physics-router serve --port 8765
 # → http://127.0.0.1:8765/
 ```
 
-Live UI for exploring the board, editing placement YAML / physics weights, running
-**score · place · route · spice · OpenEMS · DRC · pytest · CI**, watching **per-job
-progress + logs**, and browsing **results/artifacts**. Static `viewer/index.html`
-still works offline (loads `viewer_data.json`); run jobs require `serve`.
+Defaults to the **HALO-90** board when `third_party/halo-90` is present (all **D1–D90 LEDs
+locked** plus mechanicals). Live **three.js** 3D board shows parts, multilayer copper,
+vias, and EMI. Guided steps: Setup → Place → Route → Simulate → Validate. Edit YAML /
+weights, run jobs with progress + logs. Offline static `viewer_data.json` still loads
+without the API.
 
 ```bash
 python scripts/build_viewer_demo.py   # static demo assets

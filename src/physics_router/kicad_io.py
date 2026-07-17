@@ -184,6 +184,12 @@ def load_board_from_kicad_pcb(
                 c = components[fix.ref]
                 c.x_mm, c.y_mm, c.rotation_deg = fix.x_mm, fix.y_mm, fix.rotation_deg
                 c.locked = fix.locked
+        # Prefix locks (e.g. HALO LED ring D1–D90) — keep PCB coordinates, mark immovable
+        prefixes = [p for p in (config.lock_ref_prefixes or []) if p]
+        if prefixes:
+            for ref, c in components.items():
+                if any(ref.startswith(p) for p in prefixes):
+                    c.locked = True
 
     copper_layers = ["F.Cu", "B.Cu"]
     rules_dict = None

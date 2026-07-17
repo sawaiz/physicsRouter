@@ -44,6 +44,12 @@ def test_halo90_board_loads_and_scores() -> None:
     assert all(f"CPX-{i}" in board.nets for i in range(10))
     # Fixed parts applied
     assert board.components["U1"].locked
+    # LED ring locked via lock_ref_prefixes: ["D"]
+    assert cfg.lock_ref_prefixes and "D" in cfg.lock_ref_prefixes
+    leds = [r for r in board.components if r.startswith("D")]
+    assert len(leds) >= 90
+    assert all(board.components[r].locked for r in leds)
+    assert len(board.movable_refs()) == 0  # mechanicals + LEDs locked on released layout
     sb = geometric_score(board, cfg)
     assert sb.total > 0
     assert sb.weighted_wirelength > 0

@@ -106,6 +106,11 @@ class PlacementConfig(BaseModel):
     nets: list[NetLabel] = Field(default_factory=list)
     fixed: list[FixedPlacement] = Field(default_factory=list)
     regions: list[RegionConstraint] = Field(default_factory=list)
+    # Lock footprints by reference prefix (e.g. "D" → D1…D90 LEDs) at loaded PCB coords
+    lock_ref_prefixes: list[str] = Field(
+        default_factory=list,
+        description='Lock all refs starting with these prefixes, e.g. ["D"] for LED ring',
+    )
     physics: PhysicsWeights = Field(default_factory=PhysicsWeights)
     # Search
     num_candidates: int = Field(default=8, ge=1, le=64)

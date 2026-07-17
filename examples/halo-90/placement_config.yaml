@@ -258,6 +258,11 @@ nets:
       SWIM programming interface (U1 SWIM pin ↔ TP2). STLink-V2 SWIM flashing of STM8L.
       Critical for manufacturing; pad placement fixed by programmer jig geometry.
 
+# Lock entire LED ring (D1–D90) at released PCB coordinates — product geometry.
+# Placement SA only moves unlocked passives (if any); mechanicals + LEDs stay fixed.
+lock_ref_prefixes:
+  - "D"
+
 # ---------------------------------------------------------------------------
 # Fixed mechanical / product geometry (from released layout, origin = center)
 # ---------------------------------------------------------------------------
