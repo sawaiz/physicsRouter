@@ -18,5 +18,4 @@ route_result.json
 # External test projects (clone separately; see examples/halo-90/README.md)
 third_party/
 examples/halo-90/placement_result.json
-examples/halo-90/route_result.json
 examples/halo-90/openems_export/

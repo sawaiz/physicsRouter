@@ -92,6 +92,29 @@ physics-router export-openems \
   --out-dir examples/halo-90/openems_export
 ```
 
+## Checked-in results & figures
+
+Regenerate with `python scripts/generate_docs_images.py` from the repo root (needs `third_party/halo-90` + `matplotlib`).
+
+| File | Description |
+|------|-------------|
+| `benchmark_results.json` | Timings + score + route metrics |
+| `route_guide.json` | Free-angle guide segments |
+| `route_result.json` | Clearance multilayer route (1 mm grid) |
+| `../../docs/images/placement_overview.png` | Footprint map |
+| `../../docs/images/route_guide.png` | Guide routing viz |
+| `../../docs/images/route_by_layer.png` | Per-layer route viz |
+| `../../docs/images/score_breakdown.png` | Cost bar chart |
+| `../../docs/images/runtimes.png` | Timing bar chart |
+
+### Snapshot (last generate)
+
+| Step | Time | Notes |
+|------|------|--------|
+| score | ~0.04 s | ngspice + EMI proxies |
+| route-guide | ~11 s | 207 segs, 854 mm |
+| route (grid 1 mm) | ~35 s | 208 segs, 4-layer DRC policy |
+
 ## Licence
 
 HALO-90 content remains under its upstream licence (see `third_party/halo-90`). This folder only adds physicsRouter labels and scripts.
