@@ -46,6 +46,21 @@ MCU, battery, hook, mic, button, passives, pogo pads, and tooling holes are **lo
 - Power draw ~15 µA sleep … ~25 mA max; modes ~2–12 mA  
 - LEDs: 0402 red, Vf 2.0–2.6 V, cathodes toward center  
 
+## KiCad stackup (from board)
+
+HALO-90 is a **4-layer** design in KiCad:
+
+`F.Cu` → dielectric → `In1.Cu` → dielectric → `In2.Cu` → dielectric → `B.Cu`  
+(≈0.035 mm Cu, FR4 εᵣ≈4.5, overall thickness ≈1 mm in the project.)
+
+DRC floors from `halo-90.kicad_pro` (Default net class): clearance/track ≈ **0.127 mm**, via ≈ **0.45 / 0.2 mm**.
+
+```bash
+physics-router rules --pcb third_party/halo-90/pcb/halo-90.kicad_pcb
+physics-router pre-route --config examples/halo-90/placement_config.yaml \
+  --pcb third_party/halo-90/pcb/halo-90.kicad_pcb
+```
+
 ## Run
 
 ```bash

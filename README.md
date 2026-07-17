@@ -207,20 +207,58 @@ KiCad PCB + labeled nets
   → best → .kicad_pcb + JSON
 ```
 
+## Design rules, stackup, and multilayer routing
+
+The router **loads KiCad board rules** so geometry never undercuts fab constraints:
+
+| Source | Used for |
+|--------|----------|
+| `.kicad_pcb` `(layers)` / `(setup (stackup …))` | Copper layer list, dielectric stack, thickness, εᵣ |
+| `.kicad_pro` `design_settings.rules` | min clearance, track, via, annular, microvia flags |
+| `.kicad_pro` `net_settings.classes` | Per-class clearance, track width, via size/drill |
+| Placement labels | Net priority, pair co-route, power vs signal layer preference |
+
+```bash
+# Inspect rules extracted from a board (e.g. HALO-90 is 4-layer)
+physics-router rules --pcb path/to/board.kicad_pcb
+
+# Pre-route methodology checks (density, layers, escape, via budget)
+physics-router pre-route --config placement_config.yaml --pcb path/to/board.kicad_pcb
+
+# Route using KiCad min_clearance / widths / full copper stack
+physics-router route --config placement_config.yaml --pcb path/to/board.kicad_pcb \
+  --out-json route_result.json --out-pcb board_routed.kicad_pcb
+```
+
+### Policies that make routing easier (research-backed)
+
+1. **Respect DRC floors** — clearance/width/via never below KiCad minima.  
+2. **Stackup-aware layers** — 4L: signals prefer outer; power/ground prefer inners (plane roles).  
+3. **Via minimization** — complete on one layer when possible; through-vias only if blind/buried disabled.  
+4. **Net ordering** — GND/power → high-speed/CPX → pairs → general.  
+5. **Escape-then-area** — fan out dense packages before long runs (`pre-route` escape hints).  
+6. **Pair co-routing** — SDA/SCL (etc.) same layer, matched length notes.  
+7. **H/V preferred per layer** (optional note) while free-angle LOS still used when clear.  
+8. **Pre-route density test** — high pins/cm² ⇒ suggest more layers before search.  
+9. **Physics proxies** — loop area / EMI / ngspice before committing copper.
+
+See [RESEARCH.md](RESEARCH.md) §6 for literature (layer assignment, MLV-CBS, 3D geometric routing, MCTS multilayer).
+
 ## Clearance-aware TopoR routing
 
 | Feature | Behavior |
 |---------|----------|
 | Free angles | LOS + corner detours + A\* + rubberband (not only 45°/90°) |
-| Clearance | Pad-level obstacles inflated by clearance; same-net may pass |
-| Priority | High-weight / critical nets routed first |
-| Multi-layer | Alternate layer + vias when same-layer path blocked |
+| Clearance | **KiCad min_clearance** (or override), pad obstacles, same-net may pass |
+| Track/via size | From **net class + DRC minima** |
+| Priority | High-weight / critical nets first (power → CPX → pairs → signal) |
+| Multi-layer | All copper layers from stackup; layer preference by net class |
 | Copper paint | Routed traces become obstacles for later nets |
 | Output | JSON + optional `(segment)` / `(via)` append to `.kicad_pcb` |
 
 ```bash
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
-  --clearance 0.2 --out-json route_result.json --out-pcb board_routed.kicad_pcb
+  --out-json route_result.json --out-pcb board_routed.kicad_pcb
 ```
 
 ## OpenEMS export
@@ -246,11 +284,13 @@ physics-router export-openems \
 | `models` | Net labels, regions, scores |
 | `config_io` | YAML/JSON config |
 | `net_import` | KiCad netclass + schematic → labels |
-| `kicad_io` | Read/write footprint positions |
+| `design_rules` | Stackup + DRC + net classes from `.kicad_pcb` / `.kicad_pro` |
+| `kicad_io` | Read/write footprints; attach copper layers / rules |
 | `physics` | Multi-objective cost + Ngspice/OpenEMS backends |
 | `placement` | Multi-candidate SA + ranking |
-| `router` | Clearance-aware free-angle TopoR router |
-| `openems_export` | Mesh/geometry + Gerber → openEMS |
+| `router` | Clearance-aware free-angle TopoR core |
+| `routing_strategies` | Pre-route tests, net order, multilayer DRC policy |
+| `openems_export` | Mesh/geometry from **KiCad stackup** + Gerbers |
 | `cli` | `physics-router` entry point |
 
 ## Setup

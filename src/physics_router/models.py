@@ -160,7 +160,7 @@ class Component(BaseModel):
 
 
 class BoardModel(BaseModel):
-    """In-memory board: components, connectivity, outline."""
+    """In-memory board: components, connectivity, outline, design rules."""
 
     width_mm: float
     height_mm: float
@@ -168,6 +168,9 @@ class BoardModel(BaseModel):
     # net_name -> list of (ref, pad)
     nets: dict[str, list[tuple[str, str]]] = Field(default_factory=dict)
     source_path: str | None = None
+    # Populated from KiCad stackup / DRC when available (dict for JSON friendliness)
+    design_rules: dict | None = None
+    copper_layers: list[str] = Field(default_factory=lambda: ["F.Cu", "B.Cu"])
 
     def movable_refs(self) -> list[str]:
         return [r for r, c in self.components.items() if not c.locked]

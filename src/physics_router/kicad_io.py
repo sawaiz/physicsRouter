@@ -112,8 +112,10 @@ def _as_float(x: Any, default: float = 0.0) -> float:
 def load_board_from_kicad_pcb(
     path: str | Path,
     config: PlacementConfig | None = None,
+    *,
+    load_rules: bool = True,
 ) -> BoardModel:
-    """Load footprints, positions, and net connectivity from a .kicad_pcb file."""
+    """Load footprints, positions, nets, and (optionally) KiCad design rules/stackup."""
     path = Path(path)
     text = path.read_text(encoding="utf-8", errors="replace")
     root = parse_sexpr(text)
@@ -124,8 +126,13 @@ def load_board_from_kicad_pcb(
     # Board outline from Edge.Cuts lines if present (rough bbox)
     bbox = _edge_bbox(root)
     if bbox is not None:
-        width = max(width, bbox[2] - bbox[0] + 2.0)
-        height = max(height, bbox[3] - bbox[1] + 2.0)
+        # Prefer true outline size when available
+        width = max(bbox[2] - bbox[0], 1.0)
+        height = max(bbox[3] - bbox[1], 1.0)
+        if config:
+            # Keep config size if larger (margins)
+            width = max(width, config.board_width_mm)
+            height = max(height, config.board_height_mm)
 
     components: dict[str, Component] = {}
     nets: dict[str, list[tuple[str, str]]] = {}
@@ -178,12 +185,23 @@ def load_board_from_kicad_pcb(
                 c.x_mm, c.y_mm, c.rotation_deg = fix.x_mm, fix.y_mm, fix.rotation_deg
                 c.locked = fix.locked
 
+    copper_layers = ["F.Cu", "B.Cu"]
+    rules_dict = None
+    if load_rules:
+        from physics_router.design_rules import load_design_rules
+
+        dr = load_design_rules(pcb_path=path)
+        copper_layers = list(dr.copper_layers) or copper_layers
+        rules_dict = dr.summary()
+
     return BoardModel(
         width_mm=width,
         height_mm=height,
         components=components,
         nets=nets,
         source_path=str(path),
+        design_rules=rules_dict,
+        copper_layers=copper_layers,
     )
 
 

@@ -134,21 +134,42 @@ Research and practice agree HPWL alone is insufficient for PCBs:
 
 ---
 
-## 6. Recommended algorithm stack (synthesis)
+## 6. Methodologies that make routing *easier* (tests & policies)
 
-Based on the literature, a strong open stack is:
+Beyond raw path search, research and practice emphasize **pre-route policy** that reduces failures:
 
-1. **Net labeling / criticality** — netclasses + designer weights (always).
-2. **Floorplan seed** — spectral / hierarchical / region constraints (NS-Place, manual regions).
-3. **Global place** — SA or RL policy with **weighted multi-objective** energy; fixed connectors.
-4. **Legalization** — MILP or greedy non-overlap (NS-Place).
-5. **Validate place** — cheap congestion + physics proxies; expensive sim on top-N.
-6. **Route** — topological free-angle (Dayan/TopoR lineage) or shape-based (FreeRouting); critical nets first; MCTS/RL optional for hard nets.
-7. **Close loop** — post-route WL/vias/DRC feed placement re-spin (Crocker, Vassallo).
+| Methodology | What it does | Citations / practice |
+|-------------|--------------|----------------------|
+| **KiCad DRC floors** | Never route thinner/tighter than min clearance/track/via | KiCad Board Setup; fab capability |
+| **Stackup-aware layer assign** | 4L SIG–GND–PWR–SIG; critical nets next to reference plane | Multilayer SI; impedance control |
+| **Via minimization / layer assignment** | Same-layer first; charge vias; global layer assign | Congestion-constrained layer assignment literature |
+| **Net ordering** | Power/GND → clocks/high-speed → pairs → general | Industrial autorouters |
+| **Escape-then-area** | Fan out dense packages before area-route | BGA escape; pad-focused routing (He 2024) |
+| **H/V preferred per layer** | Alternate preferred directions (free-angle LOS still OK) | Specctra-style packing |
+| **3D line exploration** | Radar scan + layer-transition cost | *Sci. Reports* 2026 geometric multi-layer routing |
+| **MAPF / MLV-CBS** | Multi-agent path finding for min layers/vias | MLV-CBS PCB routing ~2025 |
+| **MCTS multi-layer actions** | Expand through layers as actions | He PhD DRL-MCTS |
+| **Pre-route density test** | pins/cm² → suggest more layers | Practice + NS-Place congestion mindset |
+| **Pair co-route** | Diff pairs / I2C matched length, same layer | ASP-DAC unified PCB router |
+| **Physics pre-checks** | Loop area, EMI, ngspice before final copper | This project; OpenEMS |
+
+**physicsRouter:** `design_rules` load from KiCad, `pre-route` report, ordered nets, `multilayer_route` with DRC widths/vias, pair hints, OpenEMS stackup from KiCad.
+
+## 7. Recommended algorithm stack (synthesis)
+
+1. **Net labeling / criticality** — netclasses + designer weights.  
+2. **Import KiCad stackup + DRC** — clearance/width/via floors; copper layers.  
+3. **Pre-route tests** — density, escape hints, via budget, layer advice.  
+4. **Floorplan seed** — regions / spectral / fixed connectors.  
+5. **Global place** — multi-objective SA (→ future RL).  
+6. **Legalization** — non-overlap (MILP in literature).  
+7. **Validate place** — physics proxies; expensive sim on shortlists.  
+8. **Route** — TopoR free-angle on stackup layers; through-via policy from KiCad.  
+9. **Close loop** — post-route metrics → re-place.
 
 ---
 
-## 7. Full bibliography (selected)
+## 8. Full bibliography (selected)
 
 ### Classical & topological
 
@@ -182,6 +203,9 @@ Based on the literature, a strong open stack is:
 22. DreamerV3+FR: world-model RL + FreeRouting, *Expert Systems with Applications*, 2026.  
 23. TRouter: thermal-driven PCB routing via attention networks.  
 24. PCB-Bench: Benchmarking LLMs for PCB Placement and Routing, ICLR 2026.  
+25. Minimal-Layer Via / multi-agent PCB routing (MAPF-CBS family), ~2025.  
+26. 3D line-exploration geometric routing for multi-layer PCBs, *Scientific Reports*, 2026.  
+27. KiCad documentation — Board Setup: net classes, constraints, stackup.  
 
 ### Datasets & tools
 
@@ -196,7 +220,14 @@ Based on the literature, a strong open stack is:
 
 ---
 
-## 8. Community signals (X / practice)
+### Multilayer / via / geometric (additional)
+
+28. Congestion-constrained layer assignment for via minimization in global routing (classic VLSI/PCB theme).  
+29. Minimal-Layer Via CBS / multi-agent PCB routing (MAPF-style), 2025.  
+30. 3D line-exploration geometric routing for multi-layer PCBs, *Scientific Reports*, 2026.  
+31. KiCad documentation — Board Setup: net classes, constraints, stackup.  
+
+## 9. Community signals (X / practice)
 
 Industry and builders emphasize:
 
