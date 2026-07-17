@@ -494,7 +494,9 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `dashboard` | HTML physics-budget page |
 | `viewer_export` | JSON payload for interactive viewer |
 | `server` | Live control plane (`serve`) — jobs, progress, config API |
+| `native_bridge` | Optional C++/OpenCL router (`pr_native`) |
 | `cli` | `physics-router` entry point |
+| `native/` | C++ core sources (CMake, OpenMP, OpenCL kernels) |
 
 ## Setup
 
@@ -502,11 +504,29 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 - KiCad 8+ (real projects)
 - Ngspice (optional)
 - OpenEMS + CSXCAD (optional)
+- **Native C++ core** (optional, recommended): CMake 3.16+, C++17 compiler; OpenMP if available; **OpenCL** for GPU batch clearance (Apple M-series / discrete GPUs)
 
 ```bash
 pip install -e ".[dev]"
+# Optional high-performance router (OpenMP + OpenCL when present)
+bash scripts/build_native.sh
+export PYTHONPATH=native/build:$PYTHONPATH
 pytest
+./native/build/pr_bench   # native micro-benchmark
 ```
+
+### Native C++ / GPU core
+
+Hot paths live in `native/` (grid A\*, multi-net route, batch HPWL score):
+
+| Piece | Role |
+|-------|------|
+| `pr_core` | C++17 grid occupancy, A\*, MST multi-net route |
+| OpenMP | Parallel score batches / loops when the toolchain provides it |
+| OpenCL | GPU batch segment-clearance samples (`Apple M3` etc.) |
+| `pr_native` | pybind11 module used by `physics_router.native_bridge` |
+
+Python `clearance_aware_route()` auto-uses the native backend when `pr_native` is importable; otherwise it falls back to pure Python.
 
 ## Test project: HALO-90
 

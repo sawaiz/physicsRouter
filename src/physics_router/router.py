@@ -209,6 +209,61 @@ class Obstacle:
         ]
 
 
+def _route_result_from_dict(raw: dict[str, Any]) -> RouteResult:
+    """Hydrate RouteResult from native bridge dict."""
+    segs = [
+        RouteSegment(
+            x1=float(s["x1"]),
+            y1=float(s["y1"]),
+            x2=float(s["x2"]),
+            y2=float(s["y2"]),
+            layer=str(s.get("layer", "F.Cu")),
+            net=str(s.get("net", "")),
+            width_mm=float(s.get("width_mm", 0.25)),
+        )
+        for s in raw.get("segments") or []
+    ]
+    vias = [
+        Via(
+            x=float(v["x"]),
+            y=float(v["y"]),
+            net=str(v.get("net", "")),
+            size_mm=float(v.get("size_mm", 0.8)),
+            drill_mm=float(v.get("drill_mm", 0.4)),
+            layers=tuple(v.get("layers") or ("F.Cu", "B.Cu")),  # type: ignore[arg-type]
+        )
+        for v in raw.get("vias") or []
+    ]
+    reports = []
+    for nr in raw.get("net_reports") or []:
+        reports.append(
+            NetRouteReport(
+                net=str(nr.get("net", "")),
+                pins=int(nr.get("pins") or 0),
+                length_mm=float(nr.get("length_mm") or 0),
+                segments=int(nr.get("segments") or 0),
+                vias=int(nr.get("vias") or 0),
+                status=str(nr.get("status") or "ok"),
+                method=str(nr.get("method") or ""),
+                notes=list(nr.get("notes") or []),
+            )
+        )
+    out = RouteResult(
+        segments=segs,
+        vias=vias,
+        via_count=int(raw.get("via_count") or len(vias)),
+        total_length_mm=float(raw.get("total_length_mm") or 0),
+        unrouted_nets=list(raw.get("unrouted_nets") or []),
+        clearance_violations=int(raw.get("clearance_violations") or 0),
+        notes=list(raw.get("notes") or []),
+        net_reports=reports,
+        quality=dict(raw.get("quality") or {}),
+    )
+    if not out.quality:
+        out.compute_quality()
+    return out
+
+
 def board_extent(board: BoardModel, margin_mm: float = 2.0) -> tuple[float, float, float, float]:
     """Axis-aligned routing extent (supports center-origin boards like HALO-90)."""
     xs = [c.x_mm for c in board.components.values()]
@@ -590,12 +645,16 @@ def clearance_aware_route(
     guide_only: bool = False,
     progress_cb: ProgressCallback | None = None,
     soft_fallback: bool | None = None,
+    prefer_native: bool = True,
 ) -> RouteResult:
     """TopoR-inspired clearance-aware free-angle router with per-net feedback.
 
     ``soft_fallback``: if True, draw a straight segment when search fails (counts
     as clearance_violation — causes overlaps). Default False for clearance mode
     (leave edge unrouted instead of illegal copper); True only for guide_only.
+
+    When the C++ extension ``pr_native`` is built, uses the OpenMP/GPU core unless
+    ``prefer_native=False`` or ``guide_only=True`` (guide stays in Python for now).
     """
     layers = layers or list(board.copper_layers) or ["F.Cu", "B.Cu"]
     grid = grid_mm if grid_mm is not None else (config.grid_mm if config else 0.5)
@@ -603,6 +662,26 @@ def clearance_aware_route(
         clearance_mm = 0.0
     if soft_fallback is None:
         soft_fallback = bool(guide_only)
+
+    # --- Native C++ path (speed) ---
+    if prefer_native and not guide_only and progress_cb is None:
+        try:
+            from physics_router.native_bridge import available, route_board_native
+
+            if available():
+                raw = route_board_native(
+                    board,
+                    config,
+                    clearance_mm=float(clearance_mm),
+                    grid_mm=float(grid),
+                    soft_fallback=bool(soft_fallback),
+                    allow_vias=bool(allow_vias),
+                    use_gpu=True,
+                )
+                if raw is not None:
+                    return _route_result_from_dict(raw)
+        except Exception:
+            pass
 
     om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
     result = RouteResult()
