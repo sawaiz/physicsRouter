@@ -120,10 +120,10 @@ physics-router serve --port 8765
 ```
 
 Defaults to the **HALO-90** board when `third_party/halo-90` is present (all **D1–D90 LEDs
-locked** plus mechanicals). Live **three.js** 3D board shows parts, multilayer copper,
-vias, and EMI. Guided steps: Setup → Place → Route → Simulate → Validate. Edit YAML /
-weights, run jobs with progress + logs. Offline static `viewer_data.json` still loads
-without the API.
+locked** plus mechanicals). Live **three.js** loads a KiCad **GLB** built from footprint
+**STEP** models plus **soldermask, silkscreen, copper (all layers), pads, and zones**
+(`export_board_3d` / auto on first open). Route overlays and EMI remain available on top.
+Guided steps: Setup → Place → Route → Simulate → Validate.
 
 ```bash
 python scripts/build_viewer_demo.py   # static demo assets

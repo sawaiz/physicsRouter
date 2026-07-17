@@ -49,6 +49,7 @@ from physics_router.viewer_export import build_viewer_payload, write_viewer_data
 ROOT = Path(__file__).resolve().parents[2]
 VIEWER_DIR = ROOT / "viewer"
 WORK_DIR = ROOT / "viewer" / "runs"
+ASSETS_DIR = ROOT / "viewer" / "assets"
 EXAMPLES = ROOT / "examples"
 CI_SCRIPT = ROOT / "scripts" / "ci_regression.py"
 HALO_PCB = ROOT / "third_party/halo-90/pcb/halo-90.kicad_pcb"
@@ -135,6 +136,9 @@ class AppState:
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
         WORK_DIR.mkdir(parents=True, exist_ok=True)
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        self.glb_url: str | None = None
+        self.step_url: str | None = None
         # Prefer HALO-90 when the open test project is present
         if HALO_CFG.exists() and HALO_PCB.exists():
             self._load_preset("halo-90")
@@ -178,7 +182,14 @@ class AppState:
         self.routes = {}
         self.last_score = None
         self.last_placement = None
+        self._discover_assets()
         self._refresh_viewer()
+        # Kick off full KiCad 3D (STEP models + mask/silk) if PCB present and GLB missing
+        if self.pcb_path and Path(self.pcb_path).exists() and not self.glb_url:
+            try:
+                self.enqueue("export_board_3d", {"also_step": False})
+            except Exception:
+                pass
 
     def _build_board(self):
         if self.board_source == "pcb" and self.pcb_path and Path(self.pcb_path).exists():
@@ -192,6 +203,29 @@ class AppState:
 
     def reload_board(self) -> None:
         self._board = self._build_board()
+
+    def _discover_assets(self) -> None:
+        """Point session at viewer/assets/*.glb / *.step if present."""
+        self.glb_url = None
+        self.step_url = None
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        candidates: list[Path] = []
+        if self.preset:
+            candidates.append(ASSETS_DIR / f"{self.preset}.glb")
+        if self.pcb_path:
+            candidates.append(ASSETS_DIR / f"{Path(self.pcb_path).stem}.glb")
+        candidates.append(ASSETS_DIR / "board.glb")
+        for p in candidates:
+            if p.is_file() and p.stat().st_size > 1000:
+                self.glb_url = f"assets/{p.name}"
+                break
+        for p in [
+            ASSETS_DIR / f"{self.preset}_full.step" if self.preset else None,
+            ASSETS_DIR / "board_full.step",
+        ]:
+            if p and p.is_file():
+                self.step_url = f"assets/{p.name}"
+                break
 
     def _refresh_viewer(self) -> None:
         from physics_router.router import RouteResult, RouteSegment, Via
@@ -233,12 +267,15 @@ class AppState:
                     clearance_violations=int(r.get("clearance_violations") or 0),
                     notes=list(r.get("notes") or []),
                 )
+        self._discover_assets()
         payload = build_viewer_payload(
             board,
             self.config,
             routes=route_objs or None,
             comparison=self.last_comparison,
             include_score=True,
+            glb_url=self.glb_url,
+            step_url=self.step_url,
         )
         payload["config"] = self.config.model_dump(mode="json")
         payload["preset"] = self.preset
@@ -250,7 +287,18 @@ class AppState:
             "movable": len(board.movable_refs()),
             "locked": sum(1 for c in board.components.values() if c.locked),
             "copper_layers": list(board.copper_layers),
+            "glb": self.glb_url,
+            "step": self.step_url,
         }
+        payload.setdefault("assets", {})
+        payload["assets"]["glb"] = self.glb_url
+        payload["assets"]["step"] = self.step_url
+        payload["assets"]["detail"] = (
+            "KiCad GLB: footprint STEP models + tracks + pads + zones + "
+            "inner copper + soldermask + silkscreen"
+            if self.glb_url
+            else "Run export_board_3d (or wait for auto-export) for full visual PCB"
+        )
         if self.last_score:
             payload["physics"] = payload.get("physics") or {}
             payload["last_score_job"] = self.last_score
@@ -322,6 +370,7 @@ class AppState:
             "openems": self._job_openems,
             "export_dsn": self._job_export_dsn,
             "export_step": self._job_export_step,
+            "export_board_3d": self._job_export_board_3d,
             "drc": self._job_drc,
             "tests": self._job_tests,
             "ci_regression": self._job_ci,
@@ -654,22 +703,92 @@ class AppState:
         return {"dsn": str(Path(path).relative_to(ROOT)), "readme": str((out.parent / "FREEROUTING.md").relative_to(ROOT))}
 
     def _job_export_step(self, job: Job) -> dict[str, Any]:
+        """Full STEP with component models + mask/silk/copper (not board-only)."""
         self.set_progress(job, 10, "export STEP")
         with self.lock:
             pcb = self.pcb_path
+            preset = self.preset
         if not pcb or not Path(pcb).exists():
             self.log(job, "No KiCad PCB in session — STEP needs a real .kicad_pcb")
             return {"skipped": True, "reason": "no pcb path (use halo-90 preset or set pcb)"}
         from physics_router.kicad_tools import export_step
 
-        out_dir = WORK_DIR / f"step_{job.id}"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        self.set_progress(job, 40, "kicad-cli")
-        path = export_step(Path(pcb), out_dir / "board_sim.step")
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        out = ASSETS_DIR / f"{preset or Path(pcb).stem}_full.step"
+        self.set_progress(job, 30, "kicad-cli step (components + mask + silk)")
+        self.log(job, f"Exporting STEP with footprint models → {out}")
+        path = export_step(
+            Path(pcb),
+            out,
+            board_only=False,
+            no_components=False,
+            include_tracks=True,
+            include_pads=True,
+            include_zones=True,
+            include_inner_copper=True,
+            include_silkscreen=True,
+            include_soldermask=True,
+            subst_models=True,
+        )
+        with self.lock:
+            self.step_url = f"assets/{path.name}"
+            self._refresh_viewer()
         self.set_progress(job, 100, "done")
-        if path:
-            return {"step": str(Path(path).relative_to(ROOT)) if Path(path).is_absolute() else str(path)}
-        return {"skipped": True, "reason": "kicad-cli STEP failed or unavailable"}
+        self.log(job, f"STEP {path.stat().st_size // 1024} KB")
+        return {
+            "step": str(path.relative_to(ROOT)),
+            "url": f"assets/{path.name}",
+            "bytes": path.stat().st_size,
+            "includes": ["components STEP", "tracks", "pads", "soldermask", "silkscreen", "inner copper"],
+        }
+
+    def _job_export_board_3d(self, job: Job) -> dict[str, Any]:
+        """KiCad GLB for three.js: component STEP models + all visual layers."""
+        self.set_progress(job, 5, "export board 3D")
+        with self.lock:
+            pcb = self.pcb_path
+            preset = self.preset or "board"
+        if not pcb or not Path(pcb).exists():
+            return {"skipped": True, "reason": "no pcb path"}
+        from physics_router.kicad_tools import export_board_visual_3d, find_kicad_cli
+
+        if find_kicad_cli() is None:
+            raise FileNotFoundError("kicad-cli not found — install KiCad or set KICAD_CLI")
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        also_step = bool(job.params.get("also_step", False))
+        self.set_progress(job, 15, "kicad-cli glb (STEP models + mask + silk + copper)")
+        self.log(
+            job,
+            "Exporting GLB: footprint .step/.stp models, tracks, pads, zones, "
+            "inner copper, soldermask, silkscreen…",
+        )
+        result = export_board_visual_3d(
+            Path(pcb),
+            ASSETS_DIR,
+            stem=preset if preset != "synthetic" else Path(pcb).stem,
+            also_step=also_step,
+        )
+        glb_path = Path(result["glb"])
+        # Stable name for default preset
+        stable = ASSETS_DIR / f"{preset}.glb"
+        if glb_path.resolve() != stable.resolve() and glb_path.exists():
+            import shutil
+
+            shutil.copy2(glb_path, stable)
+            result["glb"] = str(stable)
+            glb_path = stable
+        with self.lock:
+            self.glb_url = f"assets/{glb_path.name}"
+            if result.get("step"):
+                self.step_url = f"assets/{Path(result['step']).name}"
+            self._refresh_viewer()
+        self.set_progress(job, 100, "done")
+        self.log(job, f"GLB ready {glb_path.stat().st_size // 1024} KB → {self.glb_url}")
+        return {
+            **{k: (str(Path(v).relative_to(ROOT)) if k in ("glb", "step", "pcb") and v else v) for k, v in result.items()},
+            "url": self.glb_url,
+            "viewer": "three.js GLTFLoader",
+        }
 
     def _job_drc(self, job: Job) -> dict[str, Any]:
         self.set_progress(job, 10, "DRC")
@@ -848,6 +967,8 @@ class AppState:
                     "width_mm": board.width_mm,
                     "height_mm": board.height_mm,
                     "project_name": self.config.project_name,
+                    "glb": self.glb_url,
+                    "step": self.step_url,
                 },
                 "config": self.config.model_dump(mode="json"),
                 "config_text": self.config_text,
@@ -960,10 +1081,16 @@ JOB_CATALOG = [
         "description": "For FreeRouting baseline comparison",
     },
     {
+        "id": "export_board_3d",
+        "label": "Export board 3D (GLB)",
+        "group": "export",
+        "description": "KiCad GLB: component STEP models + copper + soldermask + silkscreen for three.js",
+    },
+    {
         "id": "export_step",
         "label": "Export STEP (KiCad)",
         "group": "export",
-        "description": "Simulation STEP with copper/mask/silk (needs PCB)",
+        "description": "Full STEP with component models + mask/silk/copper (needs PCB)",
     },
     {
         "id": "drc",
