@@ -10,6 +10,13 @@ build/
 venv/
 placement_result.json
 route_guide.json
+route_result.json
 *.kicad_prl
 *-backups/
 .DS_Store
+
+# External test projects (clone separately; see examples/halo-90/README.md)
+third_party/
+examples/halo-90/placement_result.json
+examples/halo-90/route_result.json
+examples/halo-90/openems_export/
