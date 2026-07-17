@@ -186,23 +186,24 @@
         <div id="vizHeader">
           <strong style="font-size:0.78rem">3D board</strong>
           <label>Route <select id="routeSel"><option value="">—</option></select></label>
-          <label><input type="checkbox" id="showComps" checked/> Parts</label>
-          <label><input type="checkbox" id="showRoutes" checked/> Copper</label>
-          <label><input type="checkbox" id="showVias" checked/> Vias</label>
+          <label><input type="checkbox" id="showKicad" checked/> KiCad 3D (STEP+mask+silk)</label>
+          <label><input type="checkbox" id="showComps"/> Box parts</label>
+          <label><input type="checkbox" id="showRoutes" checked/> Route overlay</label>
+          <label><input type="checkbox" id="showVias" checked/> Route vias</label>
           <label><input type="checkbox" id="showEMI"/> EMI</label>
-          <label><input type="checkbox" id="showLabels" checked/> Labels</label>
-          <label><input type="checkbox" id="showBoard" checked/> Substrate</label>
+          <label><input type="checkbox" id="showLabels"/> Labels</label>
+          <label><input type="checkbox" id="showBoard"/> Simple substrate</label>
+          <button type="button" class="btn ghost" id="btnExport3d" style="padding:0.25rem 0.5rem;font-size:0.72rem">Rebuild 3D</button>
           <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.35rem"></span>
           <button type="button" class="btn ghost" id="btnResetCam" style="padding:0.25rem 0.5rem;font-size:0.72rem">Reset cam</button>
         </div>
         <div id="c3d"></div>
         <div id="vizFooter">
           <div class="legend">
-            <span><i style="background:#e85d4c"></i>LED locked</span>
-            <span><i style="background:#6b4c7a"></i>Mech locked</span>
-            <span><i style="background:#4c78a8"></i>Free</span>
-            <span><i style="background:#e45756"></i>MCU / batt</span>
-            <span><i style="background:#d4a017"></i>Via</span>
+            <span><i style="background:#2a6a4a"></i>KiCad GLB (mask/silk/copper/STEP)</span>
+            <span><i style="background:#e85d4c"></i>Box LEDs</span>
+            <span><i style="background:#5b9fd4"></i>Route overlay</span>
+            <span><i style="background:#d4a017"></i>Vias</span>
           </div>
           <div id="boardStats" style="margin-top:0.25rem">No board</div>
         </div>
@@ -244,6 +245,7 @@
   <script type="module">
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
   const NET_COLORS = {
     power: 0xd62728, ground: 0x1f77b4, high_speed: 0xff7f0e, analog: 0x2ca02c,
@@ -280,6 +282,7 @@
     camera: null,
     controls: null,
     root: null,
+    gKicad: null,   // official GLB: components STEP + mask + silk + copper
     gComps: null,
     gRoutes: null,
     gVias: null,
@@ -287,6 +290,8 @@
     gBoard: null,
     gLabels: null,
     anim: 0,
+    glbUrl: null,
+    glbLoading: false,
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -355,13 +360,14 @@
     three.camera = camera;
     three.controls = controls;
     three.root = root;
+    three.gKicad = new THREE.Group(); three.gKicad.name = 'kicad';
     three.gComps = new THREE.Group(); three.gComps.name = 'comps';
     three.gRoutes = new THREE.Group(); three.gRoutes.name = 'routes';
     three.gVias = new THREE.Group(); three.gVias.name = 'vias';
     three.gEmi = new THREE.Group(); three.gEmi.name = 'emi';
     three.gBoard = new THREE.Group(); three.gBoard.name = 'board';
     three.gLabels = new THREE.Group(); three.gLabels.name = 'labels';
-    root.add(three.gBoard, three.gComps, three.gRoutes, three.gVias, three.gEmi, three.gLabels);
+    root.add(three.gKicad, three.gBoard, three.gComps, three.gRoutes, three.gVias, three.gEmi, three.gLabels);
 
     function animate() {
       three.anim = requestAnimationFrame(animate);
@@ -417,6 +423,7 @@
     const r = state.viewer?.routes || {};
     const rname = $('#routeSel')?.value || '';
     const route = r[rname];
+    const glb = state.viewer?.assets?.glb || state.snap?.session?.glb || '';
     return JSON.stringify({
       n: b?.components?.length,
       nets: Object.keys(b?.nets || {}).length,
@@ -425,11 +432,89 @@
       vias: route?.vias?.length,
       emi: state.viewer?.emi_geometry?.primitives?.length,
       locks: (b?.components || []).filter(c => c.locked).length,
+      glb,
     });
   }
 
+  function loadKicadGlb(url) {
+    if (!url || !three.gKicad) return;
+    if (three.glbUrl === url && three.gKicad.children.length) return;
+    if (three.glbLoading) return;
+    three.glbLoading = true;
+    three.glbUrl = url;
+    clearGroup(three.gKicad);
+    $('#boardStats').textContent = `Loading KiCad 3D ${url}…`;
+    const loader = new GLTFLoader();
+    loader.load(
+      url,
+      (gltf) => {
+        three.glbLoading = false;
+        const model = gltf.scene || gltf.scenes?.[0];
+        if (!model) {
+          $('#boardStats').textContent = 'GLB loaded but empty';
+          return;
+        }
+        // KiCad exports in mm; center on board XY
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        model.position.sub(center);
+        // Keep Z so board sits near y=0
+        model.position.y += size.y / 2;
+        // Mild material boost for mask/silk readability
+        model.traverse((ch) => {
+          if (ch.isMesh && ch.material) {
+            const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+            mats.forEach((m) => {
+              if (m.metalness != null) m.metalness = Math.min(0.9, (m.metalness || 0) + 0.15);
+              if (m.roughness != null) m.roughness = Math.max(0.25, (m.roughness || 0.5) * 0.9);
+              m.needsUpdate = true;
+            });
+          }
+        });
+        three.gKicad.add(model);
+        // Frame camera on full board
+        const span = Math.max(size.x, size.y, size.z, 20);
+        three.controls.target.set(0, size.y * 0.15, 0);
+        three.camera.position.set(span * 0.65, span * 0.55, span * 0.7);
+        three.controls.update();
+        applyVisibility();
+        const detail = state.viewer?.assets?.detail || 'KiCad GLB';
+        $('#boardStats').textContent =
+          `KiCad 3D · ${detail} · ${url} · ${fmt(size.x, 1)}×${fmt(size.z, 1)}×${fmt(size.y, 1)} mm`;
+      },
+      (ev) => {
+        if (ev.total) {
+          $('#boardStats').textContent = `Loading KiCad 3D… ${Math.round(100 * ev.loaded / ev.total)}%`;
+        }
+      },
+      (err) => {
+        three.glbLoading = false;
+        console.warn('GLB load failed', err);
+        $('#boardStats').textContent =
+          `KiCad GLB failed (${url}) — showing box fallback. Run Rebuild 3D / export_board_3d.`;
+        // enable simple parts if GLB missing
+        if ($('#showComps') && !$('#showComps').checked) {
+          $('#showComps').checked = true;
+          $('#showBoard').checked = true;
+        }
+        applyVisibility();
+      },
+    );
+  }
+
   function rebuildScene() {
-    if (!three.root || !state.viewer?.board) return;
+    if (!three.root) return;
+    const glb = state.viewer?.assets?.glb || state.snap?.session?.glb || null;
+    // Always try KiCad GLB first (component STEP models + soldermask + silkscreen + copper)
+    if (glb) loadKicadGlb(glb);
+
+    if (!state.viewer?.board) {
+      applyVisibility();
+      return;
+    }
     const fp = sceneFingerprint();
     if (fp === state.sceneKey) {
       applyVisibility();
@@ -577,14 +662,26 @@
       }
     }
 
-    // Camera framing on first build or reset
-    const span = Math.max(bw, bh, 20);
-    three.controls.target.set(cx, 0, cy);
-    three.camera.position.set(cx + span * 0.7, span * 0.85, cy + span * 0.75);
-    three.controls.update();
+    // Only reframe if no KiCad GLB (GLB loader sets camera)
+    if (!glb) {
+      const span = Math.max(bw, bh, 20);
+      three.controls.target.set(cx, 0, cy);
+      three.camera.position.set(cx + span * 0.7, span * 0.85, cy + span * 0.75);
+      three.controls.update();
+    }
 
     applyVisibility();
-    updateBoardStats(route, rname, comps);
+    if (!glb) updateBoardStats(route, rname, comps);
+    else {
+      const free = comps.filter(c => !c.locked).length;
+      const leds = comps.filter(c => isLed(c.ref)).length;
+      let extra = ` · ${comps.length} parts (${leds} LEDs locked, ${free} free)`;
+      if (route) extra += ` · overlay ${rname}: ${fmt(route.total_length_mm)} mm`;
+      const base = $('#boardStats').textContent || '';
+      if (!base.includes('Loading')) {
+        $('#boardStats').textContent = (base.split(' · ')[0] || 'KiCad 3D') + extra;
+      }
+    }
   }
 
   function makeTextSprite(text, color) {
@@ -610,13 +707,13 @@
   }
 
   function applyVisibility() {
+    if (three.gKicad) three.gKicad.visible = $('#showKicad')?.checked !== false;
     if (three.gComps) three.gComps.visible = $('#showComps').checked;
     if (three.gRoutes) three.gRoutes.visible = $('#showRoutes').checked;
     if (three.gVias) three.gVias.visible = $('#showVias').checked;
     if (three.gEmi) three.gEmi.visible = $('#showEMI').checked;
     if (three.gBoard) three.gBoard.visible = $('#showBoard').checked;
     if (three.gLabels) three.gLabels.visible = $('#showLabels').checked;
-    // layer filter requires rebuild for routes — mark dirty when layers change
   }
 
   function updateBoardStats(route, rname, comps) {
@@ -710,15 +807,22 @@
   }
 
   function panelSim() {
+    const glb = state.snap?.session?.glb || state.viewer?.assets?.glb || '—';
     return `
+      <p class="hint" style="margin-top:0">3D view loads KiCad <strong>GLB</strong> built from footprint
+        <code>.step/.stp</code> models plus soldermask, silkscreen, and all copper layers.</p>
       <div class="actions">
-        <button type="button" class="btn primary" data-job="score">Physics score</button>
+        <button type="button" class="btn primary" data-job="export_board_3d">Rebuild board 3D (GLB)</button>
+        <button type="button" class="btn" data-job="export_step">Full STEP</button>
+      </div>
+      <p class="muted" style="font-size:0.75rem">Asset: ${esc(glb)}</p>
+      <div class="actions">
+        <button type="button" class="btn" data-job="score">Physics score</button>
         <button type="button" class="btn" data-job="spice">Spice / PI</button>
         <button type="button" class="btn" data-job="openems">OpenEMS + EMI</button>
       </div>
       <div class="actions">
         <button type="button" class="btn ghost" data-job="export_dsn">DSN</button>
-        <button type="button" class="btn ghost" data-job="export_step">STEP</button>
         <button type="button" class="btn ghost" data-job="compare_routes">Compare</button>
       </div>
       <ul class="notes" id="simNotes"><li>Run a simulation…</li></ul>`;
@@ -1001,20 +1105,35 @@
       const running = jobs.some(j => j.status === 'running' || j.status === 'pending');
       const routeKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
 
+      const prevGlb = state.viewer?.assets?.glb;
       if (forceViewer || justFinished || !state.viewer || routeKeys !== prevRouteKeys) {
         state.viewer = await api('/api/viewer-data');
         updateRouteSelect();
         if (!state.layersBuilt) updateLayers();
         updateMetrics();
+        const newGlb = state.viewer?.assets?.glb;
+        if (newGlb && newGlb !== prevGlb) three.glbUrl = null;
         state.sceneKey = '';
         rebuildScene();
       } else if (running) {
         updateMetrics();
+        // pick up GLB when export_board_3d finishes
+        if (state.snap?.session?.glb && state.snap.session.glb !== prevGlb) {
+          state.viewer = await api('/api/viewer-data');
+          three.glbUrl = null;
+          state.sceneKey = '';
+          rebuildScene();
+        }
       } else {
         const fp = scoreFingerprint(state.snap?.last_score?.score || {});
         if (fp && fp !== prevScore) {
           state.viewer = await api('/api/viewer-data');
           updateMetrics();
+          state.sceneKey = '';
+          rebuildScene();
+        } else if (state.snap?.session?.glb && state.snap.session.glb !== (state.viewer?.assets?.glb)) {
+          state.viewer = await api('/api/viewer-data');
+          three.glbUrl = null;
           state.sceneKey = '';
           rebuildScene();
         }
@@ -1030,15 +1149,22 @@
   async function boot() {
     initThree();
     $$('#steps .step').forEach(btn => btn.addEventListener('click', () => setStep(+btn.dataset.step)));
-    ['showComps', 'showRoutes', 'showVias', 'showEMI', 'showLabels', 'showBoard'].forEach(id => {
-      $(`#${id}`).addEventListener('change', () => {
+    ['showKicad', 'showComps', 'showRoutes', 'showVias', 'showEMI', 'showLabels', 'showBoard'].forEach(id => {
+      $(`#${id}`)?.addEventListener('change', () => {
         if (id === 'showLabels') { state.sceneKey = ''; rebuildScene(); }
         else applyVisibility();
       });
     });
     $('#routeSel').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
     $('#layerToggles').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
-    $('#btnResetCam').addEventListener('click', () => { state.sceneKey = ''; rebuildScene(); });
+    $('#btnResetCam').addEventListener('click', () => {
+      three.glbUrl = null;
+      state.sceneKey = '';
+      rebuildScene();
+    });
+    $('#btnExport3d')?.addEventListener('click', () => {
+      startJob('export_board_3d').catch(e => alert(e.message));
+    });
     window.addEventListener('resize', () => { resizeThree(); });
 
     try {

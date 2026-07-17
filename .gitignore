@@ -30,3 +30,7 @@ openems_export/
 
 # Live control-plane run artifacts
 viewer/runs/
+# Large KiCad GLB/STEP visual exports (regenerate: export_board_3d job or kicad-cli)
+viewer/assets/*.glb
+viewer/assets/*.step
+viewer/assets/*.stp

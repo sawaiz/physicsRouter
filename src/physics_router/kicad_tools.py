@@ -422,9 +422,10 @@ print("OK")
     return sorted(out_dir.glob("*.svg"))
 
 
-def export_step(
-    pcb_path: str | Path,
-    out_step: str | Path,
+def _pcb_export_3d_cmd(
+    fmt: str,
+    pcb_path: Path,
+    out_path: Path,
     *,
     include_tracks: bool = True,
     include_pads: bool = True,
@@ -434,31 +435,28 @@ def export_step(
     include_soldermask: bool = True,
     board_only: bool = False,
     no_components: bool = False,
+    no_board_body: bool = False,
+    subst_models: bool = True,
     fuse_shapes: bool = False,
     force: bool = True,
     net_filter: str = "",
-    timeout_s: float = 600,
-) -> Path:
-    """Export STEP with copper + soldermask + silkscreen for EM/mechanical sims.
-
-    KiCad 8+ ``pcb export step`` can embed tracks/pads/zones and mask/silk faces,
-    which gives OpenEMS / FEM tools a much more accurate board model than
-    extruded rectangles alone.
-    """
+    component_filter: str = "",
+) -> list[str]:
+    """Build kicad-cli ``pcb export step|glb`` argv with full visual layers."""
     cli = find_kicad_cli()
     if cli is None:
         raise FileNotFoundError("kicad-cli not found")
-    pcb_path = Path(pcb_path).resolve()
-    out_step = Path(out_step)
-    out_step.parent.mkdir(parents=True, exist_ok=True)
-
-    cmd = [str(cli), "pcb", "export", "step", "-o", str(out_step)]
+    cmd = [str(cli), "pcb", "export", fmt, "-o", str(out_path)]
     if force:
         cmd.append("--force")
     if board_only:
         cmd.append("--board-only")
     if no_components:
         cmd.append("--no-components")
+    if no_board_body:
+        cmd.append("--no-board-body")
+    if subst_models:
+        cmd.append("--subst-models")
     if include_tracks:
         cmd.append("--include-tracks")
     if include_pads:
@@ -475,12 +473,171 @@ def export_step(
         cmd.append("--fuse-shapes")
     if net_filter:
         cmd.extend(["--net-filter", net_filter])
+    if component_filter:
+        cmd.extend(["--component-filter", component_filter])
     cmd.append(str(pcb_path))
+    return cmd
 
+
+def export_step(
+    pcb_path: str | Path,
+    out_step: str | Path,
+    *,
+    include_tracks: bool = True,
+    include_pads: bool = True,
+    include_zones: bool = True,
+    include_inner_copper: bool = True,
+    include_silkscreen: bool = True,
+    include_soldermask: bool = True,
+    board_only: bool = False,
+    no_components: bool = False,
+    fuse_shapes: bool = False,
+    force: bool = True,
+    net_filter: str = "",
+    subst_models: bool = True,
+    timeout_s: float = 600,
+) -> Path:
+    """Export STEP with copper + soldermask + silkscreen (+ component STEP models).
+
+    Uses footprint 3D models (``.step`` / ``.stp`` under the project) via
+    ``--subst-models`` so LEDs, MCU, battery, etc. match the library files.
+    """
+    pcb_path = Path(pcb_path).resolve()
+    out_step = Path(out_step)
+    out_step.parent.mkdir(parents=True, exist_ok=True)
+    cmd = _pcb_export_3d_cmd(
+        "step",
+        pcb_path,
+        out_step,
+        include_tracks=include_tracks,
+        include_pads=include_pads,
+        include_zones=include_zones,
+        include_inner_copper=include_inner_copper,
+        include_silkscreen=include_silkscreen,
+        include_soldermask=include_soldermask,
+        board_only=board_only,
+        no_components=no_components,
+        subst_models=subst_models,
+        fuse_shapes=fuse_shapes,
+        force=force,
+        net_filter=net_filter,
+    )
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
     if proc.returncode != 0 or not out_step.exists():
         raise RuntimeError(f"STEP export failed: {proc.stderr or proc.stdout}")
     return out_step
+
+
+def export_glb(
+    pcb_path: str | Path,
+    out_glb: str | Path,
+    *,
+    include_tracks: bool = True,
+    include_pads: bool = True,
+    include_zones: bool = True,
+    include_inner_copper: bool = True,
+    include_silkscreen: bool = True,
+    include_soldermask: bool = True,
+    board_only: bool = False,
+    no_components: bool = False,
+    subst_models: bool = True,
+    fuse_shapes: bool = False,
+    force: bool = True,
+    net_filter: str = "",
+    timeout_s: float = 600,
+) -> Path:
+    """Export binary glTF (GLB) for three.js: components + mask + silk + copper.
+
+    Preferred viewer path — browser loads this with ``GLTFLoader``. Component
+    geometry comes from project STEP models (``--subst-models``).
+    """
+    pcb_path = Path(pcb_path).resolve()
+    out_glb = Path(out_glb)
+    out_glb.parent.mkdir(parents=True, exist_ok=True)
+    cmd = _pcb_export_3d_cmd(
+        "glb",
+        pcb_path,
+        out_glb,
+        include_tracks=include_tracks,
+        include_pads=include_pads,
+        include_zones=include_zones,
+        include_inner_copper=include_inner_copper,
+        include_silkscreen=include_silkscreen,
+        include_soldermask=include_soldermask,
+        board_only=board_only,
+        no_components=no_components,
+        subst_models=subst_models,
+        fuse_shapes=fuse_shapes,
+        force=force,
+        net_filter=net_filter,
+    )
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    if proc.returncode != 0 or not out_glb.exists():
+        raise RuntimeError(f"GLB export failed: {proc.stderr or proc.stdout}")
+    return out_glb
+
+
+def export_board_visual_3d(
+    pcb_path: str | Path,
+    out_dir: str | Path,
+    *,
+    stem: str | None = None,
+    also_step: bool = True,
+) -> dict[str, Any]:
+    """Export full visual board: GLB (viewer) + optional STEP (CAD/sim).
+
+    Includes footprint STEP models, tracks, pads, zones, inner copper,
+    soldermask, and silkscreen.
+    """
+    pcb_path = Path(pcb_path).resolve()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = stem or pcb_path.stem
+    glb = export_glb(
+        pcb_path,
+        out_dir / f"{stem}.glb",
+        board_only=False,
+        no_components=False,
+        include_tracks=True,
+        include_pads=True,
+        include_zones=True,
+        include_inner_copper=True,
+        include_silkscreen=True,
+        include_soldermask=True,
+        subst_models=True,
+    )
+    result: dict[str, Any] = {
+        "pcb": str(pcb_path),
+        "glb": str(glb),
+        "glb_bytes": glb.stat().st_size,
+        "includes": [
+            "component STEP/STP models (--subst-models)",
+            "tracks/vias",
+            "pads",
+            "zones",
+            "inner copper",
+            "silkscreen",
+            "soldermask",
+            "board body",
+        ],
+    }
+    if also_step:
+        step = export_step(
+            pcb_path,
+            out_dir / f"{stem}_full.step",
+            board_only=False,
+            no_components=False,
+            include_tracks=True,
+            include_pads=True,
+            include_zones=True,
+            include_inner_copper=True,
+            include_silkscreen=True,
+            include_soldermask=True,
+            subst_models=True,
+        )
+        result["step"] = str(step)
+        result["step_bytes"] = step.stat().st_size
+    return result
 
 
 def export_simulation_bundle(
