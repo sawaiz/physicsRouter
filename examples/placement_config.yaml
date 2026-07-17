@@ -1,0 +1,115 @@
+# Physics-aware placement config: labeled nets, weights, and designer notes.
+# Place this next to your KiCad project and pass it to:
+#   physics-router place --config placement_config.yaml --pcb board.kicad_pcb
+
+project_name: demo_buck
+board_width_mm: 50.0
+board_height_mm: 40.0
+grid_mm: 0.5
+notes: >
+  Demo project. Well-labeled nets with weights drive multi-candidate
+  placement; Ngspice/OpenEMS proxies rank the best geometric options.
+
+nets:
+  - name: "+5V"
+    net_class: power
+    weight: 4.0
+    critical: true
+    power_loop_group: buck1
+    simulate_spice: true
+    notes: Main 5V rail after buck; keep short to load and bulk cap.
+
+  - name: GND
+    net_class: ground
+    weight: 4.0
+    critical: true
+    power_loop_group: buck1
+    notes: Return for buck loop; minimize loop area with SW node.
+
+  - name: SW
+    net_class: power
+    weight: 5.0
+    critical: true
+    power_loop_group: buck1
+    emi_sensitive: true
+    simulate_em: true
+    notes: Switcher node — place inductor and diode/FET tight.
+
+  - name: CLK_MCU
+    net_class: clock
+    weight: 3.5
+    critical: true
+    max_length_mm: 15.0
+    notes: MCU crystal net; place X1 and load caps adjacent.
+
+  - name: USB_DP
+    net_class: differential
+    weight: 3.0
+    critical: true
+    pair_with: USB_DM
+    target_impedance_ohm: 90.0
+    simulate_em: true
+    notes: USB 2.0 D+; length-match with USB_DM.
+
+  - name: USB_DM
+    net_class: differential
+    weight: 3.0
+    critical: true
+    pair_with: USB_DP
+    target_impedance_ohm: 90.0
+    notes: USB 2.0 D-.
+
+  - name: AIN0
+    net_class: analog
+    weight: 2.5
+    critical: true
+    notes: Quiet analog input; keep away from SW node.
+
+fixed:
+  - ref: J1
+    x_mm: 2.0
+    y_mm: 20.0
+    rotation_deg: 0.0
+    locked: true
+    notes: USB connector fixed on board edge.
+
+regions:
+  - name: power
+    x_min_mm: 0.0
+    y_min_mm: 0.0
+    x_max_mm: 25.0
+    y_max_mm: 40.0
+    preferred_refs: [U1, L1, C_IN, C_OUT, D1]
+    preferred_net_classes: [power, ground]
+    notes: Buck converter and power passives.
+
+  - name: analog
+    x_min_mm: 30.0
+    y_min_mm: 0.0
+    x_max_mm: 50.0
+    y_max_mm: 20.0
+    preferred_refs: []
+    preferred_net_classes: [analog]
+    notes: Keep analog sensors away from switcher.
+
+physics:
+  weighted_wirelength: 1.0
+  power_loop_area: 4.0
+  critical_net_length: 3.0
+  overlap_penalty: 50.0
+  region_violation: 10.0
+  density_congestion: 1.5
+  thermal_spread: 0.5
+  emi_proxy: 2.0
+  spice_score: 5.0
+  openems_score: 5.0
+
+num_candidates: 6
+sa_iterations: 1500
+sa_initial_temp: 10.0
+sa_cooling: 0.995
+random_seed: 42
+use_spice: true
+use_openems: true
+spice_on_top_n: 3
+openems_on_top_n: 2

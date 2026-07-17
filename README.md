@@ -1,91 +1,148 @@
 # Physics-Aware KiCad Placement & Routing Engine
 
-A **KiCad placement and routing engine** that combines topological (TopoR-style) layout with physical simulations (Ngspice, OpenEMS) so boards are not only fully routed, but also validated for real-world electrical behavior.
+A **KiCad placement and routing engine** that combines topological (TopoR-style) layout with **physics simulations** (Ngspice, OpenEMS) so boards are not only fully routed, but also validated for real-world electrical behavior.
 
-Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) (*Topological Router*) — a gridless autorouter with no preferred routing directions, free wire angles, and automatic length/shape optimization when components move.
+Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) (*Topological Router*) — gridless routing, no preferred directions, free wire angles.
 
-## Overview
+**Assumption for placement quality:** projects provide **full KiCad files** plus **well-labeled nets** with **weights** and **notes** (see `placement_config.yaml`). Physics sims rank the best geometric candidates.
 
-Standard autorouters force 45°/90° channels and ignore physics. This project aims to produce production-ready PCB layouts by:
+## Quick start
 
-1. **Placing and routing topologically** (TopoR-like): flexible paths, efficient space use, fewer vias, lower crosstalk risk from orthogonal preferred-direction layers.
-2. **Validating with physics** during the layout loop — not only after DRC.
+```bash
+# Install (editable)
+python3 -m pip install -e ".[dev]"
 
-Physical concerns standard routers ignore:
+# Write an example labeled-net config
+physics-router init-config -o examples/placement_config.yaml
 
-- **EMI emissions** — OpenEMS to simulate and minimize interference
-- **Power loops** — minimize loop area and parasitic inductance
-- **Signal integrity** — impedance, length, and coupling constraints
-- **Circuit behavior** — Ngspice for net-level checks against design intent
+# Multi-candidate placement (synthetic demo board if no .kicad_pcb)
+physics-router place \
+  --config examples/placement_config.yaml \
+  --out-json placement_result.json
+
+# With a real board
+physics-router place \
+  --config placement_config.yaml \
+  --pcb path/to/board.kicad_pcb \
+  --out-pcb path/to/board_placed.kicad_pcb \
+  --out-json placement_result.json
+
+# Score current layout only
+physics-router score --config examples/placement_config.yaml
+
+# Free-angle topological guide routes
+physics-router route-guide --config examples/placement_config.yaml --out-json route_guide.json
+```
+
+## Labeled nets, weights, and notes
+
+Placement is driven by a YAML/JSON config next to the KiCad project:
+
+```yaml
+nets:
+  - name: SW
+    net_class: power          # power | ground | clock | differential | analog | rf | ...
+    weight: 5.0               # higher → pull connected parts closer
+    critical: true
+    power_loop_group: buck1   # minimize loop area for this group
+    emi_sensitive: true
+    simulate_spice: true      # include in Ngspice/proxy ranking
+    simulate_em: true         # include in OpenEMS/proxy ranking
+    max_length_mm: 12.0
+    notes: "Switcher node — place L and FET tight."
+
+fixed:
+  - ref: J1
+    x_mm: 2.0
+    y_mm: 20.0
+    locked: true
+    notes: "USB on edge"
+
+regions:
+  - name: power
+    x_min_mm: 0
+    y_min_mm: 0
+    x_max_mm: 25
+    y_max_mm: 40
+    preferred_refs: [U1, L1, C_IN]
+```
+
+Full example: [`examples/placement_config.yaml`](examples/placement_config.yaml).
+
+## How placement chooses “best”
+
+```
+KiCad PCB + placement_config.yaml (labels/weights/notes)
+        │
+        ▼
+┌─────────────────────────────┐
+│ Seed N candidates           │  region-aware random + fixed parts
+│ Simulated annealing         │  geometric multi-objective cost
+└─────────────┬───────────────┘
+              ▼
+┌─────────────────────────────┐
+│ Rank by geometry            │  wirelength × weights, loop area,
+│                             │  critical nets, overlap, density,
+│                             │  thermal, EMI proxy
+└─────────────┬───────────────┘
+              ▼
+┌─────────────────────────────┐
+│ Physics on top-N            │  Ngspice (or RL proxy) + OpenEMS
+│                             │  (or EM proxy) re-score finalists
+└─────────────┬───────────────┘
+              ▼
+   Best candidate → .kicad_pcb + JSON report
+```
+
+### Cost terms (lower is better)
+
+| Term | Role |
+|------|------|
+| Weighted wirelength | HPWL × net `weight` / class boosts |
+| Power loop area | BBox area of `power_loop_group` parts (EMI / L) |
+| Critical net length | Extra cost for `critical` / `max_length_mm` nets |
+| Overlap / regions | Legal packing + floorplan preferences |
+| Density / thermal | Congestion and hot-part separation |
+| EMI proxy | Sensitive nets away from analog; length |
+| Spice score | Rail/loop proxy; real **ngspice** when installed |
+| OpenEMS score | EMI proxy; **openEMS** binary detected when present |
+
+Physics weights live under `physics:` in the config so you can emphasize loop inductance vs wirelength, etc.
+
+## Architecture
+
+| Module | Role |
+|--------|------|
+| `physics_router.models` | Net labels, regions, scores |
+| `physics_router.config_io` | YAML/JSON load/save |
+| `physics_router.kicad_io` | Read/write `.kicad_pcb` placements |
+| `physics_router.physics` | Cost terms + Ngspice/OpenEMS backends |
+| `physics_router.placement` | Multi-candidate SA + physics ranking |
+| `physics_router.router` | TopoR-style free-angle **guide** routes |
+| `physics_router.cli` | `physics-router` CLI |
 
 ## Topological routing (TopoR-inspired)
 
-[TopoR](https://en.wikipedia.org/wiki/TopoR) is a topological PCB autorouter (Eremex) known for:
+Guide routing (`route-guide`) builds free-angle polylines (no 45°/90° constraint) as a rubberband precursor. Full clearance-aware TopoR engine is next; placement already optimizes for fewer vias / shorter critical nets via physics scores.
 
-| Idea | What it means for this engine |
-|------|-------------------------------|
-| No preferred layer directions | Traces are not forced into H/V “channels”; routing is freer and denser |
-| Angles not limited to 45°/90° | Wires can use arbitrary angles (and optionally arcs) |
-| Gridless topology | Clearances and topology drive the shape, not a fixed grid |
-| Auto-optimize on move | When parts or vias move, wire length/shape re-optimizes with clearance |
-| Multi-variant search | Keep several layout candidates; drop the worst by length / via count |
-| Placement assist | Automatic component placement for the whole board or a region (seed for manual work) |
-| Necking & teardrops | Trace width reduction in tight spots; smooth pad entry |
-| BGA-aware strategies | Special handling to cut vias, density, and sometimes layer count |
-| Single-layer modes | Algorithms that minimize or eliminate interlayer junctions |
+## Setup
 
-Related open-source lineage: gEDA’s **Toporouter** (rubberband / topological methods; also adapted toward KiCad). This project targets **first-class KiCad placement + routing**, with physics in the loop.
+- Python 3.10+
+- KiCad 8+ (for real projects; optional for synthetic demo)
+- Ngspice (optional; improves spice ranking when on `PATH`)
+- OpenEMS (optional; detected for EM path)
 
-## Features (planned)
-
-- **KiCad-native placement & routing engine** — schematics and PCB as source of truth
-- **TopoR-style topological autoroute** — gridless, free angles, no preferred directions
-- **Component placement** — global and region-based auto-placement
-- **Physics-in-the-loop** — iterative refine using Ngspice / OpenEMS feedback
-- **Production focus** — fewer manufacturing and EMI surprises after layout
-
-## Architecture (high level)
-
-```
-KiCad schematic / PCB
-        │
-        ▼
-┌───────────────────┐
-│ Placement engine  │  ← topological / constraint-aware placement
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐
-│ Topological router│  ← TopoR-inspired free-angle routing
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐
-│ Physics validators│  ← Ngspice, OpenEMS, SI / EMI / power-loop metrics
-└─────────┬─────────┘
-          ▼
-   Accept / re-place / re-route
-          │
-          ▼
-   Updated KiCad PCB
+```bash
+python3 -m pip install -e ".[dev]"
+pytest
 ```
 
 ## Training data
 
-See **[DATASETS.md](DATASETS.md)** for PCB placement/routing training sources:
-
-- Native KiCad corpora (PCBench, Open Schematics, demos, GitHub crawls)
-- Conversion paths (EAGLE, EasyEDA/OSHWLab, Altium → KiCad; Specctra DSN/SES)
-- Gerber collections for routed copper / physics modalities
-- Recommended corpus layout and labeling strategy
-
-## Setup requirements (planned)
-
-- KiCad 8+
-- Ngspice
-- OpenEMS
-- Python 3.10+
+See **[DATASETS.md](DATASETS.md)** for PCB corpora (PCBench, Open Schematics, Gerbers, conversion paths).
 
 ## References
 
-- [TopoR (Wikipedia)](https://en.wikipedia.org/wiki/TopoR) — topological router concepts and history
-- Tal Dayan, *Rubberband based topological router* (PhD thesis, 1997) — algorithms behind open-source Toporouter-style tools
-- KiCad — open-source EDA; target integration host for this engine
+- [TopoR (Wikipedia)](https://en.wikipedia.org/wiki/TopoR)
+- Tal Dayan, *Rubberband based topological router* (PhD thesis, 1997)
+- KiCad — target EDA host
