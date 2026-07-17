@@ -1,0 +1,79 @@
+{
+  "timings_s": {
+    "score": 0.043,
+    "pre_route": 0.0,
+    "route_guide": 11.112,
+    "route_clearance_grid1mm": 34.64
+  },
+  "metrics": {
+    "score_total": 164910.87,
+    "score_breakdown": {
+      "weighted_wirelength": 4244.92,
+      "power_loop_area": 563.5,
+      "critical_net_length": 10908.21,
+      "overlap_penalty": 1179.21,
+      "region_violation": 0.0,
+      "density_congestion": 123.18,
+      "thermal_spread": 0.0,
+      "emi_proxy": 3775.32,
+      "spice_score": 9.88,
+      "openems_score": 3944.36,
+      "total": 164910.87
+    },
+    "physics_notes": [
+      "spice_proxy L\u224818.99nH loop_area=563.5mm\u00b2 power_len=38.2mm; ngspice_ok",
+      "em_proxy emi=3775.32; em_nets=10; openEMS_binary_present(export_via_cli)"
+    ],
+    "pre_route": {
+      "net_count": 23,
+      "pin_count": 241,
+      "copper_layers": [
+        "F.Cu",
+        "In1.Cu",
+        "In2.Cu",
+        "B.Cu"
+      ],
+      "estimated_density_pins_per_cm2": 38.62179487179487,
+      "congestion_warning": false,
+      "suggestions": [
+        "Multilayer: assign GND/PWR to inner layers; route critical signals on outer layers adjacent to a reference plane (controlled impedance).",
+        "Charlieplex/matrix nets: route as a bundle from MCU with matched lengths; keep analog (MIC) on opposite side of board when possible.",
+        "Analog nets present: spatial separation from high-di/dt nets; avoid crossing CPX/switcher on same layer.",
+        "Differential/I2C pairs: co-route on same layer with matched length (pairs: [('SDA', 'SCL'), ('SCL', 'SDA')]).",
+        "Only through vias allowed (KiCad rules): each layer change costs a full through via \u2014 prefer same-layer completion (via minimization).",
+        "DRC floors: clearance\u22650.127mm, track\u22650.127mm, via\u22650.44999999999999996mm."
+      ],
+      "recommended_grid_mm": 0.127,
+      "recommended_clearance_mm": 0.127
+    },
+    "guide": {
+      "segments": 207,
+      "length_mm": 854.1,
+      "vias": 0,
+      "unrouted": []
+    },
+    "route": {
+      "segments": 208,
+      "length_mm": 854.49,
+      "vias": 0,
+      "unrouted": [],
+      "violations": 206,
+      "notes": [
+        "clearance_mm=0.15 free_angle+via layers=['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']",
+        "layer_policy: F.Cu~H-preferred, In1.Cu~V-preferred, In2.Cu~H-preferred, B.Cu~V-preferred (free-angle still used when LOS clear)",
+        "drc: clearance\u22650.15mm track_min=0.127mm layers=['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu'] vias_through=True",
+        "pair:SDA+SCL prefer same layer / matched length",
+        "pair:SCL+SDA prefer same layer / matched length"
+      ]
+    }
+  },
+  "source": "halo-90",
+  "components": 111,
+  "nets": 23,
+  "copper_layers": [
+    "F.Cu",
+    "In1.Cu",
+    "In2.Cu",
+    "B.Cu"
+  ]
+}

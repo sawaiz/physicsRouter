@@ -307,16 +307,57 @@ pytest
 
 ## Test project: HALO-90
 
-Real open-source wearable PCB ([openKolibri/halo-90](https://github.com/openKolibri/halo-90)) — 24 mm LED earring, STM8L, 90 charlieplexed LEDs, CR2032.
+Real open-source wearable PCB ([openKolibri/halo-90](https://github.com/openKolibri/halo-90)) — 24 mm LED earring, STM8L, 90 charlieplexed LEDs, CR2032, **4-layer** stackup.
 
 ```bash
 git clone git@github.com:openKolibri/halo-90.git third_party/halo-90
 physics-router score \
   --config examples/halo-90/placement_config.yaml \
   --pcb third_party/halo-90/pcb/halo-90.kicad_pcb
+
+# Regenerate figures + JSON in docs/images and examples/halo-90
+python scripts/generate_docs_images.py
 ```
 
-Net weights, power/EMI notes, fixed mechanicals, and regions are documented in [`examples/halo-90/`](examples/halo-90/) (authored from the project readme + component datasheets, not blind auto-import).
+Net weights, power/EMI notes, fixed mechanicals, and regions: [`examples/halo-90/`](examples/halo-90/).
+
+### Example results (measured)
+
+Board: **111** footprints, **23** nets, copper layers `F.Cu / In1.Cu / In2.Cu / B.Cu`.
+
+| Step | Time | Result |
+|------|------|--------|
+| `score` (+ ngspice/OpenEMS proxies) | **0.043 s** | total cost ≈ 1.65×10⁵ (multi-objective) |
+| `pre-route` | **&lt;0.01 s** | density ≈ 39 pins/cm²; 4L advice; via floor ≈ 5 |
+| `route-guide` (free-angle) | **11.1 s** | **207** segments, **854.1 mm**, 0 vias, 0 unrouted |
+| `route` clearance grid 1 mm + KiCad DRC | **34.6 s** | **208** segments, **854.5 mm**, 0 vias, 0 unrouted |
+
+Full machine dump: [`examples/halo-90/benchmark_results.json`](examples/halo-90/benchmark_results.json)  
+Route geometry: [`examples/halo-90/route_guide.json`](examples/halo-90/route_guide.json), [`examples/halo-90/route_result.json`](examples/halo-90/route_result.json)
+
+> **Note:** Dense charlieplex geometry still reports many soft clearance-violation flags at coarse grid (router falls back to straight free-angle links). Finer grids improve legality but cost much more CPU — use `pre-route` recommendations and iterate.
+
+### Visualizations
+
+![HALO-90 placement overview](docs/images/placement_overview.png)
+
+*Placement: LED ring (orange), core MCU/battery/sensors (red), pogo pads (green).*
+
+![Free-angle guide routing](docs/images/route_guide.png)
+
+*TopoR-style free-angle **guide** routes — nets colored by class (power red, ground blue, CPX orange, analog green, I2C purple).*
+
+![Clearance routing by copper layer](docs/images/route_by_layer.png)
+
+*Clearance-aware multilayer route (1 mm grid), one panel per copper layer used.*
+
+![Placement score breakdown](docs/images/score_breakdown.png)
+
+*Multi-objective placement score terms (wirelength, critical nets, EMI, density, spice/openEMS proxies).*
+
+![Measured runtimes](docs/images/runtimes.png)
+
+*Wall-clock times for the steps above on the machine that generated these assets.*
 
 ## Training data
 
