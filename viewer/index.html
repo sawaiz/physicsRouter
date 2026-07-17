@@ -3,451 +3,840 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>physicsRouter interactive viewer</title>
+  <title>physicsRouter — control plane</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg: #0b0f14; --panel: #151c27; --text: #e8eef7; --muted: #8b9bb4;
-      --accent: #5b9fd4; --line: #2a3548;
+      --bg: #0a0e13; --panel: #121922; --card: #182230; --line: #2a3548;
+      --text: #e8eef7; --muted: #8b9bb4; --accent: #5b9fd4; --good: #3ecf8e;
+      --warn: #f0b429; --bad: #f07178; --run: #7aa2f7;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; font-family: "IBM Plex Sans", system-ui, sans-serif; background: var(--bg); color: var(--text); }
-    #app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
-    aside {
-      background: var(--panel); border-right: 1px solid var(--line);
-      padding: 1rem; overflow: auto; display: flex; flex-direction: column; gap: 0.85rem;
+    html, body { margin: 0; height: 100%; font-family: "IBM Plex Sans", system-ui, sans-serif;
+      background: var(--bg); color: var(--text); font-size: 14px; }
+    #shell { display: grid; grid-template-rows: 52px 1fr; height: 100%; }
+    header {
+      display: flex; align-items: center; gap: 1rem; padding: 0 1rem;
+      border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    h1 { font-size: 1rem; margin: 0; font-weight: 600; }
-    h2 { font-size: 0.75rem; margin: 0 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    label { display: block; font-size: 0.85rem; margin: 0.25rem 0; }
-    select, input[type=file], button {
+    header h1 { font-size: 1rem; margin: 0; font-weight: 600; white-space: nowrap; }
+    header .meta { color: var(--muted); font-size: 0.8rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pill {
+      font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted);
+    }
+    .pill.ok { color: var(--good); border-color: #2a5a44; }
+    .pill.err { color: var(--bad); border-color: #5a2a2a; }
+    .pill.run { color: var(--run); border-color: #2a3a5a; }
+    #main { display: grid; grid-template-columns: 220px 1fr 340px; min-height: 0; }
+    nav {
+      background: var(--panel); border-right: 1px solid var(--line);
+      padding: 0.75rem 0.5rem; overflow: auto;
+    }
+    nav button {
+      display: block; width: 100%; text-align: left; background: transparent;
+      border: none; color: var(--muted); padding: 0.55rem 0.75rem; border-radius: 8px;
+      cursor: pointer; font: inherit; margin-bottom: 2px;
+    }
+    nav button:hover { background: #1a2433; color: var(--text); }
+    nav button.active { background: #1e3a55; color: var(--text); }
+    nav .sec { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); padding: 0.75rem 0.75rem 0.3rem; }
+    #content { overflow: auto; padding: 1rem; min-width: 0; }
+    #side {
+      border-left: 1px solid var(--line); background: var(--panel);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    #side .tabs { display: flex; border-bottom: 1px solid var(--line); }
+    #side .tabs button {
+      flex: 1; background: transparent; border: none; color: var(--muted);
+      padding: 0.6rem; cursor: pointer; font: inherit; border-bottom: 2px solid transparent;
+    }
+    #side .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    #side .pane { flex: 1; overflow: auto; padding: 0.75rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 0.9rem 1rem; margin-bottom: 0.85rem;
+    }
+    .card h2 { margin: 0 0 0.65rem; font-size: 0.78rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+    @media (max-width: 1100px) {
+      #main { grid-template-columns: 180px 1fr; }
+      #side { display: none; }
+      .grid2, .grid3 { grid-template-columns: 1fr; }
+    }
+    .stat { font-size: 0.82rem; color: var(--muted); }
+    .stat strong { color: var(--text); font-weight: 600; }
+    .big { font-size: 1.75rem; font-weight: 700; color: var(--good); }
+    label.field { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
+    input, select, textarea, button.btn {
       width: 100%; background: #0f1419; color: var(--text); border: 1px solid var(--line);
       border-radius: 8px; padding: 0.45rem 0.55rem; font: inherit;
     }
-    button { cursor: pointer; background: #1e3a55; border-color: #2d5a84; }
-    button:hover { background: #274a6b; }
-    #viewport { position: relative; min-height: 0; }
-    #c2d, #c3d { position: absolute; inset: 0; width: 100%; height: 100%; }
-    #c3d { display: none; }
-    .row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-    .row label { flex: 1 1 45%; }
-    .stat { font-size: 0.8rem; color: var(--muted); }
-    .stat strong { color: var(--text); }
-    .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+    textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-height: 280px; }
+    button.btn {
+      cursor: pointer; background: #1e3a55; border-color: #2d5a84; width: auto;
+      padding: 0.45rem 0.85rem; margin: 0.2rem 0.25rem 0.2rem 0;
+    }
+    button.btn:hover { background: #274a6b; }
+    button.btn.primary { background: #2563a8; }
+    button.btn.good { background: #1a4a35; border-color: #2a6a4a; }
+    button.btn.warn { background: #4a3a12; border-color: #7a5a20; }
+    button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.35rem 0.3rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    .job {
+      border: 1px solid var(--line); border-radius: 10px; padding: 0.55rem 0.65rem;
+      margin-bottom: 0.45rem; background: #0f1419; cursor: pointer;
+    }
+    .job:hover, .job.sel { border-color: var(--accent); }
+    .job .top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+    .bar { height: 6px; background: #1a2433; border-radius: 4px; margin-top: 0.4rem; overflow: hidden; }
+    .bar > i { display: block; height: 100%; background: linear-gradient(90deg, #3a7abd, #5b9fd4); width: 0%; transition: width 0.25s; }
+    .bar.done > i { background: var(--good); }
+    .bar.err > i { background: var(--bad); width: 100% !important; }
+    pre.log {
+      background: #0b0f14; border: 1px solid var(--line); border-radius: 8px;
+      padding: 0.6rem; font-size: 11px; max-height: 220px; overflow: auto;
+      white-space: pre-wrap; color: #b8c4d4; margin: 0.4rem 0 0;
+    }
+    #boardCanvas { width: 100%; height: 420px; background: #0b0f14; border-radius: 10px; border: 1px solid var(--line); display: block; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; margin: 0.25rem 0; }
+    .chk input { width: auto; }
+    .muted { color: var(--muted); }
+    .weight-row { display: grid; grid-template-columns: 140px 1fr 48px; gap: 0.5rem; align-items: center; margin: 0.25rem 0; font-size: 0.8rem; }
+    .weight-row input[type=range] { width: 100%; }
+    .hidden { display: none !important; }
+    .tag { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.35rem; border-radius: 4px; background: #1a2433; color: var(--muted); margin-right: 0.2rem; }
+    .tag.crit { color: var(--warn); }
+    .tag.power { color: #f07178; }
+    .tag.ground { color: #5b9fd4; }
     a { color: var(--accent); }
-    #msg { font-size: 0.8rem; color: var(--warn, #f0b429); min-height: 1.2em; }
+    #offlineBanner {
+      display: none; background: #3a2a10; color: var(--warn); padding: 0.4rem 1rem;
+      font-size: 0.82rem; border-bottom: 1px solid #5a4a20;
+    }
+    #offlineBanner.show { display: block; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <aside>
-      <h1>physicsRouter viewer</h1>
-      <p class="stat">Multi-layer routes · EMI geometry · 3D board (GLB)</p>
-
-      <div>
-        <h2>Data</h2>
-        <label>Load viewer_data.json <input type="file" id="fileJson" accept="application/json,.json"/></label>
-        <button type="button" id="btnDemo">Load demo data</button>
-        <p class="stat" id="dataSrc">No data loaded</p>
-      </div>
-
-      <div>
-        <h2>Route variant</h2>
-        <select id="routeSelect"></select>
-        <p class="stat" id="routeStats"></p>
-      </div>
-
-      <div>
-        <h2>Layers</h2>
-        <div id="layerToggles"></div>
-      </div>
-
-      <div>
-        <h2>View</h2>
-        <div class="row">
-          <button type="button" id="btn2d">2D PCB</button>
-          <button type="button" id="btn3d">3D</button>
+  <div id="shell">
+    <div id="offlineBanner">
+      Offline / static mode — run <code>physics-router serve</code> for live jobs, config, and progress.
+      Loading local <code>viewer_data.json</code> if present.
+    </div>
+    <header>
+      <h1>physicsRouter</h1>
+      <span class="meta" id="hdrMeta">connecting…</span>
+      <span class="pill" id="apiPill">API</span>
+      <span class="pill" id="jobPill">0 jobs</span>
+    </header>
+    <div id="main">
+      <nav id="nav">
+        <div class="sec">Explore</div>
+        <button type="button" data-view="overview" class="active">Overview</button>
+        <button type="button" data-view="board">Board view</button>
+        <button type="button" data-view="nets">Nets &amp; labels</button>
+        <button type="button" data-view="results">Results</button>
+        <div class="sec">Configure</div>
+        <button type="button" data-view="config">Config / YAML</button>
+        <button type="button" data-view="weights">Physics weights</button>
+        <div class="sec">Run</div>
+        <button type="button" data-view="run">Jobs &amp; pipeline</button>
+        <button type="button" data-view="sims">Simulations</button>
+        <button type="button" data-view="tests">Tests &amp; CI</button>
+      </nav>
+      <div id="content"></div>
+      <aside id="side">
+        <div class="tabs">
+          <button type="button" class="active" data-side="jobs">Jobs</button>
+          <button type="button" data-side="detail">Detail</button>
+          <button type="button" data-side="log">Log</button>
         </div>
-        <label><input type="checkbox" id="showComps" checked/> Components</label>
-        <label><input type="checkbox" id="showRoutes" checked/> Routes</label>
-        <label><input type="checkbox" id="showVias" checked/> Vias</label>
-        <label><input type="checkbox" id="showEMI" checked/> EMI / geometry primitives</label>
-      </div>
-
-      <div>
-        <h2>Physics budget</h2>
-        <div id="physicsBox" class="stat">—</div>
-        <p><a id="dashLink" href="../examples/demo/dashboard.html">Open dashboard</a></p>
-      </div>
-
-      <div>
-        <h2>Compare</h2>
-        <pre id="compareBox" class="stat" style="white-space:pre-wrap;max-height:120px;overflow:auto">—</pre>
-      </div>
-
-      <div id="msg"></div>
-    </aside>
-    <div id="viewport">
-      <canvas id="c2d"></canvas>
-      <div id="c3d"></div>
+        <div class="pane" id="sidePane"></div>
+      </aside>
     </div>
   </div>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-  <script type="module">
-  import * as THREE from 'three';
-  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
+  <script>
+  const API = '';
   const NET_COLORS = {
     power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
     differential: '#9467bd', signal: '#8c564b', reset: '#e377c2', clock: '#17becf',
     rf: '#bcbd22', other: '#888888'
   };
 
-  let data = null;
-  let mode3d = false;
-  let three = { renderer: null, scene: null, camera: null, controls: null, root: null };
+  const state = {
+    live: false,
+    snap: null,
+    viewer: null,
+    selectedJob: null,
+    side: 'jobs',
+    view: 'overview',
+    scoreChart: null,
+    pollTimer: null,
+  };
 
-  const $ = (id) => document.getElementById(id);
-  const msg = (t) => { $('msg').textContent = t || ''; };
+  const $ = (s, el=document) => el.querySelector(s);
+  const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 
-  function netColor(net) {
-    const meta = data?.board?.net_meta?.[net];
-    const cls = meta?.class || 'signal';
-    return NET_COLORS[cls] || NET_COLORS.other;
-  }
-
-  function loadPayload(obj) {
-    data = obj;
-    $('dataSrc').textContent = data.board?.source_path || 'in-memory board';
-    // routes select
-    const sel = $('routeSelect');
-    sel.innerHTML = '';
-    const names = Object.keys(data.routes || {});
-    if (!names.length) {
-      sel.innerHTML = '<option value="">(no routes)</option>';
-    } else {
-      names.forEach((n) => {
-        const o = document.createElement('option');
-        o.value = n; o.textContent = n;
-        sel.appendChild(o);
-      });
-    }
-    // layers
-    const layers = data.board?.copper_layers || ['F.Cu', 'B.Cu'];
-    const box = $('layerToggles');
-    box.innerHTML = '';
-    layers.forEach((ly, i) => {
-      const id = `ly_${i}`;
-      const lab = document.createElement('label');
-      lab.innerHTML = `<input type="checkbox" id="${id}" data-layer="${ly}" checked/> ${ly}`;
-      box.appendChild(lab);
+  async function api(path, opts={}) {
+    const r = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) },
+      ...opts,
     });
-    // physics
-    const ph = data.physics?.score;
-    if (ph) {
-      $('physicsBox').innerHTML = Object.entries(ph)
-        .map(([k, v]) => `<div><strong>${k}</strong>: ${typeof v === 'number' ? v.toFixed(2) : v}</div>`)
-        .join('');
-    } else {
-      $('physicsBox').textContent = 'No physics block in viewer_data.json';
-    }
-    $('compareBox').textContent = data.comparison
-      ? JSON.stringify(data.comparison.winner || data.comparison, null, 2)
-      : 'No comparison data';
-    draw2d();
-    if (mode3d) init3d();
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!r.ok) throw new Error(data.error || r.statusText || 'request failed');
+    return data;
   }
 
-  async function loadDemo() {
-    msg('Loading demo…');
-    const candidates = [
-      '../examples/demo/viewer_data.json',
-      './viewer_data.json',
-      '../examples/halo-90/viewer_data.json',
+  function fmt(n, d=2) {
+    if (n == null || Number.isNaN(n)) return '—';
+    if (typeof n !== 'number') return String(n);
+    return n.toFixed(d);
+  }
+
+  function statusPill(st) {
+    const c = st === 'done' ? 'ok' : st === 'error' ? 'err' : st === 'running' ? 'run' : '';
+    return `<span class="pill ${c}">${st}</span>`;
+  }
+
+  // ---------- views ----------
+  function render() {
+    const c = $('#content');
+    const v = state.view;
+    if (v === 'overview') c.innerHTML = viewOverview();
+    else if (v === 'board') c.innerHTML = viewBoard();
+    else if (v === 'nets') c.innerHTML = viewNets();
+    else if (v === 'results') c.innerHTML = viewResults();
+    else if (v === 'config') c.innerHTML = viewConfig();
+    else if (v === 'weights') c.innerHTML = viewWeights();
+    else if (v === 'run') c.innerHTML = viewRun();
+    else if (v === 'sims') c.innerHTML = viewSims();
+    else if (v === 'tests') c.innerHTML = viewTests();
+    bindView();
+    renderSide();
+    if (v === 'overview') drawScoreChart();
+    if (v === 'board') drawBoard();
+  }
+
+  function viewOverview() {
+    const s = state.snap?.session || state.viewer?.session || {};
+    const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
+    const total = score.total ?? state.snap?.last_score?.score_total ?? '—';
+    const routes = state.snap?.routes || state.viewer?.routes || {};
+    const routeRows = Object.entries(routes).map(([n, r]) =>
+      `<tr><td>${n}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td>
+       <td>${r.clearance_violations ?? '—'}</td><td>${r.segments ?? (r.segments?.length) ?? '—'}</td></tr>`
+    ).join('') || '<tr><td colspan=5 class=muted>No routes yet — run guide/clearance</td></tr>';
+    const notes = (state.snap?.last_score?.notes || state.viewer?.physics?.notes || []).slice(0, 12);
+    return `
+      <div class="grid3">
+        <div class="card"><h2>Total physics cost</h2>
+          <div class="big">${typeof total === 'number' ? fmt(total, 2) : total}</div>
+          <p class="stat">Lower is better · multi-objective</p>
+        </div>
+        <div class="card"><h2>Board session</h2>
+          <div class="stat"><strong>Project</strong> ${state.snap?.config?.project_name || s.project_name || '—'}</div>
+          <div class="stat"><strong>Preset</strong> ${state.snap?.preset || state.viewer?.preset || '—'}</div>
+          <div class="stat"><strong>Parts</strong> ${s.components ?? '—'} · <strong>movable</strong> ${s.movable ?? '—'} · <strong>locked</strong> ${s.locked ?? '—'}</div>
+          <div class="stat"><strong>Nets</strong> ${s.nets ?? '—'} · <strong>Layers</strong> ${(s.copper_layers||[]).join(', ') || '—'}</div>
+          <div class="stat"><strong>PCB</strong> ${state.snap?.pcb_path || 'synthetic'}</div>
+        </div>
+        <div class="card"><h2>Quick run</h2>
+          <button class="btn primary" data-job="score">Score</button>
+          <button class="btn" data-job="place">Place</button>
+          <button class="btn" data-job="route_guide">Guide route</button>
+          <button class="btn good" data-job="pipeline">Full pipeline</button>
+          <p class="stat" style="margin-top:0.5rem">Progress streams in the Jobs panel →</p>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card"><h2>Score breakdown</h2><canvas id="scoreChart" height="220"></canvas></div>
+        <div class="card"><h2>Route variants</h2>
+          <table><thead><tr><th>Name</th><th>mm</th><th>Vias</th><th>Viol</th><th>Segs</th></tr></thead>
+          <tbody>${routeRows}</tbody></table>
+        </div>
+      </div>
+      <div class="card"><h2>Physics notes</h2>
+        <ul class="stat">${notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') || '<li class=muted>Run score to populate</li>'}</ul>
+      </div>
+    `;
+  }
+
+  function viewBoard() {
+    const layers = (state.viewer?.board?.copper_layers || state.snap?.session?.copper_layers || ['F.Cu','B.Cu']);
+    const routes = Object.keys(state.viewer?.routes || state.snap?.routes || { guide:1, topor:1 });
+    return `
+      <div class="card">
+        <h2>Interactive board</h2>
+        <div class="row" style="margin-bottom:0.5rem">
+          <label class="field" style="width:auto;margin:0">Route
+            <select id="routeSel" style="width:140px;display:inline-block;margin-left:0.3rem">
+              ${routes.map(r => `<option value="${r}">${r}</option>`).join('')}
+            </select>
+          </label>
+          <label class="chk"><input type="checkbox" id="showComps" checked/> Components</label>
+          <label class="chk"><input type="checkbox" id="showRoutes" checked/> Routes</label>
+          <label class="chk"><input type="checkbox" id="showVias" checked/> Vias</label>
+          <label class="chk"><input type="checkbox" id="showEMI" checked/> EMI boxes</label>
+          <span class="stat" id="boardStats"></span>
+        </div>
+        <div class="row" id="layerToggles" style="margin-bottom:0.5rem">
+          ${layers.map((ly,i) => `<label class="chk"><input type="checkbox" data-layer="${ly}" checked/> ${ly}</label>`).join('')}
+        </div>
+        <canvas id="boardCanvas"></canvas>
+      </div>
+    `;
+  }
+
+  function viewNets() {
+    const nets = state.snap?.config?.nets || state.viewer?.config?.nets || [];
+    const meta = state.viewer?.board?.net_meta || {};
+    const boardNets = state.viewer?.board?.nets || {};
+    const rows = (nets.length ? nets : Object.keys(meta).map(n => ({name:n, ...meta[n]}))).map(n => {
+      const pins = boardNets[n.name]?.length ?? '—';
+      const cls = n.net_class || n.class || 'signal';
+      return `<tr>
+        <td><strong>${escapeHtml(n.name)}</strong>
+          ${n.critical ? '<span class="tag crit">critical</span>' : ''}
+          <span class="tag ${cls}">${cls}</span>
+        </td>
+        <td>${fmt(n.weight, 1)}</td>
+        <td>${pins}</td>
+        <td>${n.power_loop_group || '—'}</td>
+        <td>${n.pair_with || '—'}</td>
+        <td class="stat">${escapeHtml(n.notes || '')}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan=6 class=muted>No net labels</td></tr>';
+    const fixed = (state.snap?.config?.fixed || []).map(f =>
+      `<tr><td>${f.ref}</td><td>${fmt(f.x_mm)}</td><td>${fmt(f.y_mm)}</td><td>${f.locked?'locked':'free'}</td><td class=stat>${escapeHtml(f.notes||'')}</td></tr>`
+    ).join('') || '<tr><td colspan=5 class=muted>No fixed placements</td></tr>';
+    return `
+      <div class="card"><h2>Labeled nets (${nets.length || Object.keys(meta).length})</h2>
+        <table><thead><tr><th>Net</th><th>W</th><th>Pins</th><th>Loop</th><th>Pair</th><th>Notes</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+      <div class="card"><h2>Fixed / locked mechanicals</h2>
+        <table><thead><tr><th>Ref</th><th>X</th><th>Y</th><th>Lock</th><th>Notes</th></tr></thead>
+        <tbody>${fixed}</tbody></table>
+        <p class="stat">Unlocked components move under SA; fixed parts stay put for EE constraints.</p>
+      </div>
+    `;
+  }
+
+  function viewResults() {
+    const jobs = (state.snap?.jobs || []).filter(j => j.status === 'done' || j.status === 'error');
+    const rows = jobs.map(j => {
+      const rs = j.result_summary || {};
+      const sum = Object.entries(rs).map(([k,v]) => `${k}=${typeof v==='number'?fmt(v):v}`).join(' · ') || '—';
+      return `<tr data-jid="${j.id}" class="jobrow" style="cursor:pointer">
+        <td>${j.type}</td><td>${statusPill(j.status)}</td>
+        <td>${fmt(j.progress,0)}%</td><td class="stat">${escapeHtml(sum)}</td>
+        <td class="stat">${j.ended_at ? new Date(j.ended_at*1000).toLocaleTimeString() : '—'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan=5 class=muted>No completed jobs yet</td></tr>';
+    return `
+      <div class="card"><h2>Completed / failed jobs</h2>
+        <table><thead><tr><th>Type</th><th>Status</th><th>Prog</th><th>Summary</th><th>Ended</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+      <div class="card"><h2>Selected result JSON</h2>
+        <pre class="log" id="resultJson">Select a job row…</pre>
+        <button class="btn" id="btnRefreshResults">Refresh artifacts list</button>
+        <div id="artifactList" class="stat" style="margin-top:0.5rem"></div>
+      </div>
+    `;
+  }
+
+  function viewConfig() {
+    const text = state.snap?.config_text || '';
+    const presets = state.snap?.presets || [{id:'synthetic',label:'synthetic'}];
+    return `
+      <div class="card">
+        <h2>Preset / board source</h2>
+        <div class="row">
+          <select id="presetSel" style="max-width:280px">
+            ${presets.map(p => `<option value="${p.id}" ${p.id===state.snap?.preset?'selected':''}>${p.label||p.id}${p.has_pcb?' · PCB':''}</option>`).join('')}
+          </select>
+          <button class="btn primary" id="btnLoadPreset">Load preset</button>
+          <button class="btn" id="btnApplyYaml">Apply YAML</button>
+          <button class="btn" id="btnSaveYaml">Save to runs/</button>
+        </div>
+        <p class="stat">Editing config reloads the session board. Unlocked parts will re-place on next Place job.</p>
+      </div>
+      <div class="card">
+        <h2>Placement config (YAML)</h2>
+        <textarea id="yamlEditor">${escapeHtml(text)}</textarea>
+      </div>
+      <div class="card">
+        <h2>SA / sim policy (quick)</h2>
+        <div class="grid3">
+          <div><label class="field">num_candidates</label><input type="number" id="cfgCand" value="${state.snap?.config?.num_candidates ?? 8}" min="1" max="64"/></div>
+          <div><label class="field">sa_iterations</label><input type="number" id="cfgSa" value="${state.snap?.config?.sa_iterations ?? 2000}" min="100"/></div>
+          <div><label class="field">random_seed</label><input type="number" id="cfgSeed" value="${state.snap?.config?.random_seed ?? 42}"/></div>
+          <div><label class="chk"><input type="checkbox" id="cfgSpice" ${state.snap?.config?.use_spice!==false?'checked':''}/> use_spice</label></div>
+          <div><label class="chk"><input type="checkbox" id="cfgOpenems" ${state.snap?.config?.use_openems!==false?'checked':''}/> use_openems</label></div>
+        </div>
+        <button class="btn" id="btnApplyQuick">Apply quick fields into config</button>
+      </div>
+    `;
+  }
+
+  function viewWeights() {
+    const w = state.snap?.config?.physics || state.viewer?.physics?.weights || {};
+    const keys = Object.keys(w).length ? Object.keys(w) : [
+      'weighted_wirelength','power_loop_area','critical_net_length','overlap_penalty',
+      'region_violation','density_congestion','thermal_spread','emi_proxy','spice_score',
+      'openems_score','ir_drop','loop_inductance','return_path','matrix_length_match'
     ];
-    for (const url of candidates) {
-      try {
-        const r = await fetch(url);
-        if (r.ok) {
-          loadPayload(await r.json());
-          msg('');
-          return;
-        }
-      } catch (_) {}
+    const rows = keys.map(k => {
+      const v = Number(w[k] ?? 1);
+      return `<div class="weight-row" data-k="${k}">
+        <span>${k}</span>
+        <input type="range" min="0" max="20" step="0.1" value="${v}" data-w="${k}"/>
+        <span class="wval">${v.toFixed(1)}</span>
+      </div>`;
+    }).join('');
+    return `
+      <div class="card">
+        <h2>Physics weights (higher = more important)</h2>
+        <p class="stat">Tune multi-objective placement energy. Apply then re-run Score / Place.</p>
+        ${rows}
+        <div class="row" style="margin-top:0.75rem">
+          <button class="btn primary" id="btnApplyWeights">Apply weights</button>
+          <button class="btn" data-job="score">Re-score</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function viewRun() {
+    const catalog = state.snap?.job_types || [];
+    const byGroup = {};
+    catalog.forEach(j => { (byGroup[j.group] = byGroup[j.group] || []).push(j); });
+    let html = `<div class="card"><h2>Pipeline</h2>
+      <p class="stat">Runs score → place → guide → clearance → spice → openems → rebuild with per-step progress.</p>
+      <div class="row">
+        <button class="btn good primary" data-job="pipeline">Run full pipeline</button>
+        <label class="field" style="width:100px;margin:0">clearance
+          <input id="rtClear" type="number" step="0.05" value="0.2" style="width:80px"/>
+        </label>
+        <label class="field" style="width:100px;margin:0">grid
+          <input id="rtGrid" type="number" step="0.1" value="0.5" style="width:80px"/>
+        </label>
+        <label class="field" style="width:100px;margin:0">candidates
+          <input id="rtCand" type="number" value="4" min="1" max="16" style="width:80px"/>
+        </label>
+        <label class="field" style="width:100px;margin:0">SA iters
+          <input id="rtSa" type="number" value="800" min="100" style="width:90px"/>
+        </label>
+      </div>
+    </div>`;
+    for (const [g, items] of Object.entries(byGroup)) {
+      html += `<div class="card"><h2>${g}</h2><div class="row">`;
+      for (const j of items) {
+        html += `<button class="btn" data-job="${j.id}" title="${escapeHtml(j.description)}">${j.label}</button>`;
+      }
+      html += `</div><p class="stat">${items.map(i => `<strong>${i.id}</strong>: ${escapeHtml(i.description)}`).join('<br/>')}</p></div>`;
     }
-    msg('Demo data not found — use “Load viewer_data.json” or run scripts/build_viewer_demo.py');
+    return html;
   }
 
-  function activeLayers() {
-    return [...document.querySelectorAll('#layerToggles input:checked')].map((el) => el.dataset.layer);
+  function viewSims() {
+    return `
+      <div class="grid2">
+        <div class="card">
+          <h2>Circuit / PI (Ngspice proxy)</h2>
+          <p class="stat">GeometricSpiceProxy + optional ngspice rail check for power-loop L and IR.</p>
+          <button class="btn primary" data-job="spice">Run spice proxy</button>
+          <button class="btn" data-job="score">Full score (incl. spice)</button>
+        </div>
+        <div class="card">
+          <h2>OpenEMS / EMI</h2>
+          <p class="stat">Export mesh geometry + OpenEMS score proxy; attach EMI boxes to board view.</p>
+          <button class="btn primary" data-job="openems">OpenEMS export + proxy</button>
+          <button class="btn" data-job="export_step">STEP (needs PCB)</button>
+        </div>
+        <div class="card">
+          <h2>Power / loop metrics</h2>
+          <p class="stat">IR drop, loop inductance, return path, CPX length match live in geometric score.</p>
+          <button class="btn" data-job="score">Compute all physics terms</button>
+        </div>
+        <div class="card">
+          <h2>FreeRouting baseline</h2>
+          <p class="stat">Export Specctra DSN, run FreeRouting externally, then compare.</p>
+          <button class="btn" data-job="export_dsn">Export DSN</button>
+          <button class="btn" data-job="compare_routes">Compare TopoR metrics</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Last sim notes</h2>
+        <pre class="log">${escapeHtml(JSON.stringify(state.snap?.last_score || state.viewer?.physics || {}, null, 2).slice(0, 4000))}</pre>
+      </div>
+    `;
   }
 
-  function currentRoute() {
-    const name = $('routeSelect').value;
-    return data?.routes?.[name] || null;
+  function viewTests() {
+    return `
+      <div class="card">
+        <h2>Unit tests</h2>
+        <p class="stat">Runs pytest on the package. Progress + log stream in the Jobs panel.</p>
+        <button class="btn primary" data-job="tests">Run pytest</button>
+        <label class="field">Optional -k expression</label>
+        <input id="testK" placeholder="e.g. halo or router"/>
+        <button class="btn" id="btnTestsK">Run filtered tests</button>
+      </div>
+      <div class="card">
+        <h2>CI regression</h2>
+        <p class="stat">Synthetic score + guide length vs baselines (HALO if vendored).</p>
+        <button class="btn" data-job="ci_regression">Run CI regression</button>
+      </div>
+      <div class="card">
+        <h2>Manufacturability / DRC</h2>
+        <p class="stat">Official KiCad DRC oracle (requires halo-90 PCB or set pcb path).</p>
+        <button class="btn warn" data-job="drc">Run KiCad DRC</button>
+        <button class="btn" data-job="pre_route">Pre-route manufacturability hints</button>
+      </div>
+    `;
   }
 
-  function draw2d() {
-    const canvas = $('c2d');
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---------- side panel ----------
+  function renderSide() {
+    const pane = $('#sidePane');
+    if (state.side === 'jobs') {
+      const jobs = state.snap?.jobs || [];
+      pane.innerHTML = jobs.length ? jobs.map(j => {
+        const cls = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : '';
+        return `<div class="job ${state.selectedJob===j.id?'sel':''}" data-jid="${j.id}">
+          <div class="top"><strong>${j.type}</strong>${statusPill(j.status)}</div>
+          <div class="stat">${escapeHtml(j.stage)} · ${fmt(j.progress,0)}%</div>
+          <div class="bar ${cls}"><i style="width:${j.progress||0}%"></i></div>
+        </div>`;
+      }).join('') : '<p class="stat">No jobs yet. Start a run from Overview or Jobs.</p>';
+      $$('.job', pane).forEach(el => el.onclick = () => { state.selectedJob = el.dataset.jid; state.side = 'detail'; $$('#side .tabs button').forEach(b=>b.classList.toggle('active', b.dataset.side==='detail')); renderSide(); });
+    } else if (state.side === 'detail' || state.side === 'log') {
+      const j = (state.snap?.jobs || []).find(x => x.id === state.selectedJob);
+      if (!j) { pane.innerHTML = '<p class="stat">Select a job</p>'; return; }
+      // fetch full job
+      if (state.live) {
+        api(`/api/jobs/${j.id}`).then(full => {
+          const body = state.side === 'log'
+            ? `<pre class="log">${escapeHtml((full.log||[]).join('\n'))}</pre>`
+            : `<div class="stat"><strong>${full.type}</strong> ${statusPill(full.status)}</div>
+               <div class="stat">${escapeHtml(full.stage)} · ${fmt(full.progress,0)}%</div>
+               <div class="bar ${full.status==='done'?'done':full.status==='error'?'err':''}"><i style="width:${full.progress||0}%"></i></div>
+               <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">RESULT</h2>
+               <pre class="log">${escapeHtml(JSON.stringify(full.result, null, 2) || full.error || '…')}</pre>
+               <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">LOG</h2>
+               <pre class="log">${escapeHtml((full.log_tail||full.log||[]).join('\n'))}</pre>`;
+          pane.innerHTML = body;
+        }).catch(e => { pane.innerHTML = `<p class="stat">${escapeHtml(e.message)}</p>`; });
+        pane.innerHTML = '<p class="stat">Loading job…</p>';
+      } else {
+        pane.innerHTML = `<pre class="log">${escapeHtml(JSON.stringify(j, null, 2))}</pre>`;
+      }
+    }
+  }
+
+  // ---------- board canvas ----------
+  function netColor(net) {
+    const meta = state.viewer?.board?.net_meta?.[net];
+    return NET_COLORS[meta?.class || 'signal'] || NET_COLORS.other;
+  }
+
+  function drawBoard() {
+    const canvas = $('#boardCanvas');
+    if (!canvas) return;
+    const data = state.viewer;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.parentElement.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#0b0f14';
     ctx.fillRect(0, 0, rect.width, rect.height);
-    if (!data?.board) return;
-
+    if (!data?.board) {
+      ctx.fillStyle = '#8b9bb4';
+      ctx.fillText('No board data — run serve or load demo', 20, 30);
+      return;
+    }
     const comps = data.board.components || [];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     for (const c of comps) {
-      minX = Math.min(minX, c.x - c.w / 2);
-      maxX = Math.max(maxX, c.x + c.w / 2);
-      minY = Math.min(minY, c.y - c.h / 2);
-      maxY = Math.max(maxY, c.y + c.h / 2);
+      minX=Math.min(minX,c.x-c.w/2); maxX=Math.max(maxX,c.x+c.w/2);
+      minY=Math.min(minY,c.y-c.h/2); maxY=Math.max(maxY,c.y+c.h/2);
     }
-    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 50; maxY = 40; }
-    const pad = 2;
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-    const bw = maxX - minX, bh = maxY - minY;
-    const scale = 0.9 * Math.min(rect.width / bw, rect.height / bh);
-    const ox = rect.width / 2 - scale * (minX + maxX) / 2;
-    const oy = rect.height / 2 + scale * (minY + maxY) / 2;
-    const tx = (x, y) => [ox + scale * x, oy - scale * y];
-
-    // board outline
-    ctx.strokeStyle = '#3a4a60';
-    ctx.lineWidth = 1;
-    const [x0, y0] = tx(minX + pad, minY + pad);
-    const [x1, y1] = tx(maxX - pad, maxY - pad);
-    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
-
-    const layersOn = new Set(activeLayers());
-    const route = currentRoute();
-    if (route) {
-      $('routeStats').innerHTML =
-        `<strong>length</strong> ${route.total_length_mm?.toFixed?.(2) ?? route.total_length_mm} mm · ` +
-        `<strong>vias</strong> ${route.via_count} · <strong>segs</strong> ${(route.segments||[]).length}`;
+    if (!isFinite(minX)) { minX=0; minY=0; maxX=data.board.width_mm||50; maxY=data.board.height_mm||40; }
+    const pad=2; minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+    const bw=maxX-minX, bh=maxY-minY;
+    const scale=0.9*Math.min(rect.width/bw, rect.height/bh);
+    const ox=rect.width/2 - scale*(minX+maxX)/2;
+    const oy=rect.height/2 + scale*(minY+maxY)/2;
+    const tx=(x,y)=>[ox+scale*x, oy-scale*y];
+    ctx.strokeStyle='#3a4a60'; ctx.lineWidth=1;
+    const [x0,y0]=tx(minX+pad,minY+pad), [x1,y1]=tx(maxX-pad,maxY-pad);
+    ctx.strokeRect(x0,y1,x1-x0,y0-y1);
+    const layersOn=new Set($$('#layerToggles input:checked').map(e=>e.dataset.layer));
+    const rname=$('#routeSel')?.value;
+    const route=data.routes?.[rname];
+    if ($('#boardStats') && route) {
+      $('#boardStats').innerHTML = `<strong>len</strong> ${fmt(route.total_length_mm)} mm · <strong>vias</strong> ${route.via_count} · <strong>segs</strong> ${(route.segments||[]).length}`;
     }
-
-    // EMI geometry primitives
-    if ($('showEMI').checked && data.emi_geometry?.primitives) {
+    if ($('#showEMI')?.checked && data.emi_geometry?.primitives) {
       for (const p of data.emi_geometry.primitives) {
-        ctx.globalAlpha = 0.25;
-        if (p.kind === 'box') {
-          const [cx, cy] = tx(p.cx_mm, p.cy_mm);
-          const w = p.w_mm * scale, h = p.h_mm * scale;
-          ctx.fillStyle = '#5b9fd4';
-          ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-        } else if (p.kind === 'polyline' && p.points_mm?.length) {
-          ctx.strokeStyle = '#f0b429';
-          ctx.lineWidth = Math.max(1, (p.width_mm || 0.25) * scale);
-          ctx.beginPath();
-          p.points_mm.forEach((pt, i) => {
-            const [x, y] = tx(pt[0], pt[1]);
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          });
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
+        if (p.kind!=='box') continue;
+        const [cx,cy]=tx(p.cx_mm,p.cy_mm);
+        ctx.globalAlpha=0.25; ctx.fillStyle='#5b9fd4';
+        ctx.fillRect(cx-(p.w_mm*scale)/2, cy-(p.h_mm*scale)/2, p.w_mm*scale, p.h_mm*scale);
+        ctx.globalAlpha=1;
       }
     }
-
-    // routes
-    if ($('showRoutes').checked && route?.segments) {
+    if ($('#showRoutes')?.checked && route?.segments) {
       for (const s of route.segments) {
         if (layersOn.size && !layersOn.has(s.layer)) continue;
-        const [a, b] = [tx(s.x1, s.y1), tx(s.x2, s.y2)];
-        ctx.strokeStyle = netColor(s.net);
-        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.2);
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(a[0], a[1]);
-        ctx.lineTo(b[0], b[1]);
-        ctx.stroke();
+        const a=tx(s.x1,s.y1), b=tx(s.x2,s.y2);
+        ctx.strokeStyle=netColor(s.net);
+        ctx.lineWidth=Math.max(1.2,(s.width_mm||0.2)*scale*1.2);
+        ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
       }
     }
-
-    // vias
-    if ($('showVias').checked && route?.vias) {
+    if ($('#showVias')?.checked && route?.vias) {
       for (const v of route.vias) {
-        const [x, y] = tx(v.x, v.y);
-        const r = Math.max(2, (v.size_mm || 0.6) * scale / 2);
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        const [x,y]=tx(v.x,v.y);
+        ctx.beginPath(); ctx.arc(x,y,Math.max(2,(v.size_mm||0.6)*scale/2),0,Math.PI*2);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
       }
     }
-
-    // components
-    if ($('showComps').checked) {
+    if ($('#showComps')?.checked) {
       for (const c of comps) {
-        const [x, y] = tx(c.x, c.y);
-        const w = Math.max(2, c.w * scale), h = Math.max(2, c.h * scale);
-        ctx.fillStyle = c.ref?.match(/^D\\d+$/) ? '#f58518' : '#4c78a8';
-        if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(x - w / 2, y - h / 2, w, h);
-        ctx.globalAlpha = 1;
-        if (!c.ref?.match(/^D\\d+$/)) {
-          ctx.fillStyle = '#fff';
-          ctx.font = '10px system-ui';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
+        const [x,y]=tx(c.x,c.y);
+        const w=Math.max(2,c.w*scale), h=Math.max(2,c.h*scale);
+        ctx.fillStyle = c.locked ? '#6b4c7a' : (c.ref?.match(/^D\\d/) ? '#f58518' : '#4c78a8');
+        if (c.ref==='U1'||c.ref==='BT1') ctx.fillStyle='#e45756';
+        ctx.globalAlpha=0.88; ctx.fillRect(x-w/2,y-h/2,w,h); ctx.globalAlpha=1;
+        if (!c.ref?.match(/^D\\d/)) {
+          ctx.fillStyle='#fff'; ctx.font='10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
           ctx.fillText(c.ref, x, y);
         }
       }
     }
   }
 
-  function dispose3d() {
-    if (three.renderer) {
-      three.renderer.dispose();
-      $('c3d').innerHTML = '';
-      three = { renderer: null, scene: null, camera: null, controls: null, root: null };
-    }
-  }
-
-  function init3d() {
-    dispose3d();
-    const host = $('c3d');
-    host.style.display = 'block';
-    $('c2d').style.display = 'none';
-    const w = host.clientWidth || 800, h = host.clientHeight || 600;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b0f14);
-    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
-    camera.position.set(40, 40, 60);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    host.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    const light = new THREE.DirectionalLight(0xffffff, 1.1);
-    light.position.set(50, 80, 40);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0x6688aa, 0.45));
-    scene.add(new THREE.GridHelper(100, 20, 0x2a3548, 0x1a2332));
-
-    const root = new THREE.Group();
-    scene.add(root);
-    three = { renderer, scene, camera, controls, root };
-
-    // Prefer GLB asset
-    const glb = data?.assets?.glb;
-    if (glb) {
-      const loader = new GLTFLoader();
-      loader.load(
-        glb,
-        (gltf) => {
-          root.add(gltf.scene);
-          msg('');
-        },
-        undefined,
-        (err) => {
-          msg('GLB load failed — showing route extrusion');
-          addRouteMeshes(root);
+  function drawScoreChart() {
+    const canvas = $('#scoreChart');
+    if (!canvas || !window.Chart) return;
+    const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
+    const labels = Object.keys(score).filter(k => k !== 'total');
+    const values = labels.map(k => score[k] || 0);
+    if (state.scoreChart) state.scoreChart.destroy();
+    state.scoreChart = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Cost', data: values, backgroundColor: 'rgba(91,159,212,0.75)', borderRadius: 4 }] },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b9bb4' }, grid: { color: '#2a3548' } },
+          y: { ticks: { color: '#e7ecf3', font: { size: 10 } }, grid: { display: false } }
         }
-      );
-    } else {
-      addRouteMeshes(root);
-      // board plane
-      if (data?.board) {
-        const geo = new THREE.BoxGeometry(data.board.width_mm || 50, 1.0, data.board.height_mm || 40);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x1a5c3a, roughness: 0.8 });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.y = -0.6;
-        root.add(mesh);
+      }
+    });
+  }
+
+  // ---------- actions ----------
+  async function startJob(type, params={}) {
+    if (!state.live) {
+      alert('Start the server: physics-router serve');
+      return;
+    }
+    // inject route/place params from form if present
+    if (type === 'route_clearance' || type === 'pipeline') {
+      const c = $('#rtClear')?.value, g = $('#rtGrid')?.value;
+      if (c) params.clearance_mm = parseFloat(c);
+      if (g) params.grid_mm = parseFloat(g);
+    }
+    if (type === 'place' || type === 'pipeline') {
+      const cand = $('#rtCand')?.value, sa = $('#rtSa')?.value;
+      if (cand) params.num_candidates = parseInt(cand, 10);
+      if (sa) params.sa_iterations = parseInt(sa, 10);
+      if (type === 'pipeline') {
+        params.place_params = { num_candidates: params.num_candidates || 4, sa_iterations: params.sa_iterations || 800 };
+        params.route_clearance_params = { clearance_mm: params.clearance_mm || 0.2, grid_mm: params.grid_mm || 0.5 };
       }
     }
-
-    // EMI boxes
-    if ($('showEMI').checked && data?.emi_geometry?.primitives) {
-      for (const p of data.emi_geometry.primitives) {
-        if (p.kind !== 'box') continue;
-        const g = new THREE.BoxGeometry(p.w_mm || 1, p.t_mm || 0.035, p.h_mm || 1);
-        const m = new THREE.MeshStandardMaterial({ color: 0xc0a060, metalness: 0.8, roughness: 0.3 });
-        const mesh = new THREE.Mesh(g, m);
-        mesh.position.set(p.cx_mm || 0, (p.cz_mm || 0) + 0.5, p.cy_mm || 0);
-        root.add(mesh);
-      }
+    if (type === 'tests' && params.k) {
+      params.patterns = [params.k];
     }
-
-    function animate() {
-      if (!three.renderer) return;
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
+    const res = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ type, params }) });
+    state.selectedJob = res.job.id;
+    state.side = 'detail';
+    $$('#side .tabs button').forEach(b => b.classList.toggle('active', b.dataset.side === 'detail'));
+    await refreshSnapshot();
   }
 
-  function addRouteMeshes(root) {
-    const route = currentRoute();
-    if (!route?.segments) return;
-    const layersOn = new Set(activeLayers());
-    const zOf = (ly) => {
-      const layers = data.board?.copper_layers || ['F.Cu', 'B.Cu'];
-      const i = layers.indexOf(ly);
-      return (i < 0 ? 0 : i) * 0.4 + 0.2;
-    };
-    for (const s of route.segments) {
-      if (layersOn.size && !layersOn.has(s.layer)) continue;
-      const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
-      const len = Math.hypot(dx, dy) || 0.01;
-      const g = new THREE.BoxGeometry(len, Math.max(0.05, s.width_mm || 0.2), Math.max(0.05, s.width_mm || 0.2));
-      const col = new THREE.Color(netColor(s.net));
-      const m = new THREE.MeshStandardMaterial({ color: col, metalness: 0.7, roughness: 0.35 });
-      const mesh = new THREE.Mesh(g, m);
-      mesh.position.set((s.x1 + s.x2) / 2, zOf(s.layer), (s.y1 + s.y2) / 2);
-      mesh.rotation.y = -Math.atan2(dy, dx);
-      root.add(mesh);
+  function bindView() {
+    $$('[data-job]').forEach(btn => {
+      btn.onclick = () => startJob(btn.dataset.job).catch(e => alert(e.message));
+    });
+    $('#btnLoadPreset')?.addEventListener('click', async () => {
+      const id = $('#presetSel').value;
+      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: id }) });
+      state.viewer = await api('/api/viewer-data');
+      render();
+    });
+    $('#btnApplyYaml')?.addEventListener('click', async () => {
+      const config_text = $('#yamlEditor').value;
+      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config_text }) });
+      state.viewer = await api('/api/viewer-data');
+      render();
+    });
+    $('#btnSaveYaml')?.addEventListener('click', async () => {
+      await api('/api/config/save', { method: 'POST', body: '{}' });
+      alert('Saved session config under viewer/runs/');
+    });
+    $('#btnApplyQuick')?.addEventListener('click', async () => {
+      const cfg = { ...(state.snap?.config || {}) };
+      cfg.num_candidates = parseInt($('#cfgCand').value, 10);
+      cfg.sa_iterations = parseInt($('#cfgSa').value, 10);
+      cfg.random_seed = parseInt($('#cfgSeed').value, 10);
+      cfg.use_spice = $('#cfgSpice').checked;
+      cfg.use_openems = $('#cfgOpenems').checked;
+      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
+      render();
+    });
+    $('#btnApplyWeights')?.addEventListener('click', async () => {
+      const physics = { ...(state.snap?.config?.physics || {}) };
+      $$('input[data-w]').forEach(inp => { physics[inp.dataset.w] = parseFloat(inp.value); });
+      const cfg = { ...(state.snap?.config || {}), physics };
+      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
+      render();
+    });
+    $$('input[data-w]').forEach(inp => {
+      inp.oninput = () => { inp.parentElement.querySelector('.wval').textContent = parseFloat(inp.value).toFixed(1); };
+    });
+    $('#btnTestsK')?.addEventListener('click', () => {
+      startJob('tests', { k: $('#testK').value }).catch(e => alert(e.message));
+    });
+    $('#btnRefreshResults')?.addEventListener('click', async () => {
+      if (!state.live) return;
+      const r = await api('/api/results');
+      $('#artifactList').innerHTML = (r.files||[]).slice(0,30).map(f =>
+        `<div>${escapeHtml(f.path)} <span class="muted">(${f.size} B)</span></div>`
+      ).join('') || 'No artifacts';
+    });
+    $$('.jobrow').forEach(tr => {
+      tr.onclick = async () => {
+        state.selectedJob = tr.dataset.jid;
+        if (state.live) {
+          const full = await api(`/api/jobs/${tr.dataset.jid}`);
+          $('#resultJson').textContent = JSON.stringify(full.result || full, null, 2);
+        }
+        renderSide();
+      };
+    });
+    ['routeSel','showComps','showRoutes','showVias','showEMI'].forEach(id => {
+      $(`#${id}`)?.addEventListener('change', drawBoard);
+    });
+    $('#layerToggles')?.addEventListener('change', drawBoard);
+  }
+
+  // ---------- boot / poll ----------
+  async function refreshSnapshot() {
+    if (!state.live) return;
+    state.snap = await api('/api/snapshot');
+    try { state.viewer = await api('/api/viewer-data'); } catch (_) {}
+    const s = state.snap.session || {};
+    $('#hdrMeta').textContent =
+      `${state.snap.preset} · ${s.components||0} parts · ${s.movable||0} free · ${s.nets||0} nets · v${state.snap.version}`;
+    const running = (state.snap.jobs||[]).filter(j => j.status==='running'||j.status==='pending').length;
+    $('#jobPill').textContent = `${(state.snap.jobs||[]).length} jobs` + (running ? ` · ${running} active` : '');
+    $('#jobPill').className = 'pill' + (running ? ' run' : '');
+    // live-update side + header stats without full re-render when on run views
+    if (state.side === 'jobs' || state.side === 'detail' || state.side === 'log') renderSide();
+    if (['overview','results','board','nets'].includes(state.view)) {
+      // soft refresh content for score/routes
+      const keepScroll = $('#content').scrollTop;
+      render();
+      $('#content').scrollTop = keepScroll;
     }
   }
 
-  function setMode(m3) {
-    mode3d = m3;
-    if (mode3d) {
-      $('c3d').style.display = 'block';
-      $('c2d').style.display = 'none';
-      init3d();
-    } else {
-      dispose3d();
-      $('c3d').style.display = 'none';
-      $('c2d').style.display = 'block';
-      draw2d();
+  async function boot() {
+    $$('#nav button').forEach(b => b.onclick = () => {
+      $$('#nav button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.view = b.dataset.view;
+      render();
+    });
+    $$('#side .tabs button').forEach(b => b.onclick = () => {
+      $$('#side .tabs button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.side = b.dataset.side;
+      renderSide();
+    });
+
+    try {
+      await api('/api/health');
+      state.live = true;
+      $('#apiPill').textContent = 'API live';
+      $('#apiPill').className = 'pill ok';
+      await refreshSnapshot();
+      state.pollTimer = setInterval(async () => {
+        try {
+          const jobs = state.snap?.jobs || [];
+          const busy = jobs.some(j => j.status === 'running' || j.status === 'pending');
+          await refreshSnapshot();
+          // faster poll when busy is handled by always 1s when any job running
+        } catch (e) {
+          $('#apiPill').textContent = 'API error';
+          $('#apiPill').className = 'pill err';
+        }
+      }, 1000);
+    } catch {
+      state.live = false;
+      $('#offlineBanner').classList.add('show');
+      $('#apiPill').textContent = 'static';
+      $('#apiPill').className = 'pill';
+      // try local viewer_data
+      try {
+        const r = await fetch('viewer_data.json');
+        if (r.ok) {
+          state.viewer = await r.json();
+          state.snap = {
+            preset: state.viewer.preset || 'static',
+            session: state.viewer.session || {},
+            config: state.viewer.config,
+            routes: Object.fromEntries(Object.entries(state.viewer.routes||{}).map(([k,v]) => [k, {
+              total_length_mm: v.total_length_mm, via_count: v.via_count,
+              clearance_violations: v.clearance_violations, segments: (v.segments||[]).length
+            }])),
+            last_score: state.viewer.physics,
+            jobs: [],
+            job_types: [],
+            presets: [],
+          };
+          $('#hdrMeta').textContent = `static · ${state.viewer.board?.components?.length||0} parts`;
+        }
+      } catch (_) {}
     }
+    render();
   }
 
-  $('btn2d').onclick = () => setMode(false);
-  $('btn3d').onclick = () => setMode(true);
-  $('btnDemo').onclick = loadDemo;
-  $('fileJson').onchange = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    loadPayload(JSON.parse(await f.text()));
-  };
-  ['routeSelect', 'showComps', 'showRoutes', 'showVias', 'showEMI'].forEach((id) => {
-    $(id).addEventListener('change', () => (mode3d ? init3d() : draw2d()));
-  });
-  document.getElementById('layerToggles').addEventListener('change', () => (mode3d ? init3d() : draw2d()));
-  window.addEventListener('resize', () => (mode3d ? init3d() : draw2d()));
-
-  loadDemo();
+  window.addEventListener('resize', () => { if (state.view === 'board') drawBoard(); });
+  boot();
   </script>
 </body>
 </html>
