@@ -583,6 +583,16 @@ def export_openems_cmd(
         click.echo(f"  {k}: {p}")
 
 
+@main.command("serve")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, show_default=True, type=int)
+def serve_cmd(host: str, port: int) -> None:
+    """Interactive control plane: config, jobs, progress, board viewer, tests."""
+    from physics_router.server import serve
+
+    serve(host=host, port=port)
+
+
 @main.command("export-dsn")
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
 @click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)

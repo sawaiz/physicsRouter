@@ -112,11 +112,20 @@ physics-router route --config examples/placement_config.yaml --clearance 0.2
 physics-router export-openems --config examples/placement_config.yaml --out-dir openems_export
 ```
 
-Productization demo (DSN, comparison, dashboard, viewer):
+### Interactive control plane (config · jobs · progress · results)
 
 ```bash
-python scripts/build_viewer_demo.py
-# open viewer/index.html and viewer/dashboard.html (or: cd viewer && python3 -m http.server)
+physics-router serve --port 8765
+# → http://127.0.0.1:8765/
+```
+
+Live UI for exploring the board, editing placement YAML / physics weights, running
+**score · place · route · spice · OpenEMS · DRC · pytest · CI**, watching **per-job
+progress + logs**, and browsing **results/artifacts**. Static `viewer/index.html`
+still works offline (loads `viewer_data.json`); run jobs require `serve`.
+
+```bash
+python scripts/build_viewer_demo.py   # static demo assets
 physics-router export-dsn --config examples/placement_config.yaml -o examples/demo/board.dsn
 pytest && python scripts/ci_regression.py
 ```
@@ -417,29 +426,34 @@ physics-router dashboard --viewer-data viewer/viewer_data.json -o viewer/dashboa
 
 Open: [`viewer/dashboard.html`](viewer/dashboard.html).
 
-### Interactive three.js viewer
+### Interactive control plane + board viewer
 
-Multi-layer copper paths, component markers, EMI/geometry overlays, optional GLB board mesh (when `kicad-cli pcb export glb` is available).
+Multi-panel UI: **Overview** (score chart, quick run), **Board view** (layers/routes/EMI),
+**Nets & labels**, **Config / YAML**, **Physics weights**, **Jobs & pipeline**,
+**Simulations**, **Tests & CI**, plus a live **Jobs** sidebar with progress bars, stage,
+log stream, and result JSON.
 
 ```bash
-# Full demo bundle (routes, DSN, comparison, dashboard, viewer_data)
-python scripts/build_viewer_demo.py
+# Recommended: live API + UI
+physics-router serve --host 127.0.0.1 --port 8765
 
-# Or export data only
+# Optional: rebuild static demo JSON/HTML
+python scripts/build_viewer_demo.py
 physics-router viewer-data --config examples/placement_config.yaml \
   --route-json topor=examples/demo/topor_route.json \
   -o viewer/viewer_data.json
-
-# Serve locally (three.js loads CDN + local JSON)
-cd viewer && python3 -m http.server 8765
-# → http://localhost:8765/
 ```
 
-| File | Role |
-|------|------|
-| [`viewer/index.html`](viewer/index.html) | three.js canvas UI |
-| [`viewer/viewer_data.json`](viewer/viewer_data.json) | Board + routes + physics payload |
-| [`viewer/dashboard.html`](viewer/dashboard.html) | Score / budget HTML |
+| File / API | Role |
+|------------|------|
+| [`viewer/index.html`](viewer/index.html) | Control plane UI (explore + run) |
+| `GET /api/snapshot` | Session config, jobs, scores, routes |
+| `POST /api/jobs` | Start score/place/route/sim/test jobs |
+| `GET /api/jobs/{id}` | Progress, log, result |
+| `POST /api/config/apply` | Apply YAML or JSON config |
+| [`viewer/viewer_data.json`](viewer/viewer_data.json) | Board + routes payload |
+| [`viewer/dashboard.html`](viewer/dashboard.html) | Static score HTML export |
+| `viewer/runs/` | Job artifacts (gitignored) |
 
 ### Continuous integration
 
@@ -475,7 +489,8 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `dsn_export` | Specctra DSN for FreeRouting |
 | `compare` | TopoR vs FreeRouting (SES/JSON) metrics |
 | `dashboard` | HTML physics-budget page |
-| `viewer_export` | JSON payload for three.js viewer |
+| `viewer_export` | JSON payload for interactive viewer |
+| `server` | Live control plane (`serve`) — jobs, progress, config API |
 | `cli` | `physics-router` entry point |
 
 ## Setup
@@ -691,7 +706,7 @@ Prioritized by **insight per effort**, with emphasis on ideas that **close the t
 | Specctra DSN → FreeRouting baseline vs TopoR | **Done** (`export-dsn`, `compare-routes`) |
 | Physics-budget HTML dashboard | **Done** (`dashboard`, `viewer/dashboard.html`) |
 | CI on each PR (HALO + synthetic) | **Done** (GitHub Actions) |
-| Interactive multi-layer / EMI / 3D viewer | **Done** (`viewer/`) |
+| Interactive control plane (config, jobs, progress, results, sims, tests) | **Done** (`physics-router serve` + `viewer/`) |
 | Constraint mini-DSL (`keep MIC 3mm from CPX*`) | Future |
 | Golden copper overlay figure in README | Future |
 
