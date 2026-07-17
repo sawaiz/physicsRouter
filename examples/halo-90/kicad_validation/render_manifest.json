@@ -1,0 +1,26 @@
+{
+  "pcb": "/Users/sawaiz/physicsRouter/third_party/halo-90/pcb/halo-90.kicad_pcb",
+  "outputs": {
+    "svg_cli": [
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-Back.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-Edge_Cuts.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-F_Silkscreen.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-Front.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-In1_Cu.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_cli/halo-90-In2_Cu.svg"
+    ],
+    "svg_pcbnew": [
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-B_Cu.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-Edge_Cuts.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-F_Cu.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-F_SilkS.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-In1_Cu.svg",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/svg_pcbnew/halo-90-In2_Cu.svg"
+    ],
+    "render3d": [
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/render3d/top.png",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/render3d/bottom.png",
+      "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/renders/render3d/isometric.png"
+    ]
+  }
+}
