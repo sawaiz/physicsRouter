@@ -8,9 +8,9 @@ build/
 .ruff_cache/
 .venv/
 venv/
-placement_result.json
-route_guide.json
-route_result.json
+/placement_result.json
+/route_guide.json
+/route_result.json
 *.kicad_prl
 *-backups/
 .DS_Store
