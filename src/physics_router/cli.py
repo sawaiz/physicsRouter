@@ -37,6 +37,7 @@ from physics_router.routing_strategies import (
     estimate_via_budget,
     multilayer_route,
     pre_route_analysis,
+    topor_style_route,
 )
 
 
@@ -283,6 +284,12 @@ def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
 @click.option("--no-vias/--vias", default=False, help="Disable vias / multi-layer")
 @click.option("--guide-only", is_flag=True, help="Legacy free-angle guide without clearance")
 @click.option(
+    "--variants",
+    type=int,
+    default=None,
+    help="TopoR multi-variant search count (default: auto by net count, 1–4)",
+)
+@click.option(
     "--ignore-kicad-rules",
     is_flag=True,
     help="Do not load stackup/DRC from KiCad (use defaults)",
@@ -307,11 +314,12 @@ def route_cmd(
     grid: float | None,
     no_vias: bool,
     guide_only: bool,
+    variants: int | None,
     ignore_kicad_rules: bool,
     drc: bool,
     drc_out: Path | None,
 ) -> None:
-    """Clearance-aware multilayer TopoR-style autorouter (respects KiCad DRC/stackup)."""
+    """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish)."""
     config = load_config(config_path)
     board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
 
@@ -334,24 +342,30 @@ def route_cmd(
             clearance_mm=clearance,
             grid_mm=grid,
             allow_vias=not no_vias,
+            num_variants=variants,
         )
     else:
-        routes = clearance_aware_route(
+        routes = topor_style_route(
             board,
             config,
+            None,
             clearance_mm=clearance if clearance is not None else 0.2,
             grid_mm=grid,
             allow_vias=not no_vias,
-            guide_only=False,
+            num_variants=variants,
         )
 
     out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
+    q = routes.quality or routes.compute_quality()
     click.echo(
         f"Routed: {len(routes.segments)} segments, {routes.via_count} vias, "
-        f"{routes.total_length_mm:.2f} mm, unrouted={len(routes.unrouted_nets)}"
+        f"{routes.total_length_mm:.2f} mm, unrouted={len(routes.unrouted_nets)} · "
+        f"grade {q.get('grade')} ({q.get('score')}/100)"
     )
+    if q.get("winner"):
+        click.echo(f"  TopoR winner variant: {q.get('winner')}")
     if routes.notes:
-        for n in routes.notes:
+        for n in routes.notes[:12]:
             click.echo(f"  note: {n}")
     if routes.unrouted_nets:
         click.echo(f"  unrouted nets: {', '.join(routes.unrouted_nets[:20])}")

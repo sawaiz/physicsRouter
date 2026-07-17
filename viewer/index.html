@@ -58,19 +58,34 @@
       display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line);
       background: #070a0e;
     }
-    #vizHeader {
+
+    #c3d, #c2dHost { flex: 1; min-height: 200px; position: relative; display: none; }
+    #c3d.active, #c2dHost.active { display: flex; flex-direction: column; min-height: 0; }
+    #c3d canvas { display: block; width: 100% !important; height: 100% !important; }
+    #main2d {
+      flex: 1; min-height: 0; width: 100%; display: block; cursor: crosshair;
+      background: #0a1020;
+    }
+    #vizHeader2d, #vizHeader3d { display: none; }
+    #vizHeader2d.active, #vizHeader3d.active {
       display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;
       padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    #vizHeader label { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.28rem; }
-    #vizHeader select { background: #0f1419; color: var(--text); border: 1px solid var(--line);
-      border-radius: 6px; padding: 0.22rem 0.35rem; font: inherit; }
-    #c3d { flex: 1; min-height: 200px; position: relative; }
-    #c3d canvas { display: block; width: 100% !important; height: 100% !important; }
+    #vizHeader2d label, #vizHeader3d label {
+      font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.28rem;
+    }
+    #vizHeader2d select, #vizHeader3d select {
+      background: #0f1419; color: var(--text); border: 1px solid var(--line);
+      border-radius: 6px; padding: 0.22rem 0.35rem; font: inherit;
+    }
     #vizFooter {
       padding: 0.35rem 0.7rem; border-top: 1px solid var(--line); background: var(--panel);
       font-size: 0.75rem; color: var(--muted);
     }
+    #legend2d { display: none; }
+    #legend3d { display: none; }
+    body.mode-2d #legend2d { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+    body.mode-3d #legend3d { display: flex; flex-wrap: wrap; gap: 0.55rem; }
     #right { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel); }
     #metrics { padding: 0.7rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
     #metrics .total-row { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.4rem; }
@@ -109,12 +124,8 @@
     .notes { font-size: 0.72rem; color: var(--muted); max-height: 90px; overflow: auto; margin: 0; padding-left: 1rem; }
     .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.35rem; align-items: center;
       font-size: 0.7rem; margin: 0.18rem 0; }
-    #route2d {
-      width: 100%; height: 380px; background: #0a0e14; border: 1px solid var(--line);
-      border-radius: 10px; display: block; cursor: crosshair;
-    }
     .kicad-layers {
-      display: flex; flex-wrap: wrap; gap: 0.35rem 0.55rem; margin: 0.35rem 0 0.45rem;
+      display: flex; flex-wrap: wrap; gap: 0.35rem 0.55rem; margin: 0;
       font-size: 0.72rem; color: var(--muted);
     }
     .kicad-layers label { display: flex; align-items: center; gap: 0.25rem; cursor: pointer; }
@@ -174,12 +185,13 @@
   </script>
 </head>
 <body>
-  <div id="offline">Offline — run <code>physics-router serve</code> for jobs. Static data still loads in 3D.</div>
+  <div id="offline">Offline — run <code>physics-router serve</code> for jobs. Static 2D board still loads; 3D/EMS appears after routing on Simulate.</div>
   <div id="app">
     <header>
       <h1>physicsRouter</h1>
       <span class="meta" id="hdrMeta">starting…</span>
       <span class="pill" id="apiPill">API</span>
+      <span class="pill" id="nativePill">native</span>
       <span class="pill" id="jobPill">idle</span>
     </header>
 
@@ -191,10 +203,10 @@
         <span class="n">2</span><span class="t">Place</span><span class="d">Free parts only</span>
       </button>
       <button type="button" class="step" data-step="2">
-        <span class="n">3</span><span class="t">Route</span><span class="d">3D copper</span>
+        <span class="n">3</span><span class="t">Route</span><span class="d">2D free-angle</span>
       </button>
       <button type="button" class="step" data-step="3">
-        <span class="n">4</span><span class="t">Simulate</span><span class="d">Physics · EMI</span>
+        <span class="n">4</span><span class="t">Simulate</span><span class="d">3D · OpenEMS</span>
       </button>
       <button type="button" class="step" data-step="4">
         <span class="n">5</span><span class="t">Validate</span><span class="d">DRC · tests</span>
@@ -203,25 +215,44 @@
 
     <div id="workspace">
       <section id="viz">
-        <div id="vizHeader">
-          <strong style="font-size:0.78rem">3D board</strong>
+        <!-- 2D main viz: Setup · Place · Route (no 3D during routing) -->
+        <div id="vizHeader2d" class="active">
+          <strong style="font-size:0.78rem" id="viz2dTitle">2D board</strong>
+          <label>Route <select id="routeSel2d"><option value="">—</option></select></label>
+          <div class="kicad-layers" id="kicadLayerToggles"></div>
+          <button type="button" class="btn ghost" id="btnFit2d" style="padding:0.25rem 0.5rem;font-size:0.72rem">Fit</button>
+        </div>
+        <!-- 3D only after routing — EMS / OpenEMS simulation visualization -->
+        <div id="vizHeader3d">
+          <strong style="font-size:0.78rem">3D · EMS simulation</strong>
           <label>Route <select id="routeSel"><option value="">—</option></select></label>
           <label><input type="checkbox" id="showKicad" checked/> KiCad 3D (STEP+mask+silk)</label>
           <label><input type="checkbox" id="showComps"/> Box parts</label>
           <label><input type="checkbox" id="showRoutes" checked/> Route overlay</label>
           <label><input type="checkbox" id="showVias" checked/> Route vias</label>
-          <label><input type="checkbox" id="showEMI"/> EMI</label>
+          <label><input type="checkbox" id="showEMI" checked/> EMI volumes</label>
           <label><input type="checkbox" id="showLabels"/> Labels</label>
           <label><input type="checkbox" id="showBoard"/> Simple substrate</label>
           <button type="button" class="btn ghost" id="btnExport3d" style="padding:0.25rem 0.5rem;font-size:0.72rem">Rebuild 3D</button>
           <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.35rem"></span>
           <button type="button" class="btn ghost" id="btnResetCam" style="padding:0.25rem 0.5rem;font-size:0.72rem">Reset cam</button>
         </div>
+        <div id="c2dHost" class="active">
+          <canvas id="main2d" width="900" height="640"></canvas>
+        </div>
         <div id="c3d"></div>
         <div id="vizFooter">
-          <div class="legend">
+          <div class="legend" id="legend2d">
+            <span><i style="background:#C83434"></i>F.Cu</span>
+            <span><i style="background:#4CA64C"></i>In1.Cu</span>
+            <span><i style="background:#C87A28"></i>In2.Cu</span>
+            <span><i style="background:#3A6BC8"></i>B.Cu</span>
+            <span><i style="background:#E8D060"></i>Silk</span>
+            <span><i style="background:#d4a017"></i>Vias</span>
+          </div>
+          <div class="legend" id="legend3d">
             <span><i style="background:#2a6a4a"></i>KiCad GLB (mask/silk/copper/STEP)</span>
-            <span><i style="background:#e85d4c"></i>Box LEDs</span>
+            <span><i style="background:#c0a060"></i>EMI / OpenEMS volumes</span>
             <span><i style="background:#5b9fd4"></i>Route overlay</span>
             <span><i style="background:#d4a017"></i>Vias</span>
           </div>
@@ -275,15 +306,25 @@
 
   const STEPS = [
     { title: '1 · Setup', hint: 'HALO-90 is the default. All D1–D90 LEDs are locked with mechanicals; only free parts would move under Place.' },
-    { title: '2 · Place', hint: 'Score physics, then SA on unlocked footprints only (LED ring stays fixed).' },
-    { title: '3 · Route', hint: 'TopoR free-angle copper draws in 3D by layer height. Switch route variants in the toolbar.' },
-    { title: '4 · Simulate', hint: 'IR/loop L, spice/PI, OpenEMS EMI volumes in the same 3D scene.' },
+    { title: '2 · Place', hint: 'Score physics, then SA on unlocked footprints only (LED ring stays fixed). 2D board preview on the left.' },
+    { title: '3 · Route', hint: 'Isotropic TopoR free-angle: topology → multi-variant optimize → rubberband geometry on the 2D canvas. No 3D during routing — apply, then Simulate for EMS.' },
+    { title: '4 · Simulate', hint: '3D board + OpenEMS EMI volumes. Rebuild GLB after apply, run spice/OpenEMS, inspect field geometry.' },
     { title: '5 · Validate', hint: 'pytest, CI regression, and KiCad DRC close the manufacturability loop.' },
   ];
+
+  /** Steps that use the main 2D board (routing UX has no 3D). */
+  function is2dStep(step) {
+    return step === 0 || step === 1 || step === 2 || step === 4;
+  }
+  /** Simulate step: 3D EMS visualization after routing. */
+  function is3dStep(step) {
+    return step === 3;
+  }
 
   const state = {
     live: false,
     step: 0,
+    vizMode: '2d', // '2d' | '3d'
     snap: null,
     viewer: null,
     selectedJob: null,
@@ -294,6 +335,8 @@
     lastJobSig: '',
     pollBusy: false,
     sceneKey: '',
+    threeInited: false,
+    nativeInfo: null,
   };
 
   // three.js
@@ -338,9 +381,10 @@
     return `<span class="pill ${c}">${st}</span>`;
   }
 
-  // ---------- Three.js scene ----------
+  // ---------- Three.js scene (Simulate / EMS only) ----------
   function initThree() {
     const host = $('#c3d');
+    if (!host || three.renderer) return;
     const w = host.clientWidth || 640;
     const h = host.clientHeight || 480;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -733,7 +777,16 @@
     );
   }
 
+  function ensureThree() {
+    if (state.threeInited) return;
+    initThree();
+    state.threeInited = true;
+  }
+
   function rebuildScene() {
+    // 3D is only for Simulate (EMS). Skip heavy GLB work on 2D steps.
+    if (state.vizMode !== '3d') return;
+    ensureThree();
     if (!three.root) return;
     const glb = state.viewer?.assets?.glb || state.snap?.session?.glb || null;
     // Always try KiCad GLB first (component STEP models + soldermask + silkscreen + copper)
@@ -832,7 +885,7 @@
     }
 
     // Routes in XY, stacked in Z by layer
-    const rname = $('#routeSel')?.value;
+    const rname = state.selectedRoute || $('#routeSel')?.value || $('#routeSel2d')?.value;
     const route = state.viewer.routes?.[rname];
     if (route?.segments) {
       const layersOn = activeLayers();
@@ -938,13 +991,15 @@
   }
 
   function applyVisibility() {
+    if (!three.root) return;
     if (three.gKicad) three.gKicad.visible = $('#showKicad')?.checked !== false;
-    if (three.gComps) three.gComps.visible = $('#showComps').checked;
-    if (three.gRoutes) three.gRoutes.visible = $('#showRoutes').checked;
-    if (three.gVias) three.gVias.visible = $('#showVias').checked;
-    if (three.gEmi) three.gEmi.visible = $('#showEMI').checked;
-    if (three.gBoard) three.gBoard.visible = $('#showBoard').checked;
-    if (three.gLabels) three.gLabels.visible = $('#showLabels').checked;
+    if (three.gComps) three.gComps.visible = !!$('#showComps')?.checked;
+    if (three.gRoutes) three.gRoutes.visible = $('#showRoutes')?.checked !== false;
+    if (three.gVias) three.gVias.visible = $('#showVias')?.checked !== false;
+    // EMI on by default for EMS simulation step
+    if (three.gEmi) three.gEmi.visible = $('#showEMI')?.checked !== false;
+    if (three.gBoard) three.gBoard.visible = !!$('#showBoard')?.checked;
+    if (three.gLabels) three.gLabels.visible = !!$('#showLabels')?.checked;
   }
 
   function updateBoardStats(route, rname, comps) {
@@ -1024,34 +1079,41 @@
   }
 
   function panelRoute() {
+    const nat = state.nativeInfo;
+    const natHint = nat?.available
+      ? `Native core <strong>on</strong>${nat.gpu?.available ? ` · GPU ${esc(nat.gpu.device_name || nat.gpu.backend || '')}` : ' · CPU'}`
+      : 'Native core off — pure Python path';
     return `
-      <p class="hint">Organic <strong>TopoR free-angle</strong> routing only. Progress draws live on the canvas and 3D overlay as each net finishes.</p>
+      <p class="hint"><strong>TopoR-style isotropic</strong> routing: any-angle copper (no H/V preferred dirs), multi-variant net-order search, rubberband geometry + via minimize. Live on the <strong>2D board</strong> — no 3D during route.</p>
+      <div class="sim-chip" style="margin:0 0 0.45rem">${natHint}</div>
       <div class="row2">
         <div><label class="field">Clearance mm</label><input type="number" id="rtClear" step="0.05" value="0.2"/></div>
         <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.1" value="0.5"/></div>
+      </div>
+      <div class="row2">
+        <div><label class="field">Variants (auto if empty)</label><input type="number" id="rtVariants" min="1" max="4" placeholder="auto"/></div>
+        <div><label class="field">Style</label><input type="text" value="isotropic free-angle" disabled/></div>
       </div>
       <div class="actions">
         <button type="button" class="btn" data-job="pre_route">Pre-route check</button>
         <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">▶ TopoR free-angle route</button>
       </div>
-      <div id="routeLiveBar" class="sim-chip" style="margin:0.45rem 0">Idle — start TopoR to see live copper</div>
-      <div class="kicad-layers" id="kicadLayerToggles"></div>
-      <canvas id="route2d" width="720" height="380"></canvas>
-      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Live preview updates as nets complete.</p>
+      <div id="routeLiveBar" class="sim-chip" style="margin:0.45rem 0">Idle — start TopoR to see live copper on 2D</div>
+      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Live 2D preview updates as nets complete.</p>
       <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run TopoR</div>
       <div class="actions">
         <button type="button" class="btn primary" id="btnApplyRoute">Apply to KiCad PCB</button>
-        <button type="button" class="btn good" id="btnApplyRoute3d">Apply + rebuild 3D</button>
+        <button type="button" class="btn good" id="btnGoSim">Next: 3D EMS sim →</button>
       </div>
-      <p class="muted" id="routeApplyStatus" style="font-size:0.72rem"></p>
-      <div id="netReportTable" style="margin-top:0.5rem;max-height:160px;overflow:auto"></div>`;
+      <p class="muted" id="routeApplyStatus" style="font-size:0.72rem">After apply, open Simulate for 3D OpenEMS visualization.</p>
+      <div id="netReportTable" style="margin-top:0.5rem;max-height:200px;overflow:auto"></div>`;
   }
 
   function panelSim() {
     const glb = state.snap?.session?.glb || state.viewer?.assets?.glb || '—';
     return `
-      <p class="hint" style="margin-top:0">3D view loads KiCad <strong>GLB</strong> built from footprint
-        <code>.step/.stp</code> models plus soldermask, silkscreen, and all copper layers.</p>
+      <p class="hint" style="margin-top:0">Post-route <strong>3D EMS visualization</strong>. KiCad <strong>GLB</strong> (STEP models + mask/silk/copper)
+        plus OpenEMS EMI volumes for field / enclosure checks.</p>
       <div class="actions">
         <button type="button" class="btn primary" data-job="export_board_3d">Rebuild board 3D (GLB)</button>
         <button type="button" class="btn" data-job="export_step">Full STEP</button>
@@ -1060,13 +1122,14 @@
       <div class="actions">
         <button type="button" class="btn" data-job="score">Physics score</button>
         <button type="button" class="btn" data-job="spice">Spice / PI</button>
-        <button type="button" class="btn" data-job="openems">OpenEMS + EMI</button>
+        <button type="button" class="btn good" data-job="openems">OpenEMS + EMI</button>
       </div>
       <div class="actions">
         <button type="button" class="btn ghost" data-job="export_dsn">DSN</button>
         <button type="button" class="btn ghost" data-job="compare_routes">Compare</button>
       </div>
-      <ul class="notes" id="simNotes"><li>Run a simulation…</li></ul>`;
+      <p class="hint">Toggle <strong>EMI volumes</strong> in the 3D toolbar after OpenEMS export. Route overlay shows applied copper in 3D.</p>
+      <ul class="notes" id="simNotes"><li>Run OpenEMS or rebuild 3D…</li></ul>`;
   }
 
   function panelValidate() {
@@ -1097,7 +1160,8 @@
       updateLayers();
       updateRouteSelect();
       updateMetrics();
-      rebuildScene();
+      if (state.vizMode === '3d') rebuildScene();
+      else drawRoute2d();
       renderStepPanel();
       updateHeader();
     });
@@ -1108,7 +1172,8 @@
       state.sceneKey = '';
       state.chartKey = '';
       updateMetrics();
-      rebuildScene();
+      if (state.vizMode === '3d') rebuildScene();
+      else drawRoute2d();
       renderStepPanel();
     });
     $$('[data-job]').forEach(btn => {
@@ -1143,10 +1208,10 @@
 
   function bindRoutePanel() {
     $('#btnApplyRoute')?.addEventListener('click', () => applySelectedRoute(false).catch(e => alert(e.message)));
-    $('#btnApplyRoute3d')?.addEventListener('click', () => applySelectedRoute(true).catch(e => alert(e.message)));
+    $('#btnGoSim')?.addEventListener('click', () => setStep(3));
   }
 
-  async function applySelectedRoute(rebuild3d) {
+  async function applySelectedRoute(rebuild3d = false) {
     if (!state.live) return alert('physics-router serve required');
     const variant = 'topor';
     const routes = getRouteVariants();
@@ -1155,19 +1220,46 @@
     }
     $('#routeApplyStatus').textContent = 'Applying TopoR copper to KiCad…';
     await api('/api/routes/select', { method: 'POST', body: JSON.stringify({ variant }) });
-    await startJob('apply_route_pcb', { variant, rebuild_3d: !!rebuild3d });
-    $('#routeApplyStatus').textContent = rebuild3d
-      ? 'Applied TopoR + 3D rebuild — watch Progress dock'
-      : 'Applied TopoR to KiCad — use Apply + rebuild 3D for GLB with copper';
+    // Never rebuild 3D from the Route step — 3D/EMS is the Simulate step
+    await startJob('apply_route_pcb', { variant, rebuild_3d: false });
+    $('#routeApplyStatus').textContent =
+      'Applied TopoR to KiCad — open Simulate for 3D OpenEMS visualization';
   }
 
   function setStep(i) {
+    const prev = state.step;
     state.step = i;
     $$('#steps .step').forEach((el, idx) => {
       el.classList.toggle('active', idx === i);
       el.classList.toggle('done', idx < i);
     });
+    applyVizMode();
     renderStepPanel();
+    // When entering Simulate, ensure 3D scene is current
+    if (is3dStep(i) && !is3dStep(prev)) {
+      ensureThree();
+      state.sceneKey = '';
+      rebuildScene();
+      resizeThree();
+    }
+    if (is2dStep(i)) {
+      requestAnimationFrame(() => drawRoute2d());
+    }
+  }
+
+  /** Switch main left panel between 2D routing canvas and 3D EMS view. */
+  function applyVizMode() {
+    const mode3d = is3dStep(state.step);
+    state.vizMode = mode3d ? '3d' : '2d';
+    document.body.classList.toggle('mode-2d', !mode3d);
+    document.body.classList.toggle('mode-3d', mode3d);
+    $('#vizHeader2d')?.classList.toggle('active', !mode3d);
+    $('#vizHeader3d')?.classList.toggle('active', mode3d);
+    $('#c2dHost')?.classList.toggle('active', !mode3d);
+    $('#c3d')?.classList.toggle('active', mode3d);
+    const titles = ['2D board · setup', '2D board · place', '2D board · route', '3D · EMS', '2D board · validate'];
+    const t = $('#viz2dTitle');
+    if (t) t.textContent = titles[state.step] || '2D board';
   }
 
   // ---------- Metrics ----------
@@ -1287,16 +1379,11 @@
       }
     }
     fillNetReports(prefer);
+    // Routing UX is 2D-only — do not rebuild 3D while routing
+    updateRouteSelect();
     drawRoute2d();
-    // Keep 3D route overlay in sync while live routing
-    const sel = $('#routeSel');
-    if (sel && prefer) {
-      if (![...sel.options].some(o => o.value === 'topor')) {
-        updateRouteSelect();
-      }
-      if ([...sel.options].some(o => o.value === state.selectedRoute)) {
-        sel.value = state.selectedRoute;
-      }
+    // If user is already on Simulate, refresh 3D overlay once routes update
+    if (state.vizMode === '3d' && three.root) {
       state.sceneKey = '';
       try { rebuildScene(); } catch (_) {}
     }
@@ -1304,9 +1391,9 @@
     if (hint) {
       const pcb = state.snap?.routed_pcb || state.snap?.session?.routed_pcb;
       hint.textContent = prefer?.segments?.length
-        ? `TopoR free-angle · Apply writes copper to KiCad`
+        ? `TopoR free-angle · Apply writes copper to KiCad · then Simulate for 3D EMS`
           + (pcb ? ` · last PCB: ${pcb}` : '')
-        : 'Press TopoR free-angle route — canvas updates as each net completes.';
+        : 'Press TopoR free-angle route — 2D canvas updates as each net completes.';
     }
   }
 
@@ -1370,13 +1457,15 @@
   }
 
   function drawRoute2d() {
-    const canvas = $('#route2d');
+    // Prefer full-size main viz canvas; fall back to any legacy id
+    const canvas = $('#main2d') || $('#route2d');
     if (!canvas) return;
     ensureKicadLayerToggles();
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 360;
-    const cssH = canvas.clientHeight || 380;
+    const host = canvas.parentElement;
+    const cssW = (host && host.clientWidth) || canvas.clientWidth || 640;
+    const cssH = (host && host.clientHeight) || canvas.clientHeight || 480;
     if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
       canvas.width = Math.floor(cssW * dpr);
       canvas.height = Math.floor(cssH * dpr);
@@ -1619,6 +1708,16 @@
     ctx.fillStyle = '#8b9bb4';
     ctx.font = '9px system-ui';
     ctx.fillText('F  In1 In2 B  (KiCad layers)', 58, 33);
+
+    // Footer stats for 2D mode (routing UX — not 3D)
+    if (state.vizMode === '2d') {
+      const free = comps.filter(c => !c.locked).length;
+      const leds = comps.filter(c => isLed(c.ref)).length;
+      let stats = `2D · ${comps.length} parts · ${free} free · ${leds} LEDs · ${Object.keys(board?.nets || {}).length} nets`;
+      if (route) stats += ` · ${name}: ${fmt(route.total_length_mm)} mm · ${route.via_count ?? 0} vias`;
+      const el = $('#boardStats');
+      if (el) el.textContent = stats;
+    }
   }
 
   function fillNetReports(route) {
@@ -1691,14 +1790,34 @@
   }
 
   function updateRouteSelect() {
-    const sel = $('#routeSel');
     const routes = state.viewer?.routes || {};
-    const cur = sel.value;
     const names = Object.keys(routes);
-    sel.innerHTML = names.length ? names.map(n => `<option value="${n}">${n}</option>`).join('') : '<option value="">(no routes)</option>';
-    if (cur && names.includes(cur)) sel.value = cur;
-    else if (names.includes('topor')) sel.value = 'topor';
-    else if (names.includes('guide')) sel.value = 'guide';
+    const prefer = state.selectedRoute
+      || (names.includes('topor') ? 'topor' : null)
+      || (names.includes('guide') ? 'guide' : null)
+      || names[0]
+      || '';
+    for (const id of ['routeSel', 'routeSel2d']) {
+      const sel = $(`#${id}`);
+      if (!sel) continue;
+      const cur = sel.value || prefer;
+      sel.innerHTML = names.length
+        ? names.map(n => `<option value="${n}">${n}</option>`).join('')
+        : '<option value="">(no routes)</option>';
+      if (cur && names.includes(cur)) sel.value = cur;
+      else if (prefer && names.includes(prefer)) sel.value = prefer;
+    }
+    const v = $('#routeSel')?.value || $('#routeSel2d')?.value || prefer;
+    if (v) state.selectedRoute = v;
+  }
+
+  function syncRouteSelectFrom(el) {
+    if (!el) return;
+    state.selectedRoute = el.value || null;
+    for (const id of ['routeSel', 'routeSel2d']) {
+      const other = $(`#${id}`);
+      if (other && other !== el && el.value) other.value = el.value;
+    }
   }
 
   function updateLayers() {
@@ -1735,6 +1854,10 @@
       params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
       params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
       params.auto_apply = false;
+      const nv = $('#rtVariants')?.value;
+      if (nv !== undefined && nv !== null && String(nv).trim() !== '') {
+        params.num_variants = Math.max(1, Math.min(4, parseInt(nv, 10) || 1));
+      }
     }
     if (type === 'tests' && params.k) {
       params.patterns = [params.k];
@@ -1754,7 +1877,6 @@
         (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide')
         && (j.status === 'running' || j.status === 'pending'));
       if (routingLive) forceViewer = true;
-      const prevRouteKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
       const prevScore = state.chartKey;
       state.snap = await api('/api/snapshot');
       updateHeader();
@@ -1766,7 +1888,7 @@
       const routeKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
 
       const prevGlb = state.viewer?.assets?.glb;
-      if (forceViewer || justFinished || !state.viewer || routeKeys !== prevRouteKeys || routingLive) {
+      if (forceViewer || justFinished || !state.viewer || routeKeys !== JSON.stringify(Object.keys(state.viewer?.routes || {})) || routingLive) {
         state.viewer = await api('/api/viewer-data');
         updateRouteSelect();
         if (!state.layersBuilt) updateLayers();
@@ -1774,14 +1896,17 @@
         const newGlb = state.viewer?.assets?.glb;
         if (newGlb && newGlb !== prevGlb) three.glbUrl = null;
         state.sceneKey = '';
-        // Live route canvas + 3D overlay while TopoR runs
-        if (state.step === 2 || routingLive) fillRouteTable();
-        else rebuildScene();
+        // Live 2D while TopoR runs — never force 3D on the Route step
+        if (state.step === 2 || routingLive || state.vizMode === '2d') {
+          fillRouteTable();
+        } else {
+          rebuildScene();
+        }
       } else if (running) {
         updateMetrics();
-        if (state.step === 2) fillRouteTable();
-        // pick up GLB when export_board_3d finishes
-        if (state.snap?.session?.glb && state.snap.session.glb !== prevGlb) {
+        if (state.step === 2 || state.vizMode === '2d') fillRouteTable();
+        // pick up GLB when export_board_3d finishes (Simulate step)
+        if (state.vizMode === '3d' && state.snap?.session?.glb && state.snap.session.glb !== prevGlb) {
           state.viewer = await api('/api/viewer-data');
           three.glbUrl = null;
           state.sceneKey = '';
@@ -1793,8 +1918,9 @@
           state.viewer = await api('/api/viewer-data');
           updateMetrics();
           state.sceneKey = '';
-          rebuildScene();
-        } else if (state.snap?.session?.glb && state.snap.session.glb !== (state.viewer?.assets?.glb)) {
+          if (state.vizMode === '3d') rebuildScene();
+          else drawRoute2d();
+        } else if (state.vizMode === '3d' && state.snap?.session?.glb && state.snap.session.glb !== (state.viewer?.assets?.glb)) {
           state.viewer = await api('/api/viewer-data');
           three.glbUrl = null;
           state.sceneKey = '';
@@ -1809,18 +1935,62 @@
     }
   }
 
+  async function refreshNativePill() {
+    const el = $('#nativePill');
+    if (!el) return;
+    try {
+      if (state.live) {
+        const h = await api('/api/health');
+        state.nativeInfo = h.native || h.native_core || null;
+      }
+    } catch { /* ignore */ }
+    if (!state.nativeInfo) {
+      // best-effort from a lightweight probe endpoint or leave unknown
+      el.textContent = 'native ?';
+      el.className = 'pill';
+      el.title = 'Native status unknown until serve exposes /api/health.native';
+      return;
+    }
+    if (state.nativeInfo.available) {
+      const gpu = state.nativeInfo.gpu?.available
+        ? (state.nativeInfo.gpu.device_name || state.nativeInfo.gpu.backend || 'GPU')
+        : 'CPU';
+      el.textContent = `native · ${gpu}`;
+      el.className = 'pill ok';
+    } else {
+      el.textContent = 'python router';
+      el.className = 'pill';
+    }
+  }
+
   async function boot() {
-    initThree();
+    document.body.classList.add('mode-2d');
+    applyVizMode();
     $$('#steps .step').forEach(btn => btn.addEventListener('click', () => setStep(+btn.dataset.step)));
     ['showKicad', 'showComps', 'showRoutes', 'showVias', 'showEMI', 'showLabels', 'showBoard'].forEach(id => {
       $(`#${id}`)?.addEventListener('change', () => {
+        if (state.vizMode !== '3d') return;
         if (id === 'showLabels') { state.sceneKey = ''; rebuildScene(); }
         else applyVisibility();
       });
     });
-    $('#routeSel').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
-    $('#layerToggles').addEventListener('change', () => { state.sceneKey = ''; rebuildScene(); });
-    $('#btnResetCam').addEventListener('click', () => {
+    const onRouteSel = (ev) => {
+      syncRouteSelectFrom(ev.target);
+      if (state.vizMode === '3d') {
+        state.sceneKey = '';
+        rebuildScene();
+      } else {
+        drawRoute2d();
+      }
+    };
+    $('#routeSel')?.addEventListener('change', onRouteSel);
+    $('#routeSel2d')?.addEventListener('change', onRouteSel);
+    $('#layerToggles')?.addEventListener('change', () => {
+      if (state.vizMode === '3d') { state.sceneKey = ''; rebuildScene(); }
+    });
+    $('#btnResetCam')?.addEventListener('click', () => {
+      if (state.vizMode !== '3d') return;
+      ensureThree();
       if (three.lastBox) {
         frameCameraToBox(three.lastBox, { fill: 0.88, elevation: 0.62, azimuth: 0.9 });
       } else {
@@ -1829,16 +1999,21 @@
         rebuildScene();
       }
     });
+    $('#btnFit2d')?.addEventListener('click', () => drawRoute2d());
     $('#btnExport3d')?.addEventListener('click', () => {
       startJob('export_board_3d').catch(e => alert(e.message));
     });
-    window.addEventListener('resize', () => { resizeThree(); });
+    window.addEventListener('resize', () => {
+      if (state.vizMode === '3d') resizeThree();
+      else drawRoute2d();
+    });
 
     try {
       await api('/api/health');
       state.live = true;
       $('#apiPill').textContent = 'live';
       $('#apiPill').className = 'pill ok';
+      await refreshNativePill();
       state.snap = await api('/api/snapshot');
       // Ensure HALO default if server started before this change
       if (state.snap.preset !== 'halo-90' && (state.snap.presets || []).some(p => p.id === 'halo-90')) {
@@ -1850,7 +2025,7 @@
       updateRouteSelect();
       updateMetrics();
       renderStepPanel();
-      rebuildScene();
+      drawRoute2d();
       updateJobsDock();
 
       const tick = async () => {
@@ -1866,6 +2041,7 @@
       state.live = false;
       $('#offline').classList.add('show');
       $('#apiPill').textContent = 'static';
+      $('#nativePill').textContent = 'static';
       try {
         const r = await fetch('viewer_data.json');
         if (r.ok) {
@@ -1885,7 +2061,7 @@
           updateRouteSelect();
           updateMetrics();
           renderStepPanel();
-          rebuildScene();
+          drawRoute2d();
         }
       } catch {
         renderStepPanel();

@@ -525,11 +525,13 @@ def free_angle_route(
     *,
     width_mm: float = 0.25,
     method_out: list[str] | None = None,
+    congestion: Any | None = None,
 ) -> list[tuple[float, float]] | None:
-    """Direct LOS, corner detours, then bounded 8-dir A* with rubberband.
+    """Direct LOS, isotropic detours / radar portals, then congestion-aware A*.
 
+    Topology-first style: explore free-space boundaries before freezing geometry.
     Every candidate edge is checked for clearance vs painted copper and keepouts.
-    If ``method_out`` is provided, appends one of: los | detour | detour2 | astar.
+    If ``method_out`` is provided, appends one of: los | detour | detour2 | radar | astar.
     """
     def _set_method(m: str) -> None:
         if method_out is not None:
@@ -538,12 +540,21 @@ def free_angle_route(
     def _blocked(x1: float, y1: float, x2: float, y2: float) -> bool:
         return om.segment_blocked(x1, y1, x2, y2, layer, net, width_mm=width_mm)
 
+    def _edge_cost(x1: float, y1: float, x2: float, y2: float, base: float) -> float:
+        if congestion is None:
+            return base
+        try:
+            return float(congestion.edge_cost(x1, y1, x2, y2, layer, length_weight=1.0))
+        except Exception:
+            return base
+
     # 1) straight free-angle
     if not _blocked(start[0], start[1], goal[0], goal[1]):
         _set_method("los")
         return [start, goal]
 
-    # 2) single-corner detours around nearby obstacles
+    # 2) Isotropic free-angle detours (TopoR-style: not limited to 90°/45°)
+    #    Obstacle corners + perpendicular bulges + arc-approximating mids + radar.
     reach = max(40.0, _dist(start, goal) * 1.5)
     detour_pts: list[tuple[float, float]] = []
     for ob in om.obstacles.get(layer, []):
@@ -552,19 +563,57 @@ def free_angle_route(
         if _dist((ob.cx, ob.cy), start) > reach and _dist((ob.cx, ob.cy), goal) > reach:
             continue
         detour_pts.extend(ob.corners(pad=grid_mm * 1.5))
-    # L-bends + midpoints + radial offsets
     mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
+    dx, dy = goal[0] - start[0], goal[1] - start[1]
+    length = math.hypot(dx, dy) or 1.0
+    # Unit along-path and perpendicular (isotropic, any angle)
+    ux, uy = dx / length, dy / length
+    px, py = -uy, ux
+    # Classic L-bends still useful in sparse regions
     detour_pts.extend(
         [
             (start[0], goal[1]),
             (goal[0], start[1]),
             (mx, my),
-            (mx + grid_mm * 4, my),
-            (mx - grid_mm * 4, my),
-            (mx, my + grid_mm * 4),
-            (mx, my - grid_mm * 4),
         ]
     )
+    # Perpendicular bulges at 0.25 / 0.5 / 0.75 along the chord (any-angle arcs proxy)
+    for t in (0.25, 0.5, 0.75):
+        bx = start[0] + dx * t
+        by = start[1] + dy * t
+        for sign in (1.0, -1.0):
+            for k in (2.0, 4.0, 7.0, 11.0):
+                detour_pts.append((bx + sign * px * grid_mm * k, by + sign * py * grid_mm * k))
+    # Diagonal offsets at 30°/60° relative to the chord (not locked to H/V)
+    for ang_off in (math.pi / 6, math.pi / 3, -math.pi / 6, -math.pi / 3):
+        ca, sa = math.cos(ang_off), math.sin(ang_off)
+        rx = ux * ca - uy * sa
+        ry = ux * sa + uy * ca
+        for k in (3.0, 6.0, 10.0):
+            detour_pts.append((mx + rx * grid_mm * k, my + ry * grid_mm * k))
+
+    # Sparse free-space waypoints (LineExplore-like continuous exploration)
+    try:
+        from physics_router.topology import radar_scan_points
+
+        detour_pts.extend(
+            radar_scan_points(
+                start, goal, om, layer, net, rays=12, grid_mm=grid_mm
+            )
+        )
+    except Exception:
+        pass
+
+    # Prefer lower (length + congestion) detours first
+    def _detour_cost(mid: tuple[float, float]) -> float:
+        return _edge_cost(start[0], start[1], mid[0], mid[1], _dist(start, mid)) + _edge_cost(
+            mid[0], mid[1], goal[0], goal[1], _dist(mid, goal)
+        )
+
+    detour_pts = sorted(
+        set((round(p[0], 4), round(p[1], 4)) for p in detour_pts), key=_detour_cost
+    )
+
     for mid in detour_pts:
         if not om.in_bounds(mid[0], mid[1]):
             continue
@@ -578,7 +627,7 @@ def free_angle_route(
         return [start, mid, goal]
 
     # two-corner chain (cap candidates — O(n²) segment checks)
-    cand = detour_pts[:16]
+    cand = detour_pts[:24]
     for a in cand:
         if om.blocked(a[0], a[1], layer, net) or not om.in_bounds(a[0], a[1]):
             continue
@@ -596,7 +645,7 @@ def free_angle_route(
             _set_method("detour2")
             return [start, a, b, goal]
 
-    # 3) bounded A* (works with negative coords via snap keys)
+    # 3) bounded A* with optional negotiated-congestion edge costs
     sx, sy = _snap(start[0], grid_mm), _snap(start[1], grid_mm)
     gx, gy = _snap(goal[0], grid_mm), _snap(goal[1], grid_mm)
     start_key = (int(round(sx / grid_mm)), int(round(sy / grid_mm)))
@@ -637,7 +686,7 @@ def free_angle_route(
                 continue
             if _blocked(x, y, nx, ny):
                 continue
-            ng = g + step
+            ng = g + _edge_cost(x, y, nx, ny, step)
             if ng + 1e-9 < gscore.get(nkey, float("inf")):
                 gscore[nkey] = ng
                 came[nkey] = key
@@ -729,12 +778,18 @@ def clearance_aware_route(
     progress_cb: ProgressCallback | None = None,
     soft_fallback: bool | None = None,
     prefer_native: bool = True,
+    net_order: list[str] | None = None,
+    style: str = "isotropic",
+    congestion: Any | None = None,
 ) -> RouteResult:
     """TopoR-inspired clearance-aware free-angle router with per-net feedback.
 
     ``soft_fallback``: if True, draw a straight segment when search fails (counts
     as clearance_violation — causes overlaps). Default False for clearance mode
     (leave edge unrouted instead of illegal copper); True only for guide_only.
+
+    ``style``: ``isotropic`` (default) — any-angle paths, no preferred H/V.
+    ``net_order``: optional explicit paint order (multi-variant search).
 
     When the C++ extension ``pr_native`` is built, uses the OpenMP/GPU core unless
     ``prefer_native=False`` or ``guide_only=True`` (guide stays in Python for now).
@@ -774,18 +829,28 @@ def clearance_aware_route(
     result.notes.append(
         "guide_only"
         if guide_only
-        else f"clearance_mm={clearance_mm} free_angle+via layers={layers}"
+        else f"clearance_mm={clearance_mm} style={style} free_angle+via layers={layers}"
     )
     result.notes.append(
         f"extent=[{x0:.2f},{x1:.2f}]×[{y0:.2f},{y1:.2f}] mm (center-origin OK)"
     )
+    if style == "isotropic":
+        result.notes.append(
+            "isotropic: no preferred H/V directions — any-angle LOS/detour/A* (TopoR-style)"
+        )
 
     # Priority: weight, then prefer fewer pins first within same class (less blockage)
     def net_sort_key(n: str) -> tuple:
         pins = len(board.nets.get(n, []))
         return (-_net_priority(config, n), pins, n)
 
-    net_names = sorted(board.nets.keys(), key=net_sort_key)
+    if net_order:
+        # Preserve caller order; append any nets not listed
+        seen = set(net_order)
+        net_names = [n for n in net_order if n in board.nets]
+        net_names.extend(sorted((n for n in board.nets if n not in seen), key=net_sort_key))
+    else:
+        net_names = sorted(board.nets.keys(), key=net_sort_key)
     total_nets = len(net_names)
 
     for ni, net_name in enumerate(net_names):
@@ -873,6 +938,7 @@ def clearance_aware_route(
                 allow_vias=allow_vias and not guide_only,
                 width_mm=width,
                 method_out=meth,
+                congestion=congestion,
             )
             if path is None:
                 if soft_fallback:
@@ -1111,6 +1177,7 @@ def _route_point_to_point(
     *,
     width_mm: float = 0.25,
     method_out: list[str] | None = None,
+    congestion: Any | None = None,
 ) -> tuple[list[tuple[float, float, str]] | None, list[Via]]:
     for layer in layers:
         meth: list[str] = []
@@ -1123,6 +1190,7 @@ def _route_point_to_point(
             grid_mm=grid_mm,
             width_mm=width_mm,
             method_out=meth,
+            congestion=congestion,
         )
         if poly is not None and len(poly) >= 2:
             # Final edge-by-edge clearance gate
@@ -1186,6 +1254,7 @@ def _route_point_to_point(
                 grid_mm=grid_mm,
                 max_expansions=2500,
                 width_mm=width_mm,
+                congestion=congestion,
             )
             p1 = free_angle_route(
                 (vx, vy),
@@ -1196,6 +1265,7 @@ def _route_point_to_point(
                 grid_mm=grid_mm,
                 max_expansions=2500,
                 width_mm=width_mm,
+                congestion=congestion,
             )
             if p0 and p1:
                 if method_out is not None:
@@ -1297,6 +1367,117 @@ def rubberband_cleanup(
         if rep.net in by_net_len:
             rep.length_mm = by_net_len[rep.net]
             rep.segments = by_net_seg.get(rep.net, rep.segments)
+    out.compute_quality()
+    return out
+
+
+def remove_redundant_vias(
+    result: RouteResult,
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    clearance_mm: float = 0.2,
+) -> RouteResult:
+    """Drop vias when both attached stubs can legally merge onto one layer.
+
+    TopoR-style via minimization: after connectivity exists, re-geometrize to
+    eliminate unnecessary layer hops.
+    """
+    if not result.vias:
+        return result
+    layers = sorted({s.layer for s in result.segments} | set(board.copper_layers or []))
+    if len(layers) < 2:
+        return result
+    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    for s in result.segments:
+        om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
+
+    kept_vias: list[Via] = []
+    removed = 0
+    segs = list(result.segments)
+
+    for via in result.vias:
+        # Segments incident to this via (within snap tolerance)
+        tol = 0.35
+        incident = [
+            s
+            for s in segs
+            if s.net == via.net
+            and (
+                _dist((s.x1, s.y1), (via.x, via.y)) < tol
+                or _dist((s.x2, s.y2), (via.x, via.y)) < tol
+            )
+        ]
+        if len(incident) < 2:
+            kept_vias.append(via)
+            continue
+        # Collect far endpoints on each layer
+        ends_by_layer: dict[str, list[tuple[float, float]]] = {}
+        for s in incident:
+            if _dist((s.x1, s.y1), (via.x, via.y)) < tol:
+                ends_by_layer.setdefault(s.layer, []).append((s.x2, s.y2))
+            else:
+                ends_by_layer.setdefault(s.layer, []).append((s.x1, s.y1))
+        # Try to place all ends on a single common layer
+        merged = False
+        for target_ly in layers:
+            ends: list[tuple[float, float]] = []
+            for pts in ends_by_layer.values():
+                ends.extend(pts)
+            if len(ends) < 2:
+                continue
+            width = incident[0].width_mm
+            # Check path between every pair of ends on target layer via via site
+            ok = True
+            for ex, ey in ends:
+                if om.segment_blocked(ex, ey, via.x, via.y, target_ly, via.net, width_mm=width):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            # Rebuild: remove incident segs, add same-layer stubs
+            drop_ids = {id(s) for s in incident}
+            segs = [s for s in segs if id(s) not in drop_ids]
+            for ex, ey in ends:
+                segs.append(
+                    RouteSegment(
+                        x1=ex,
+                        y1=ey,
+                        x2=via.x,
+                        y2=via.y,
+                        layer=target_ly,
+                        net=via.net,
+                        width_mm=width,
+                    )
+                )
+                om.paint_trace(ex, ey, via.x, via.y, target_ly, width, via.net)
+            removed += 1
+            merged = True
+            break
+        if not merged:
+            kept_vias.append(via)
+
+    if removed == 0:
+        return result
+
+    total = sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in segs)
+    out = RouteResult(
+        segments=segs,
+        vias=kept_vias,
+        via_count=len(kept_vias),
+        total_length_mm=total,
+        unrouted_nets=list(result.unrouted_nets),
+        clearance_violations=result.clearance_violations,
+        notes=list(result.notes)
+        + [f"via_minimize: removed {removed} redundant via(s) → {len(kept_vias)} left"],
+        net_reports=list(result.net_reports),
+    )
+    # refresh via counts on reports
+    via_by_net: dict[str, int] = {}
+    for v in kept_vias:
+        via_by_net[v.net] = via_by_net.get(v.net, 0) + 1
+    for rep in out.net_reports:
+        rep.vias = via_by_net.get(rep.net, 0)
     out.compute_quality()
     return out
 

@@ -44,6 +44,8 @@ def _post(base: str, path: str, body: dict) -> dict:
 def test_health_and_snapshot(httpd):
     h = _get(httpd, "/api/health")
     assert h["ok"] is True
+    assert "native" in h
+    assert "available" in h["native"]
     snap = _get(httpd, "/api/snapshot")
     assert "config" in snap
     assert "job_types" in snap

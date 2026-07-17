@@ -69,12 +69,30 @@ Commercial Specctra-class and **FreeRouting** operate off-grid with shape push-a
 
 - **Dayan (PhD, UCSC 1997):** *Rubberband based topological router*—interconnect as rubber-band sketch (RBS); topology first, geometry second.
 - **Dai, Dayan, Staepelaere (DAC 1991):** SURF system—hierarchical topological rubberband sketches.
-- **TopoR (Eremex):** commercial free-angle topological autorouter; no preferred H/V directions; multi-variant optimization; BGA strategies.
+- **TopoR (Eremex):** commercial free-angle **isotropic** topological autorouter — see full product reference **[docs/TOPOR.md](docs/TOPOR.md)** (images + manuals + binary catalog).
 - **Open-source Toporouter (Blake / gEDA, GSoC 2008):** Dayan-inspired; adapted toward KiCad.
 
 **Key idea:** free angles + continuous deformation under clearance reduce vias and crosstalk vs strict 45°/90° preferred directions.
 
-**physicsRouter:** free-angle clearance-aware router (LOS → corner detours → A\* → rubberband), net priority by weights, multi-layer vias, copper paint.
+#### Commercial TopoR (Eremex) — public product model
+
+Primary sources: [product](https://www.eremex.com/products/topor/), [features](https://www.eremex.com/products/topor/features/), [autorouting](https://www.eremex.com/products/topor/competitiveadvantages/autorouting/), [design time](https://www.eremex.com/products/topor/competitiveadvantages/pcbdesigntime/), [high-speed](https://www.eremex.com/products/topor/competitiveadvantages/highspeedpcbs/), [downloads](https://www.eremex.com/downloads/) (login), 6.1 [user manual PDF](https://www.eremex.com/support/documentation/461750.pdf).
+
+| Concept | What Eremex documents |
+|---------|----------------------|
+| **Isotropic routing** | No preferred 90°/45° directions; arbitrary angles + arcs; denser packing, less parallelism → lower crosstalk |
+| **Topology → geometry** | Path is a flexible topological relationship first; exact wire shape is recalculated (components/vias can move on a live board) |
+| **Instant route + optimize** | 100% connectivity quickly (even with temporary rule violations), then multiobjective optimization |
+| **Multi-variant parallel** | Several alternative topologies optimized at once (length / vias / density); user selects survivors |
+| **BGA / flex / 1L** | Specialized BGA; flex with via-free bend regions; single-layer boards where shape-based tools leave unroutes |
+| **High-speed** | Length limits, differential pairs, bus matching; trapezoid tuning (50 nm *computational* precision) |
+| **Interchange** | DSN/SES, P-CAD, PADS, Eagle, Expedition HKP, native `.fst` / `.fsx` / `.fsb` |
+
+Public download catalog (as of 2026 site scrape): **TopoR 7.0.18508** Lite/Trial x86 & x64 (2017), User guide 7.0 (2018). Login required; unauthenticated download URLs 404.
+
+Cached figures and PDFs: [`docs/images/topor/`](docs/images/topor/README.md).
+
+**physicsRouter:** free-angle clearance-aware router (LOS → corner detours → A\* → rubberband), net priority by weights, multi-layer vias, copper paint; optional C++/OpenCL core. Not a clone of TopoR’s proprietary engine — conceptual mapping in [docs/TOPOR.md §11](docs/TOPOR.md).
 
 ### 3.6 Escape routing & differential pairs
 
@@ -178,7 +196,10 @@ Beyond raw path search, research and practice emphasize **pre-route policy** tha
 3. K. M. Hall, “An r-dimensional quadratic placement algorithm,” *Management Science*, 1970.  
 4. T. Dayan, *Rubberband based topological router*, PhD thesis, UC Santa Cruz, 1997.  
 5. W. W.-M. Dai, T. Dayan, D. Staepelaere, “Topological routing in SURF: generating a rubber-band sketch,” DAC 1991.  
-6. [TopoR](https://en.wikipedia.org/wiki/TopoR) (Eremex) — topological free-angle commercial router.  
+6. [TopoR](https://en.wikipedia.org/wiki/TopoR) (Eremex) — topological free-angle commercial router; product docs + image cache: [docs/TOPOR.md](docs/TOPOR.md).  
+6a. Eremex, TopoR product / features / competitive advantages — https://www.eremex.com/products/topor/  
+6b. Eremex, *TopoR 6.1 User Manual* — https://www.eremex.com/support/documentation/461750.pdf  
+6c. Eremex, TopoR datasheet — https://www.eremex.com/products/topor/features/445337.pdf  
 7. A. Blake, gEDA Toporouter (GSoC 2008) — open topological router.  
 8. FreeRouting — open shape-based Specctra-compatible autorouter.  
 
@@ -206,6 +227,24 @@ Beyond raw path search, research and practice emphasize **pre-route policy** tha
 25. Minimal-Layer Via / multi-agent PCB routing (MAPF-CBS family), ~2025.  
 26. 3D line-exploration geometric routing for multi-layer PCBs, *Scientific Reports*, 2026.  
 27. KiCad documentation — Board Setup: net classes, constraints, stackup.  
+
+### Topology-first patents & continuous-space (design influence — FTO required for products)
+
+30. US 7,937,681 / US 2006/0242614 — automated PCB routing: topology graph, relaxed then tightened constraints, geometry feedback.  
+31. US 7,017,137 — topological global routing for package interconnect; guide points to detail.  
+32. US 8,510,703 — PCB routing-space representation; via placement as global plan.  
+33. US 2023/0306177 — topological/geometric curvilinear routes; hybrid free-angle + preferred directions.  
+34. 3D LineExplore — continuous multilayer geometric routing, *Sci. Reports* 2026.  
+35. Unconstrained via minimization for topological multilayer routing (IEEE classic).  
+36. Circular-frame package routing, arXiv:2105.07892.  
+37. Multi-agent minimal-layer via routing (CBS-style), ~2025.  
+38. Negotiated congestion / parallel FPGA routing, arXiv:2407.00009 (principle transfer).  
+39. Obstacle-aware any-direction length matching, arXiv:2407.19195.  
+40. PCBWorld engine-grounded benchmark, arXiv:2607.05915 (2026).  
+41. PCB-Dreamer world-model RL around FreeRouting, *ESWA* 2026.  
+42. FreeRouting — open Specctra-class baseline ([GitHub](https://github.com/freerouting/freerouting)); **GPL-3 study only** if product is not GPL.  
+43. Eremex publications index — *Isotropic PCB Routing*, BGA routing, topological CAD concepts — https://www.eremex.com/support/publications/  
+44. Project architecture: [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md).  
 
 ### Datasets & tools
 

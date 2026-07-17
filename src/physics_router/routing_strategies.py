@@ -31,9 +31,17 @@ from physics_router.models import BoardModel, NetClass, PlacementConfig
 from physics_router.router import (
     RouteResult,
     Via,
+    build_obstacle_map,
     clearance_aware_route,
+    remove_redundant_vias,
     rubberband_cleanup,
     topological_guide_route,
+)
+from physics_router.topology import (
+    CongestionMap,
+    pareto_front,
+    score_vector_from_route,
+    signatures_from_route,
 )
 
 
@@ -161,67 +169,67 @@ def ordered_nets(board: BoardModel, config: PlacementConfig | None) -> list[str]
     return sorted(board.nets.keys(), key=key)
 
 
-def multilayer_route(
-    board: BoardModel,
-    config: PlacementConfig | None = None,
-    rules: DesignRules | None = None,
-    *,
-    clearance_mm: float | None = None,
-    grid_mm: float | None = None,
-    allow_vias: bool = True,
-    guide_only: bool = False,
-    use_layer_directions: bool = True,
-    progress_cb=None,
-) -> RouteResult:
-    """DRC-aware multilayer route using KiCad rules + research heuristics.
-
-    - Clearance/width/via from DesignRules (net-class aware)
-    - Layer preference per net class
-    - Optional H/V preferred directions alternating by layer (easier completion
-      on dense boards) while free-angle LOS still used when unobstructed
-    - Net ordering for fewer conflicts
-    """
-    rules = rules or default_design_rules()
-    if guide_only:
-        return topological_guide_route(board, config)
-
-    # Effective clearance: never below KiCad minimum
-    min_cl = rules.constraints.min_clearance_mm
-    cl = max(clearance_mm if clearance_mm is not None else min_cl, min_cl)
-
-    grid = grid_mm
-    if grid is None:
-        grid = max(0.1, min(0.5, cl))
-        if config and config.grid_mm:
-            grid = min(grid, config.grid_mm) if config.grid_mm >= 0.1 else grid
-
-    copper = list(rules.copper_layers) or ["F.Cu", "B.Cu"]
-
-    # Build a synthetic config-aware route by calling core router with all layers
-    # then re-assign segment layers / widths per net using rules.
-    result = clearance_aware_route(
-        board,
-        config,
-        layers=copper,
-        clearance_mm=cl,
-        grid_mm=grid,
-        allow_vias=allow_vias and not (
-            not rules.constraints.allow_blind_buried_vias and len(copper) > 2
-            # through vias still allowed when blind/buried disabled
-        ),
-        guide_only=False,
-        soft_fallback=False,  # never paint illegal copper
-        progress_cb=progress_cb,
+def _variant_score(result: RouteResult) -> float:
+    """Multiobjective rank: completion first, then quality score, then length."""
+    q = result.quality or result.compute_quality()
+    completion = float(q.get("completion") or 0.0)
+    score = float(q.get("score") or 0.0)
+    # Prefer more routed copper; then higher grade; break ties with shorter length
+    return (
+        completion * 1e6
+        + score * 1e3
+        - float(result.total_length_mm)
+        - float(result.via_count) * 5.0
+        - float(result.clearance_violations) * 20.0
     )
 
-    # Dayan-style rubberband cleanup (shorten free-angle paths under DRC clearance)
-    result = rubberband_cleanup(result, board, config, clearance_mm=cl)
 
-    # Enforce track widths & via sizes from DRC
+def _net_order_variants(board: BoardModel, config: PlacementConfig | None) -> list[tuple[str, list[str]]]:
+    """Alternative paint orders for multi-variant TopoR-style search."""
+    base = ordered_nets(board, config)
+    # Small-first (less blockage early) — default clearance_aware uses pin-count within priority
+    small_first = sorted(
+        board.nets.keys(),
+        key=lambda n: (len(board.nets[n]), -((config.weight_for_net(n) if config else 1.0)), n),
+    )
+    large_first = list(reversed(small_first))
+    # Critical nets last so they see remaining free channels
+    if config:
+        crit_last = sorted(
+            board.nets.keys(),
+            key=lambda n: (
+                0 if not (config.net_by_name().get(n) and config.net_by_name()[n].critical) else 1,
+                -config.weight_for_net(n),
+                n,
+            ),
+        )
+    else:
+        crit_last = list(reversed(base))
+    return [
+        ("priority", base),
+        ("small_first", small_first),
+        ("large_first", large_first),
+        ("critical_last", crit_last),
+    ]
+
+
+def _apply_drc_geometry(
+    result: RouteResult,
+    board: BoardModel,
+    config: PlacementConfig | None,
+    rules: DesignRules,
+    cl: float,
+) -> RouteResult:
+    """Geometry polish: rubberband → via minimize → DRC widths."""
+    copper = list(rules.copper_layers) or ["F.Cu", "B.Cu"]
+    # Phase C: re-geometrize (Dayan/TopoR rubberband)
+    result = rubberband_cleanup(result, board, config, clearance_mm=cl)
+    # Phase C: remove unnecessary vias when same-layer stubs are legal
+    result = remove_redundant_vias(result, board, config, clearance_mm=cl)
+
     for seg in result.segments:
         w = rules.track_width_for_net(seg.net, config)
         seg.width_mm = w
-        # Snap layer to preferred set if current layer not in copper
         if seg.layer not in copper:
             prefs = rules.layers_for_net(seg.net, config)
             seg.layer = prefs[0] if prefs else copper[0]
@@ -233,29 +241,252 @@ def multilayer_route(
         if not rules.constraints.allow_blind_buried_vias and len(copper) >= 2:
             via.layers = (copper[0], copper[-1])
 
-    # Preferential layer coloring for multi-layer: alternate H/V hint in notes
-    if use_layer_directions and len(copper) >= 2:
-        result.notes.append(
-            "layer_policy: "
-            + ", ".join(
-                f"{ly}~{'H' if i % 2 == 0 else 'V'}-preferred"
-                for i, ly in enumerate(copper)
-            )
-            + " (free-angle still used when LOS clear)"
-        )
     result.notes.append(
         f"drc: clearance≥{cl}mm track_min={rules.constraints.min_track_width_mm}mm "
         f"layers={copper} vias_through={not rules.constraints.allow_blind_buried_vias}"
     )
-
-    # Pair co-routing note
     if config:
         for lab in config.nets:
             if lab.pair_with and lab.name in board.nets and lab.pair_with in board.nets:
                 result.notes.append(
                     f"pair:{lab.name}+{lab.pair_with} prefer same layer / matched length"
                 )
+    result.compute_quality()
+    return result
 
+
+def topor_style_route(
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    rules: DesignRules | None = None,
+    *,
+    clearance_mm: float | None = None,
+    grid_mm: float | None = None,
+    allow_vias: bool = True,
+    guide_only: bool = False,
+    num_variants: int | None = None,
+    negotiate_iters: int | None = None,
+    progress_cb=None,
+) -> RouteResult:
+    """TopoR-inspired pipeline (docs/TOPOR.md + docs/ARCHITECTURE_ROUTER.md).
+
+    Phases
+    ------
+    A. Instant topology — free-angle connectivity under clearance (no illegal soft copper).
+    B. Multi-variant + negotiated congestion — alternate net orders; raise historical
+       cost of crowded cells so later iterations spread into other homotopy classes.
+    C. Geometry polish — rubberband shorten + redundant via removal.
+    D. DRC floors — track/via sizes from KiCad design rules.
+    E. Topology signatures — record obstacle-side classes for explainability.
+
+    Style is **isotropic** (no preferred H/V layer directions). Soft fallback stays
+    off so open edges beat overlapping copper.
+    """
+    rules = rules or default_design_rules()
+    if guide_only:
+        r = topological_guide_route(board, config)
+        r.notes.append("topor_pipeline: guide_only (topology sketch, no clearance)")
+        return r
+
+    min_cl = rules.constraints.min_clearance_mm
+    cl = max(clearance_mm if clearance_mm is not None else min_cl, min_cl)
+    grid = grid_mm
+    if grid is None:
+        grid = max(0.1, min(0.5, cl))
+        if config and config.grid_mm and config.grid_mm >= 0.1:
+            grid = min(grid, config.grid_mm)
+
+    copper = list(rules.copper_layers) or list(board.copper_layers) or ["F.Cu", "B.Cu"]
+    n_nets = len(board.nets)
+    # Auto variant budget: dense boards stay single-pass for interactive UI latency
+    if num_variants is None:
+        if n_nets > 40:
+            num_variants = 1
+        elif n_nets > 16:
+            num_variants = 2
+        else:
+            num_variants = 3
+    num_variants = max(1, min(4, int(num_variants)))
+
+    # Negotiated congestion iterations (route → measure → raise historical cost).
+    # Default 1 for interactive latency; CLI/batch can pass negotiate_iters=2–3.
+    if negotiate_iters is None:
+        negotiate_iters = 1
+    negotiate_iters = max(1, min(3, int(negotiate_iters)))
+
+    orders = _net_order_variants(board, config)[:num_variants]
+    variant_specs: list[dict] = []
+    for name, order in orders:
+        variant_specs.append(
+            {
+                "name": name,
+                "net_order": order,
+                "allow_vias": allow_vias,
+                "grid_mm": grid,
+            }
+        )
+    if num_variants >= 2 and allow_vias:
+        variant_specs[-1] = {
+            "name": "via_averse",
+            "net_order": orders[0][1],
+            "allow_vias": True,
+            "grid_mm": max(0.15, grid * 0.85),
+        }
+
+    cong = CongestionMap(cell_mm=max(0.5, grid))
+    candidates: list[tuple[str, RouteResult]] = []
+    scored: list[tuple[str, RouteResult, object]] = []
+
+    for ni in range(negotiate_iters):
+        for vi, spec in enumerate(variant_specs):
+            label = spec["name"] if negotiate_iters == 1 else f"{spec['name']}_n{ni}"
+            cb = progress_cb if (vi == 0 and ni == 0) else None
+            if progress_cb and not (vi == 0 and ni == 0):
+                try:
+                    progress_cb(
+                        0,
+                        1,
+                        label,
+                        "variant",
+                        {"variant": label, "index": vi, "negotiate": ni},
+                    )
+                except Exception:
+                    pass
+            raw = clearance_aware_route(
+                board,
+                config,
+                layers=copper,
+                clearance_mm=cl,
+                grid_mm=float(spec["grid_mm"]),
+                allow_vias=bool(spec["allow_vias"]),
+                guide_only=False,
+                soft_fallback=False,
+                prefer_native=False,
+                progress_cb=cb,
+                net_order=list(spec["net_order"]),
+                style="isotropic",
+                congestion=cong,
+            )
+            polished = _apply_drc_geometry(raw, board, config, rules, cl)
+            polished.notes.append(f"topor_variant: {label}")
+            # Present congestion from this solution (for negotiation + scoring)
+            cong.clear_present()
+            cong.paint_route(polished)
+            sv = score_vector_from_route(polished, cong)
+            polished.quality = {
+                **(polished.quality or {}),
+                "variant": label,
+                "pipeline": "topor_style",
+                "score_vector": sv.to_dict(),
+                "negotiate_iter": ni,
+            }
+            candidates.append((label, polished))
+            scored.append((label, polished, sv))
+        # Feed geometric crowding back into historical costs (next iteration)
+        if ni + 1 < negotiate_iters:
+            cong.negotiate()
+            if progress_cb:
+                try:
+                    progress_cb(0, 1, "negotiate", "congestion", {"iter": ni})
+                except Exception:
+                    pass
+
+    # Pareto front of complete-board variants, then pick best scalar among front
+    front = pareto_front(scored)  # type: ignore[arg-type]
+    best_name, best, best_sv = max(front, key=lambda t: _variant_score(t[1]))
+    best.notes.insert(
+        0,
+        f"topor_pipeline: isotropic free-angle · {len(candidates)} candidate(s) · "
+        f"negotiate_iters={negotiate_iters} · winner={best_name} · "
+        f"pareto={len(front)}",
+    )
+
+    # Topology signatures for explainability
+    try:
+        om = build_obstacle_map(board, clearance_mm=cl, layers=copper)
+        for s in best.segments:
+            om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
+        sigs = signatures_from_route(best, om)
+        best.quality = {**(best.quality or {}), "topology_signatures": sigs[:40]}
+        best.notes.append(f"topology_signatures: {len(sigs)} net class(es) recorded")
+    except Exception as exc:
+        best.notes.append(f"topology_signatures: skipped ({exc})")
+
+    ranking = sorted(
+        (
+            {
+                "name": n,
+                "score": (r.quality or {}).get("score"),
+                "grade": (r.quality or {}).get("grade"),
+                "length_mm": round(r.total_length_mm, 2),
+                "vias": r.via_count,
+                "unrouted": len(r.unrouted_nets),
+                "violations": r.clearance_violations,
+                "score_vector": (r.quality or {}).get("score_vector"),
+                "pareto": any(n == f[0] for f in front),
+            }
+            for n, r in candidates
+        ),
+        key=lambda d: -(d.get("score") or 0),
+    )
+    best.notes.append(
+        "variants: "
+        + ", ".join(
+            f"{d['name']}={d.get('grade')}/{d.get('score')} "
+            f"L={d['length_mm']} V={d['vias']} U={d['unrouted']}"
+            for d in ranking[:6]
+        )
+    )
+    best.compute_quality()
+    best.quality["variants_ranked"] = ranking
+    best.quality["winner"] = best_name
+    best.quality["pipeline"] = "topor_style"
+    best.quality["pareto_front"] = [f[0] for f in front]
+    best.quality["score_vector"] = best_sv.to_dict() if hasattr(best_sv, "to_dict") else {}
+    return best
+
+
+def multilayer_route(
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    rules: DesignRules | None = None,
+    *,
+    clearance_mm: float | None = None,
+    grid_mm: float | None = None,
+    allow_vias: bool = True,
+    guide_only: bool = False,
+    use_layer_directions: bool = False,
+    num_variants: int | None = None,
+    progress_cb=None,
+) -> RouteResult:
+    """DRC-aware multilayer TopoR-style route (isotropic free-angle).
+
+    Delegates to :func:`topor_style_route`. ``use_layer_directions`` is retained
+    for API compatibility but defaults **False** — TopoR-style isotropic routing
+    does not assign preferred H/V directions per layer.
+    """
+    result = topor_style_route(
+        board,
+        config,
+        rules,
+        clearance_mm=clearance_mm,
+        grid_mm=grid_mm,
+        allow_vias=allow_vias,
+        guide_only=guide_only,
+        num_variants=num_variants,
+        progress_cb=progress_cb,
+    )
+    if use_layer_directions:
+        copper = list((rules or default_design_rules()).copper_layers) or ["F.Cu", "B.Cu"]
+        if len(copper) >= 2:
+            result.notes.append(
+                "layer_policy(optional): "
+                + ", ".join(
+                    f"{ly}~{'H' if i % 2 == 0 else 'V'}-hint"
+                    for i, ly in enumerate(copper)
+                )
+                + " — isotropic paths still preferred when LOS clear"
+            )
     return result
 
 

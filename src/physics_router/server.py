@@ -544,14 +544,20 @@ class AppState:
             self._refresh_viewer()
 
     def _job_route_topor(self, job: Job) -> dict[str, Any]:
-        """Single organic TopoR free-angle route with live partial geometry."""
+        """TopoR-style isotropic free-angle route (multi-variant + geometry polish)."""
+        from physics_router.routing_strategies import multilayer_route, topor_style_route
+
         p = job.params
         clearance = float(p.get("clearance_mm", 0.2))
         grid = float(p.get("grid_mm", 0.5))
-        self.set_progress(job, 3, "TopoR free-angle")
+        num_variants = p.get("num_variants")
+        if num_variants is not None:
+            num_variants = int(num_variants)
+        self.set_progress(job, 3, "TopoR isotropic free-angle")
         self.log(
             job,
-            f"TopoR organic route (clearance={clearance} mm, grid={grid} mm) — live preview enabled",
+            f"TopoR pipeline: isotropic free-angle · clearance={clearance} mm · "
+            f"grid={grid} mm · variants={num_variants or 'auto'} — live 2D preview",
         )
         with self.lock:
             board = copy.deepcopy(self.board())
@@ -565,6 +571,8 @@ class AppState:
             frac = 5 + 80 * (done_n / max(total, 1))
             self.set_progress(job, frac, f"TopoR {done_n}/{total} · {name} · {stage}")
             if isinstance(detail, dict):
+                if detail.get("variant"):
+                    self.log(job, f"  variant {detail.get('index', '?')}: {detail['variant']}")
                 if detail.get("length_mm") is not None:
                     self.log(
                         job,
@@ -592,16 +600,17 @@ class AppState:
                         rules,
                         grid_mm=grid,
                         clearance_mm=clearance,
+                        num_variants=num_variants,
                         progress_cb=on_progress,
                     )
                 else:
-                    done["r"] = clearance_aware_route(
+                    done["r"] = topor_style_route(
                         board,
                         cfg,
+                        None,
                         clearance_mm=clearance,
                         grid_mm=grid,
-                        soft_fallback=False,
-                        prefer_native=False,
+                        num_variants=num_variants,
                         progress_cb=on_progress,
                     )
             except Exception as e:
@@ -616,14 +625,22 @@ class AppState:
         route = done["r"]
         d = route.to_dict()
         with self.lock:
-            self.routes = {"topor": route}  # single variant only
+            self.routes = {"topor": route}
             self.selected_route = "topor"
             self._refresh_viewer()
             outp = WORK_DIR / f"route_topor_{job.id}.json"
             outp.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
         q = route.quality or route.compute_quality()
         self.log(job, f"TopoR done: {q.get('summary')}")
-        for note in (route.notes or [])[-8:]:
+        if q.get("winner"):
+            self.log(job, f"  winner variant: {q.get('winner')}")
+        for row in (q.get("variants_ranked") or [])[:4]:
+            self.log(
+                job,
+                f"  · {row.get('name')}: grade={row.get('grade')} score={row.get('score')} "
+                f"L={row.get('length_mm')} vias={row.get('vias')} unrouted={row.get('unrouted')}",
+            )
+        for note in (route.notes or [])[-10:]:
             self.log(job, f"  note: {note}")
 
         auto_apply = bool(p.get("auto_apply", False))  # manual apply from UI by default
@@ -1290,7 +1307,7 @@ JOB_CATALOG = [
         "id": "route_topor",
         "label": "TopoR free-angle route",
         "group": "route",
-        "description": "Organic free-angle clearance route with live preview (single engine)",
+        "description": "Isotropic free-angle TopoR pipeline: multi-variant search, rubberband + via minimize, live 2D preview",
     },
     {
         "id": "apply_route_pcb",
@@ -1464,7 +1481,16 @@ class Handler(SimpleHTTPRequestHandler):
     def _api_get(self, path: str, qs: dict[str, list[str]]) -> None:
         try:
             if path == "/api/health":
-                return self._json(200, {"ok": True, "version": __version__})
+                try:
+                    from physics_router.native_bridge import info as native_info
+
+                    native = native_info()
+                except Exception as exc:  # noqa: BLE001
+                    native = {"available": False, "error": str(exc)}
+                return self._json(
+                    200,
+                    {"ok": True, "version": __version__, "native": native},
+                )
             if path == "/api/snapshot":
                 return self._json(200, STATE.snapshot())
             if path == "/api/presets":
