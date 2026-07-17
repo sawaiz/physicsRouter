@@ -1,69 +1,14 @@
-# Physics-Aware KiCad Placement & Routing Engine
+# physicsRouter
 
-A **KiCad placement and routing engine** that combines topological (TopoR-style) layout with **physics simulations** (Ngspice, OpenEMS) so boards are not only fully routed, but also validated for real-world electrical behavior—and, critically, **closed-loop checked** with official KiCad DRC so copper is manufacturable, not just “pretty paths.”
+Physics-aware **KiCad placement and free-angle routing** with closed-loop **DRC/ERC**, an interactive control plane, and an optional **C++/OpenCL** core for speed.
 
-Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) and the rubberband topological literature (Dayan 1997; Dai et al. 1991)—gridless free-angle routing, no preferred directions, clearance-aware multi-layer paths with vias—and by modern multi-objective / RL placement research that rewards **post-route and physical** quality rather than raw HPWL alone.
+Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) (gridless free-angle topology) and multi-objective placement research that scores **post-route and physical** quality, not HPWL alone.
 
-**Inputs that unlock best results:** full KiCad projects (`.kicad_pcb` / `.kicad_sch`) plus **well-labeled nets** with **weights** and **notes**. Labels can be authored in YAML or **imported** from KiCad netclasses and schematic fields. **Unlocked components** (passives, decaps, local power parts) are free to move under EE rules; **fixed mechanicals** (connectors, battery, LED ring, pogo jigs) stay locked.
-
-> **Deep dive:** algorithm survey, paper notes, and full bibliography → **[RESEARCH.md](RESEARCH.md)**  
-> **Training data:** corpora and conversion paths → **[DATASETS.md](DATASETS.md)**  
-> **Interactive demo:** [viewer/](viewer/) · [physics budget dashboard](viewer/dashboard.html) · [TopoR vs FreeRouting compare](docs/route_comparison.md)
-
----
-
-## Closed-loop quality (ERC / DRC / manufacturable copper)
-
-The product goal is not “autoroute something.” It is a loop that ends in a board that **passes design rules**, is **manufacturable**, and places free parts according to **electrical engineering physics**—not wirelength alone.
-
-```
-Labeled nets + fixed mechanicals + free passives
-        │
-        ▼
-Multi-objective place (SA) — unlocked parts only
-        │
-        ▼
-TopoR free-angle route (no illegal soft copper by default)
-   · pad keepouts · inflated paint clearance · same-layer audit
-   · open edge preferred over overlapping tracks
-        │
-        ▼
-Pick variant in UI (2D preview) → Apply to .kicad_pcb
-        │
-        ├──► kicad-cli pcb drc   (every apply / autoroute)
-        ├──► kicad-cli sch erc  (when schematic found)
-        └──► optional GLB rebuild (tracks + STEP models + mask/silk)
-        │
-        ▼
-Physics budget · CI regression · OpenEMS/STEP when needed
-```
-
-| Gate | What “good” means | Tooling today |
-|------|-------------------|---------------|
-| **Legal copper** | Clearance, track min, via annular, unconnected nets | Soft-fallback **off** for clearance routes; `audit_same_layer_clearance`; official **DRC** on apply |
-| **Schematic parity** | ERC clean before fab | `run_erc` / control-plane **ERC** job when `.kicad_sch` is next to the PCB |
-| **Shared coordinates** | 3D GLB, 2D route preview, and overlays use **KiCad mm, Z-up** | GLB scaled m→mm only (not re-centered); routes drawn in the same XY |
-| **Manufacturable** | Min hole, annular, stackup | `design_rules` from `.kicad_pro` / board |
-| **Best free placement** | Unlock passives; lock LED ring / mechanicals | `lock_ref_prefixes: ["D"]` on HALO-90 |
-| **No silent regressions** | Score / guide length gates | GitHub Actions + `ci_regression.py` |
-
-**Routing policy (anti-overlap):**
-
-1. **Never paint a straight illegal segment** in clearance mode (`soft_fallback=False`) — leave the edge open and report `partial` / `unrouted` instead of stacked copper.  
-2. **Inflate keepouts** slightly when painting accepted traces so the next net cannot hug the previous.  
-3. **Post-route clearance audit** samples foreign nets on the same layer and feeds the quality grade.  
-4. **Apply → DRC/ERC** runs automatically after autoroute when a PCB is loaded, and on **Apply to KiCad** / **Apply + rebuild 3D**.  
-5. Soft fallback remains only for **guide** previews (not for manufacturable copper).
-
-```bash
-# Autoroute + write copper + official DRC
-physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
-  --out-pcb board_routed.kicad_pcb --drc
-
-# Or in the control plane: Route → Clearance → pick variant → Apply + rebuild 3D
-physics-router serve --port 8765
-physics-router drc --pcb board_routed.kicad_pcb --out-dir drc_out
-```
+| Doc | Contents |
+|-----|----------|
+| **[DESIGN.md](DESIGN.md)** | Architecture, design decisions, future work |
+| **[RESEARCH.md](RESEARCH.md)** | Algorithm survey and bibliography |
+| **[DATASETS.md](DATASETS.md)** | Training corpora and conversion paths |
 
 ---
 
@@ -73,715 +18,122 @@ physics-router drc --pcb board_routed.kicad_pcb --out-dir drc_out
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Example labeled-net config
-physics-router init-config -o examples/placement_config.yaml
+# Optional: fast C++ router (OpenCL GPU when available)
+bash scripts/build_native.sh
+export PYTHONPATH=native/build${PYTHONPATH:+:$PYTHONPATH}
 
-# Import labels from KiCad netclasses + schematics
-physics-router import-nets \
-  --pcb path/to/board.kicad_pcb \
-  --project-dir path/to/project \
-  -o placement_config.yaml
-
-# Multi-candidate physics-aware placement
-physics-router place \
-  --config placement_config.yaml \
-  --pcb path/to/board.kicad_pcb \
-  --out-pcb board_placed.kicad_pcb \
-  --out-json placement_result.json
-
-# Clearance-aware TopoR free-angle routing
-physics-router route \
-  --config placement_config.yaml \
-  --pcb board_placed.kicad_pcb \
-  --clearance 0.2 \
-  --out-json route_result.json \
-  --out-pcb board_routed.kicad_pcb
-
-# OpenEMS mesh export (placement + routes and/or Gerbers)
-physics-router export-openems \
-  --config placement_config.yaml \
-  --pcb board_routed.kicad_pcb \
-  --gerber F.Cu=fab/F_Cu.gbr \
-  --gerber B.Cu=fab/B_Cu.gbr \
-  --out-dir openems_export
-```
-
-Synthetic demo (no PCB file):
-
-```bash
-physics-router place --config examples/placement_config.yaml
-physics-router route --config examples/placement_config.yaml --clearance 0.2
-physics-router export-openems --config examples/placement_config.yaml --out-dir openems_export
-```
-
-### Interactive control plane (config · jobs · progress · results)
-
-```bash
+# Control plane (default board: HALO-90 if cloned)
 physics-router serve --port 8765
 # → http://127.0.0.1:8765/
-```
 
-Defaults to the **HALO-90** board when `third_party/halo-90` is present (all **D1–D90 LEDs
-locked** plus mechanicals). Live **three.js** loads a KiCad **GLB** (footprint **STEP** models +
-**soldermask / silkscreen / all copper**) in the **same mm XY as the 2D route preview** (Z-up;
-GLB only converted m→mm, not re-centered). Route step: run Guide/Clearance, **pick a variant**,
-**Apply to KiCad** (writes copper, runs **DRC** + **ERC**), optionally **rebuild 3D**.
-
-```bash
-python scripts/build_viewer_demo.py   # static demo assets
-physics-router export-dsn --config examples/placement_config.yaml -o examples/demo/board.dsn
-pytest && python scripts/ci_regression.py
-```
-
----
-
-## Research: best algorithms & methods
-
-This section synthesizes **scientific literature**, industrial practice, and community discussion into an algorithm stack for PCB place-and-route. Details and the full bibliography live in [RESEARCH.md](RESEARCH.md).
-
-### Placement — what the literature supports
-
-| Family | Core idea | Representative work | Role in a modern stack |
-|--------|-----------|---------------------|------------------------|
-| **Simulated annealing** | Stochastic accept/reject moves with cooling schedule | Kirkpatrick et al. 1983; PCB baselines in Holtz/Merrill-style work; Vassallo DATE 2024 | Strong default global placer; multi-objective energy |
-| **Genetic / evolutionary** | Population search, multi-objective | Jain & Gea 1996; Ismail et al. 2012; multi-objective GA theses | Pareto thermal vs wirelength |
-| **Analytical / force-directed** | Continuous WL + density (springs / ePlace-like) | Hall 1970; ePlace/RePlAce lineage; thermal force models | Fast global seeds; thermal spread |
-| **Spectral / partitioning** | Laplacian eigenmaps, min-cut clusters | NS-Place init (arXiv:2210.14259) | Floorplan seeds & affinity clusters |
-| **Net-separation / congestion** | Max-margin separators between net convex hulls (SVM-like) + MILP legalize | **NS-Place** (Cheng, Ho, Holtz 2022) | Huge gains in vias/DRVs vs manual when FreeRouting-evaluated |
-| **Reinforcement learning** | Sequential place as MDP; graph/CNN policy; adaptive rewards | Crocker MIT 2021; Vassallo/Bajada DATE 2024; Lim et al. arXiv:2602.23540; IC: Mirhoseini/Goldie *Nature* 2021 | Learn policies; use **post-route** metrics in reward |
-| **Component-centric heuristics** | Fix large IC; place passives by pins/power | Lim et al. 2026; common expert practice | Practical prior inside SA/RL |
-
-**Consensus findings**
-
-1. **HPWL alone is not enough** for PCB—post-route wirelength, via count, DRC, and physics matter (Crocker 2021; Vassallo 2024; NS-Place experiments).
-2. **Fixed connectors and regions** dominate quality; free global search without mechanicals is unrealistic.
-3. **SA remains a competitive baseline** against early RL on small/medium boards; RL shines with transfer and good rewards.
-4. **Congestion-aware placement** (net separation, density) reduces routing failure more than pure length minimization (NS-Place: large cuts in DRVs/unrouted nets/vias on 14 real PCBs).
-
-### Routing — what the literature supports
-
-| Family | Core idea | Representative work | Role |
-|--------|-----------|---------------------|------|
-| **Maze / Lee / A\*** | Grid BFS or heuristic search | Lee 1961; Hadlock; A\* clearance costs | Guaranteed path if one exists; slow dense |
-| **Line-probe** | Sparse line search | Hightower; Mikami–Tabuchi | Fast sparse boards |
-| **Shape-based / gridless** | Push-aside geometry, Specctra DSN | FreeRouting; commercial Specctra-class | Production density |
-| **Topological / rubberband** | Topology first; free-angle geometry; deform under clearance | Dayan PhD 1997; Dai/Dayan/Staepelaere DAC 1991; **TopoR**; Blake Toporouter | Fewer vias; no forced H/V layers |
-| **Escape / pair-aware** | BGA fanout, differential co-route | Lin et al. ASP-DAC 2021 | HDI / high-speed |
-| **DRL + MCTS** | Search + learned policy | He PhD 2024 (Iowa State); multi-agent RL 2024 | Hard nets; long horizon |
-| **CNN + A\*** | Learned cost maps guide A\* | Unet-Astar ~2023 | Faster guided maze |
-| **World-model RL + FR** | Dreamer-style + FreeRouting env | DreamerV3+FR 2026 | Hybrid ML + classical |
-| **Thermal / SI-aware** | Route under thermal or EM objectives | TRouter; industrial SI tools | Physics close-loop |
-
-**TopoR / rubberband takeaway:** absence of preferred routing directions and free angles (optionally arcs) often reduces vias and crosstalk versus strict 45°/90° channel routing—central to this project’s router design.
-
-### Physics-in-the-loop (why we score more than geometry)
-
-| Objective | Research / practice method |
-|-----------|----------------------------|
-| Power-loop inductance / EMI | Minimize loop area; partial-L models; OpenEMS FDTD |
-| IR drop / PI | Sheet-resistance on power & high-current nets |
-| Return path | HS/EMI nets near GND reference (stackup-aware) |
-| Matrix / CPX match | Length skew within charlieplex groups |
-| Signal integrity | Length match, impedance stackup, 2.5D/3D EM |
-| Thermal | Force-directed heat; FEM |
-| Circuit behavior | Ngspice with estimated parasitics |
-| Accurate 3D copper | **KiCad STEP** (tracks, pads, mask, silk) for OpenEMS/FEM |
-| Routability | Net-separation; post-route FreeRouting + **KiCad DRC** |
-
-Commercial and research systems increasingly treat placement as a **constrained multi-objective** problem (safe RL / CMDP surveys 2024–2025), not unconstrained wirelength minimization.
-
-### Recommended hybrid stack (literature → this engine)
-
-```
-Labeled nets (classes, weights, notes)
-        │
-        ▼
-Floorplan seed (regions + fixed mechanicals + free passives)
-        │
-        ▼
-Global place — multi-candidate SA on unlocked parts only
-   energy: HPWL, loop L, IR drop, return path, CPX match,
-           overlap, density, thermal, EMI
-        │
-        ▼
-Physics rank — Ngspice + OpenEMS proxies; STEP for accurate 3D
-        │
-        ▼
-TopoR free-angle route + rubberband cleanup
-        │
-        ▼
-KiCad DRC oracle + physics-budget dashboard
-        │
-        ▼
-Optional FreeRouting baseline (DSN) · CI score regression
-        │
-        ▼
-Post-route metrics / copper fails → re-place free parts
-```
-
-### How physicsRouter maps to the research
-
-| Literature method | Our implementation (today) |
-|-------------------|----------------------------|
-| SA multi-objective place | `placement.py` multi-candidate SA (**unlocked** footprints only) |
-| Net criticality / weights | `NetLabel` + `import-nets` from KiCad |
-| Net-separation / regions | Region constraints + density term (full NS-Place MILP: future) |
-| Dayan/TopoR free-angle | `router.py` LOS → detours → A\* → **rubberband cleanup** + vias |
-| Lee/A\* maze | Grid A\* fallback inside free-angle search |
-| Post-route / physical rewards | IR, loop L, return path, CPX match; spice/EMI; **KiCad DRC** |
-| Accurate EM geometry | `export-step` tracks/pads/mask/silk for OpenEMS/FEM |
-| RL placement/routing | Architecture ready; SA baseline first (as in DATE 2024 comparisons) |
-| FreeRouting / Specctra | **`export-dsn`** + **`compare-routes`** (SES/JSON baseline) |
-| Physics budget UI | **`dashboard`** HTML + three.js **`viewer/`** |
-| Regression gates | **GitHub Actions** + `scripts/ci_regression.py` |
-| PCBench / open corpora | [DATASETS.md](DATASETS.md) |
-
-### Community & industry signals (X and practice)
-
-Public discussion and product work reinforce the hybrid stack:
-
-- **RL at commercial scale** for autorouting (e.g. DeepPCB: reinforcement learning, large routing volume, multi-EDA including KiCad).
-- **Classical routers still matter** when ML tools fail on dense interfaces—engineers report writing fast grid-based KiCad autorouters that succeed where FreeRouting/DeepPCB struggled (community posts on hard memory-interface boards).
-- **Physics-aware and agentic tools** (Quilter-style physics routing; Flux / LLM + KiCad plugins) accelerate prototypes; high-speed and safety-critical boards still need expert SI/EMI review.
-- **Dedicated layout engines** (separate from general coding agents) are emerging for faster place/route with less rework.
-
-These match research consensus: **learn when you have rewards and data; keep topological/classical cores for legality and free-angle geometry; always close the loop with physics.**
-
----
-
-## Import nets from KiCad
-
-`import-nets` builds `NetLabel` entries from:
-
-| Source | What is read |
-|--------|----------------|
-| `.kicad_pcb` `(net_class …)` / `(add_net …)` | Class name, clearance, track width, class notes |
-| `.kicad_pcb` `(net id "name")` | Net inventory |
-| `.kicad_sch` labels / global / hierarchical | Net names + shapes / properties |
-| Schematic text `NET: note…` | Designer notes attached to nets |
-
-Heuristics map names/classes → `power` / `ground` / `clock` / `differential` / … with default **weights**, **critical** flags, `simulate_spice` / `simulate_em`, and auto **power_loop_group** for switcher nets.
-
-```bash
-physics-router import-nets --pcb board.kicad_pcb --sch root.kicad_sch -o placement_config.yaml
-physics-router import-nets --pcb board.kicad_pcb --project-dir . -o placement_config.yaml --override
-```
-
-## Labeled nets (YAML)
-
-```yaml
-nets:
-  - name: SW
-    net_class: power
-    weight: 5.0
-    critical: true
-    power_loop_group: buck1
-    emi_sensitive: true
-    simulate_spice: true
-    simulate_em: true
-    notes: "Switcher node — place L and FET tight."
-```
-
-Full example: [`examples/placement_config.yaml`](examples/placement_config.yaml).
-
-## Placement (physics-ranked multi-candidate)
-
-```
-KiCad PCB + labeled nets
-  → seed N region-aware candidates
-  → simulated annealing (weighted WL, loop area, critical nets, overlap, density, thermal, EMI)
-  → Ngspice / OpenEMS proxies on every candidate
-  → best → .kicad_pcb + JSON
-```
-
-## Design rules, stackup, and multilayer routing
-
-The router **loads KiCad board rules** so geometry never undercuts fab constraints:
-
-| Source | Used for |
-|--------|----------|
-| `.kicad_pcb` `(layers)` / `(setup (stackup …))` | Copper layer list, dielectric stack, thickness, εᵣ |
-| `.kicad_pro` `design_settings.rules` | min clearance, track, via, annular, microvia flags |
-| `.kicad_pro` `net_settings.classes` | Per-class clearance, track width, via size/drill |
-| Placement labels | Net priority, pair co-route, power vs signal layer preference |
-
-```bash
-# Inspect rules extracted from a board (e.g. HALO-90 is 4-layer)
-physics-router rules --pcb path/to/board.kicad_pcb
-
-# Pre-route methodology checks (density, layers, escape, via budget)
-physics-router pre-route --config placement_config.yaml --pcb path/to/board.kicad_pcb
-
-# Route using KiCad min_clearance / widths / full copper stack
-physics-router route --config placement_config.yaml --pcb path/to/board.kicad_pcb \
-  --out-json route_result.json --out-pcb board_routed.kicad_pcb
-```
-
-### Policies that make routing easier (research-backed)
-
-1. **Respect DRC floors** — clearance/width/via never below KiCad minima.  
-2. **Stackup-aware layers** — 4L: signals prefer outer; power/ground prefer inners (plane roles).  
-3. **Via minimization** — complete on one layer when possible; through-vias only if blind/buried disabled.  
-4. **Net ordering** — GND/power → high-speed/CPX → pairs → general.  
-5. **Escape-then-area** — fan out dense packages before long runs (`pre-route` escape hints).  
-6. **Pair co-routing** — SDA/SCL (etc.) same layer, matched length notes.  
-7. **H/V preferred per layer** (optional note) while free-angle LOS still used when clear.  
-8. **Pre-route density test** — high pins/cm² ⇒ suggest more layers before search.  
-9. **Physics proxies** — loop area / EMI / ngspice before committing copper.
-
-See [RESEARCH.md](RESEARCH.md) §6 for literature (layer assignment, MLV-CBS, 3D geometric routing, MCTS multilayer).
-
-## Clearance-aware TopoR routing
-
-| Feature | Behavior |
-|---------|----------|
-| Free angles | LOS + corner detours + A\* + rubberband (not only 45°/90°) |
-| Clearance | **KiCad min_clearance** (or override), pad obstacles, same-net may pass |
-| Track/via size | From **net class + DRC minima** |
-| Priority | High-weight / critical nets first (power → CPX → pairs → signal) |
-| Multi-layer | All copper layers from stackup; layer preference by net class |
-| Copper paint | Routed traces become obstacles for later nets |
-| Output | JSON + optional `(segment)` / `(via)` append to `.kicad_pcb` |
-
-```bash
-physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
-  --out-json route_result.json --out-pcb board_routed.kicad_pcb
-```
-
-## OpenEMS / FEM geometry (STEP + JSON)
-
-KiCad can export a **STEP** of the board including **tracks, pads, zones, inner copper, soldermask, and silkscreen** — far more accurate for OpenEMS / FEM than extruded rectangles alone.
-
-```bash
-# Full simulation STEP (copper + mask + silk, board body, no components)
-physics-router export-step --pcb board.kicad_pcb --out-dir sim_geometry
-
-# Single STEP path
-physics-router export-step --pcb board.kicad_pcb -o board_sim.step
-
-# Net-filtered copper (e.g. charlieplex only)
-physics-router export-step --pcb board.kicad_pcb --out-dir sim_geometry --net-filter 'CPX*'
-```
-
-| Artifact | Content |
-|----------|---------|
-| `board_with_copper.step` / `*_full.step` | KiCad STEP: tracks, pads, zones, mask, silk |
-| `board_geometry.json` | Lightweight polyline/box primitives (mm) |
-| `simulate_board.py` | CSXCAD/openEMS driver from JSON + stackup |
-| `OPENEMS_README.txt` | How to run |
-
-```bash
-physics-router export-openems \
-  --config placement_config.yaml \
-  --pcb board.kicad_pcb \
-  --out-dir openems_export
-# → also attempts STEP when kicad-cli is available
-```
-
-### Other high-impact features
-
-| Feature | Command / module | Why |
-|---------|------------------|-----|
-| **DRC-validated copper** | `drc`, `route --drc` | Official KiCad DRC JSON on written boards |
-| **Rubberband cleanup** | auto in `multilayer_route` | Shortens free-angle paths under clearance (Dayan-style) |
-| **IR drop + loop L** | `score` / placement energy | Power integrity proxies for coin-cell / GPIO drive |
-| **Return-path score** | placement energy | HS/EMI nets near GND reference |
-| **CPX length match** | placement energy | Uniform LED matrix drive paths |
-| **KiCad renders** | `render`, `generate_kicad_renders.py` | pcbnew plots + 3D PNGs |
-| **Specctra DSN / FreeRouting** | `export-dsn`, `compare-routes` | Honest autorouter baseline |
-| **Physics budget dashboard** | `dashboard` | One HTML page: score, IR, EMI, routes |
-| **Interactive 3D viewer** | `viewer-data` + [viewer/](viewer/) | Multi-layer routes + EMI heat |
-| **CI score regression** | `.github/workflows/ci.yml` | Fail PR if place/route metrics regress |
-
-## Productization (viewer · dashboard · FreeRouting · CI)
-
-These close the **engineering loop** for reviewers and for continuous quality—not just CLI experiments.
-
-### Specctra DSN → FreeRouting baseline
-
-Export a Specctra DSN, autoroute with [FreeRouting](https://github.com/freerouting/freerouting) (or any Specctra-class tool), then compare length / vias / violations to TopoR.
-
-```bash
-physics-router export-dsn \
-  --config examples/placement_config.yaml \
-  -o examples/demo/board.dsn
-# → also writes examples/demo/FREEROUTING.md
-
-# After FreeRouting produces board.ses (or a metrics JSON):
-physics-router compare-routes \
-  --topor examples/demo/topor_route.json \
-  --ses path/to/board.ses \
-  --out examples/demo/comparison.json \
-  --md docs/route_comparison.md
-```
-
-Demo comparison (TopoR metrics; FR blank until SES is provided): [`docs/route_comparison.md`](docs/route_comparison.md) · [`examples/demo/`](examples/demo/).
-
-### Physics-budget dashboard
-
-Single HTML page for score breakdown, route stats, and optional TopoR vs FreeRouting winner table.
-
-```bash
-physics-router dashboard --config examples/placement_config.yaml -o dashboard.html
-# Or from prebuilt viewer payload:
-physics-router dashboard --viewer-data viewer/viewer_data.json -o viewer/dashboard.html
-```
-
-Open: [`viewer/dashboard.html`](viewer/dashboard.html).
-
-### Interactive control plane + board viewer
-
-Multi-panel UI: **Overview** (score chart, quick run), **Board view** (layers/routes/EMI),
-**Nets & labels**, **Config / YAML**, **Physics weights**, **Jobs & pipeline**,
-**Simulations**, **Tests & CI**, plus a live **Jobs** sidebar with progress bars, stage,
-log stream, and result JSON.
-
-```bash
-# Recommended: live API + UI
-physics-router serve --host 127.0.0.1 --port 8765
-
-# Optional: rebuild static demo JSON/HTML
-python scripts/build_viewer_demo.py
-physics-router viewer-data --config examples/placement_config.yaml \
-  --route-json topor=examples/demo/topor_route.json \
-  -o viewer/viewer_data.json
-```
-
-| File / API | Role |
-|------------|------|
-| [`viewer/index.html`](viewer/index.html) | Control plane UI (explore + run) |
-| `GET /api/snapshot` | Session config, jobs, scores, routes |
-| `POST /api/jobs` | Start score/place/route/sim/test jobs |
-| `GET /api/jobs/{id}` | Progress, log, result |
-| `POST /api/config/apply` | Apply YAML or JSON config |
-| [`viewer/viewer_data.json`](viewer/viewer_data.json) | Board + routes payload |
-| [`viewer/dashboard.html`](viewer/dashboard.html) | Static score HTML export |
-| `viewer/runs/` | Job artifacts (gitignored) |
-
-### Continuous integration
-
-On every push/PR to `main`:
-
-1. `pytest`  
-2. `scripts/ci_regression.py` — synthetic always; HALO-90 if `third_party/halo-90` is present  
-3. `scripts/build_viewer_demo.py` — dashboard + viewer artifacts  
-
-Baselines live in [`ci/baselines/scores.json`](ci/baselines/scores.json). Update intentionally after intentional score changes:
-
-```bash
-python scripts/ci_regression.py --update-baselines
-```
-
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-
-## Architecture
-
-| Module | Role |
-|--------|------|
-| `models` | Net labels, regions, scores |
-| `config_io` | YAML/JSON config |
-| `net_import` | KiCad netclass + schematic → labels |
-| `design_rules` | Stackup + DRC + net classes from `.kicad_pcb` / `.kicad_pro` |
-| `kicad_io` | Read/write footprints; attach copper layers / rules |
-| `physics` | Multi-objective cost + Ngspice/OpenEMS backends |
-| `placement` | Multi-candidate SA + ranking (unlocked parts) |
-| `router` | Clearance-aware free-angle TopoR core + rubberband |
-| `routing_strategies` | Pre-route tests, net order, multilayer DRC policy |
-| `openems_export` | Mesh/geometry from **KiCad stackup** + Gerbers |
-| `kicad_tools` | **DRC**, **SVG/3D render**, **STEP** (tracks/mask/silk), pcbnew plot |
-| `dsn_export` | Specctra DSN for FreeRouting |
-| `compare` | TopoR vs FreeRouting (SES/JSON) metrics |
-| `dashboard` | HTML physics-budget page |
-| `viewer_export` | JSON payload for interactive viewer |
-| `server` | Live control plane (`serve`) — jobs, progress, config API |
-| `native_bridge` | Optional C++/OpenCL router (`pr_native`) |
-| `cli` | `physics-router` entry point |
-| `native/` | C++ core sources (CMake, OpenMP, OpenCL kernels) |
-
-## Setup
-
-- Python 3.10+
-- KiCad 8+ (real projects)
-- Ngspice (optional)
-- OpenEMS + CSXCAD (optional)
-- **Native C++ core** (optional, recommended): CMake 3.16+, C++17 compiler; OpenMP if available; **OpenCL** for GPU batch clearance (Apple M-series / discrete GPUs)
-
-```bash
-pip install -e ".[dev]"
-# Optional high-performance router (OpenMP + OpenCL when present)
-bash scripts/build_native.sh
-export PYTHONPATH=native/build:$PYTHONPATH
 pytest
-./native/build/pr_bench   # native micro-benchmark
+python scripts/ci_regression.py
 ```
 
-### Native C++ / GPU core
+### CLI essentials
 
-Hot paths live in `native/` (grid A\*, multi-net route, batch HPWL score):
+```bash
+physics-router init-config -o placement_config.yaml
+physics-router import-nets --pcb board.kicad_pcb --project-dir . -o placement_config.yaml
+physics-router place --config placement_config.yaml --pcb board.kicad_pcb --out-pcb placed.kicad_pcb
+physics-router route --config placement_config.yaml --pcb placed.kicad_pcb --out-pcb routed.kicad_pcb --drc
+physics-router drc --pcb routed.kicad_pcb --out-dir drc_out
+physics-router export-step --pcb routed.kicad_pcb -o board_sim.step
+physics-router export-dsn --config placement_config.yaml -o board.dsn
+```
 
-| Piece | Role |
-|-------|------|
-| `pr_core` | C++17 grid occupancy, A\*, MST multi-net route |
-| OpenMP | Parallel score batches / loops when the toolchain provides it |
-| OpenCL | GPU batch segment-clearance samples (`Apple M3` etc.) |
-| `pr_native` | pybind11 module used by `physics_router.native_bridge` |
-
-Python `clearance_aware_route()` auto-uses the native backend when `pr_native` is importable; otherwise it falls back to pure Python.
-
-## Test project: HALO-90
-
-Real open-source wearable PCB ([openKolibri/halo-90](https://github.com/openKolibri/halo-90)) — 24 mm LED earring, STM8L, 90 charlieplexed LEDs, CR2032, **4-layer** stackup.
+### HALO-90 test board
 
 ```bash
 git clone git@github.com:openKolibri/halo-90.git third_party/halo-90
 physics-router score \
   --config examples/halo-90/placement_config.yaml \
   --pcb third_party/halo-90/pcb/halo-90.kicad_pcb
-
-# Regenerate figures + JSON in docs/images and examples/halo-90
-python scripts/generate_docs_images.py
 ```
 
-Net weights, power/EMI notes, fixed mechanicals, and regions: [`examples/halo-90/`](examples/halo-90/).
-
-### Example results (measured)
-
-Board: **111** footprints, **23** nets, copper layers `F.Cu / In1.Cu / In2.Cu / B.Cu`.
-
-| Step | Time | Result |
-|------|------|--------|
-| `score` (+ ngspice/OpenEMS proxies) | **0.043 s** | total cost ≈ 1.65×10⁵ (multi-objective) |
-| `pre-route` | **&lt;0.01 s** | density ≈ 39 pins/cm²; 4L advice; via floor ≈ 5 |
-| `route-guide` (free-angle) | **11.1 s** | **207** segments, **854.1 mm**, 0 vias, 0 unrouted |
-| `route` clearance grid 1 mm + KiCad DRC | **34.6 s** | **208** segments, **854.5 mm**, 0 vias, 0 unrouted |
-
-Full machine dump: [`examples/halo-90/benchmark_results.json`](examples/halo-90/benchmark_results.json)  
-Route geometry: [`examples/halo-90/route_guide.json`](examples/halo-90/route_guide.json), [`examples/halo-90/route_result.json`](examples/halo-90/route_result.json)
-
-> **Note:** Dense charlieplex geometry still reports many soft clearance-violation flags at coarse grid (router falls back to straight free-angle links). Finer grids improve legality but cost much more CPU — use `pre-route` recommendations and iterate.
-
-### Visualizations (analysis)
-
-![HALO-90 placement overview](docs/images/placement_overview.png)
-
-*Placement: LED ring (orange), core MCU/battery/sensors (red), pogo pads (green).*
-
-![Free-angle guide routing](docs/images/route_guide.png)
-
-*TopoR-style free-angle **guide** routes — nets colored by class (power red, ground blue, CPX orange, analog green, I2C purple).*
-
-![Clearance routing by copper layer](docs/images/route_by_layer.png)
-
-*Clearance-aware multilayer route (1 mm grid), one panel per copper layer used.*
-
-![Placement score breakdown](docs/images/score_breakdown.png)
-
-*Multi-objective placement score terms (wirelength, critical nets, EMI, density, spice/openEMS proxies).*
-
-![Measured runtimes](docs/images/runtimes.png)
-
-*Wall-clock times for the steps above on the machine that generated these assets.*
-
-### Official KiCad renders (pcbnew / kicad-cli)
-
-Board graphics below are produced by **KiCad itself**, not matplotlib:
-
-- **2D layer plots** — `kicad-cli pcb export svg` (plot engine) and **pcbnew** `PLOT_CONTROLLER`
-- **3D views** — `kicad-cli pcb render`
-- **DRC-validated copper** — `kicad-cli pcb drc --format json`
-
-```bash
-# Official DRC on any board
-physics-router drc --pcb third_party/halo-90/pcb/halo-90.kicad_pcb --out-dir examples/halo-90/kicad_validation/drc
-
-# SVG plots + 3D PNGs via kicad-cli / pcbnew
-physics-router render --pcb third_party/halo-90/pcb/halo-90.kicad_pcb --out-dir examples/halo-90/kicad_validation/renders
-
-# Bundle into docs/images/kicad
-python scripts/generate_kicad_renders.py
-```
-
-Route → write PCB → auto-DRC:
-
-```bash
-physics-router route --config examples/halo-90/placement_config.yaml \
-  --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
-  --out-pcb /tmp/halo_routed.kicad_pcb --drc
-```
-
-#### DRC snapshot (released HALO-90 board)
-
-| Metric | Value |
-|--------|------:|
-| KiCad version | 10.0.4 |
-| Errors | 22 |
-| Warnings | 207 |
-| Copper-related issues | 13 |
-| Unconnected | 0 |
-
-Full JSON: [`examples/halo-90/kicad_validation/drc_summary.json`](examples/halo-90/kicad_validation/drc_summary.json).  
-Many hits are legacy/footprint/courtyard warnings on this open design; copper issues are tracked separately so autoroute quality can be gated on `copper_violation_count`.
-
-#### 3D (kicad-cli pcb render)
-
-![KiCad 3D top](docs/images/kicad/kicad_3d_top.png)
-
-![KiCad 3D isometric](docs/images/kicad/kicad_3d_isometric.png)
-
-![KiCad 3D bottom](docs/images/kicad/kicad_3d_bottom.png)
-
-#### Copper layers (kicad-cli SVG → PNG)
-
-| F.Cu | In1.Cu |
-|:----:|:------:|
-| ![F.Cu](docs/images/kicad/kicad_plot_F_Cu.png) | ![In1.Cu](docs/images/kicad/kicad_plot_In1_Cu.png) |
-
-| In2.Cu | B.Cu |
-|:------:|:----:|
-| ![In2.Cu](docs/images/kicad/kicad_plot_In2_Cu.png) | ![B.Cu](docs/images/kicad/kicad_plot_B_Cu.png) |
-
-Direct pcbnew plots are also stored under `docs/images/kicad/pcbnew_*.svg`.
-
-## Training data
-
-See **[DATASETS.md](DATASETS.md)** for PCBench, Open Schematics, Gerbers, and conversion paths used to train or evaluate place/route models.
+- **90 LEDs locked** via `lock_ref_prefixes: ["D"]` (product geometry).
+- 4-layer stackup read from KiCad; regions and net weights in `examples/halo-90/`.
 
 ---
 
-## Roadmap: highest-impact next ideas (HALO-90 class)
+## What it does
 
-Prioritized by **insight per effort**, with emphasis on ideas that **close the test loop** so the final board is ERC/DRC-clean, manufacturable, and places unlocked parts under EE physics—not locked copper cosmetics.
+```
+YAML / KiCad labels  →  multi-objective place (SA, unlocked parts)
+                     →  TopoR free-angle route (Python or C++ native)
+                     →  2D KiCad-style preview · pick variant
+                     →  write copper to .kicad_pcb
+                     →  kicad-cli DRC (+ ERC if schematic present)
+                     →  optional GLB 3D (STEP models + mask/silk + copper)
+```
 
-### Ship-first (close the manufacturability loop)
+**Policies that matter**
 
-| Priority | Idea | Why it matters | Status |
-|---------:|------|----------------|--------|
-| **1** | **KiCad DRC CLI close-loop + stricter clearance** | Turns “soft violations” into real quality; gate CI/export on copper errors | **Done** (`drc`, `route --drc`); tighten fab floors further |
-| **2** | **CPX bundle router + length match** | Domain win on charlieplex: 10 lines as a concurrent bundle, not 10 sequential nets | Partial (length-match score); concurrent bundle: next |
-| **3** | **IR-drop / loop-L score for +3V / GND / CPX** | Physics that matches coin-cell + matrix product story | **Done** (placement energy + score); copper current-density maps: next |
-| **4** | **Rubberband cleanup after free-angle** | Better looking + shorter copper without full re-search | **Done** (Dayan-style cleanup in multilayer route) |
-| **5** | **Golden copper diff vs stock HALO-90** | Honest autorouter benchmark figure (length/vias/DRC vs released board) | Partial (`compare-routes` + DSN); golden overlay: next |
-| **6** | **FreeRouting side-by-side + physics dashboard + CI + viewer** | Productization so quality is visible and non-regressing | **Done** (this release) |
-
-### Physics & “more real” simulations (routing/placement signal)
-
-| Idea | Helps placement/route how | Effort |
-|------|---------------------------|--------|
-| Partial inductance of power + CPX loops (PEEC-lite / FastHenry-style) | Charlieplex + coin cell is loop **L** and IR, not just geometry | Medium |
-| IR-drop / current-density maps on copper | Which CPX spokes starve LEDs → wider tracks / layer choice | Medium |
-| Return-path continuity score | Penalize layer hops without nearby GND (uses parsed 4L stackup) | Low–medium · **in score today** |
-| Crosstalk matrix between CPX lines | Rewards spacing / layer separation of matrix nets | Medium |
-| Thermal map (2D heat from LED duty + MCU) | Wearable hotspots next to ear / battery | Medium |
-| Battery ESR + LED Vf Monte Carlo | Firmware 2–12 mA → brightness/runtime under aging cell | Low (circuit) |
-| Acoustic / mic SNR proxy | MIC net length + distance to CPX as noise-pickup score | Low |
-| Focused OpenEMS ports (SWIM/USB-like pads) | SI/EMI without whole-board FDTD every time | Medium |
-| Power-integrity AC Z at MCU VDD (decap C1/C2) | Classic PI; ngspice + package models | Low–medium |
-
-### Routing / placement creativity (not “more A*” alone)
-
-1. **Rubberband continuous optimization** after discrete route — fix topology, minimize length under clearance (**in engine**).  
-2. **Rip-up & reroute with conflict learning** — nets that violate get higher priority next pass.  
-3. **Concurrent multi-net / multi-commodity** for the 10 CPX lines as a bundle.  
-4. **Topology templates for HALO** — “star from U1”, “ring bus”, “two-semicircle spines”; enumerate 3–5, score with physics.  
-5. **Diff-pair / I2C co-router** — move SDA+SCL as a rigid pair.  
-6. **Via budget auction** — only *N* vias; optimizer chooses which nets may layer-change.  
-7. **Push-aside / shape-based cleanup** (FreeRouting-like) for DRC legality without losing topology.  
-8. **Human-in-the-loop sketch** — designer guides as soft rubberbands.
-
-### Tests & validation (make quality measurable)
-
-| Test | Purpose |
-|------|---------|
-| **DRC oracle** | `kicad-cli pcb drc` on every written board · **wired** |
-| **Golden comparison** | Length/vias/DRC vs released HALO-90 copper |
-| **Ablation radar charts** | Turn off EMI / loop / region terms; show contribution |
-| **Monte Carlo part variance** | ±10% cap, ESR, LED Vf → yield of min brightness |
-| **Fault injection** | Open one CPX spoke → how many LEDs die (matrix robustness) |
-| **Pogo contact resistance** | Programming jig force/contact if pads move |
-| **Manufacturability** | Annular ring, min hole-to-hole, panelization, 0402 tombstone risk |
-| **CI regression** | Synthetic (+ HALO) score/length · **wired** |
-
-### ML / learning (when data + rewards exist)
-
-| Idea | Data already available |
-|------|------------------------|
-| Imitation of open boards (PCBench / Open Schematics) | Placement as graph → coords |
-| RL with physics reward | Loop L + DRC + post-route length (DATE / RL_PCB style) |
-| Learned A\* costs (Unet-Astar) | Congestion heatmaps from failed routes |
-| GNN affinity clustering | Netlist → floorplan regions before SA |
-| Diffusion placement of free passives | Fixed ring LEDs as hard constraints |
-| LLM constraint extractor | Datasheet/readme → YAML labels (HALO was hand-labeled) |
-| Contrastive good vs DRC-fail boards | Synthetic corruptions of HALO |
-
-### Wearable / product-specific (HALO goldmine)
-
-- Flex / board stress near earring hook (simple beam FEA).  
-- Weight distribution of CR2032 + PCB (comfort).  
-- Magnetic field from LED currents (usually tiny; fun + marketing).  
-- Optical model: LEDs obscured by case lips → “dark” LED placement.  
-- UX: button reach, accidental presses, sleep current budget.  
-- Charlieplex timing: scan still &gt;1 kHz with longer copper delay (closed loop with length score).
-
-### Workflow / productization (status)
-
-| Idea | Status |
-|------|--------|
-| Specctra DSN → FreeRouting baseline vs TopoR | **Done** (`export-dsn`, `compare-routes`) |
-| Physics-budget HTML dashboard | **Done** (`dashboard`, `viewer/dashboard.html`) |
-| CI on each PR (HALO + synthetic) | **Done** (GitHub Actions) |
-| Interactive control plane (config, jobs, progress, results, sims, tests) | **Done** (`physics-router serve` + `viewer/`) |
-| Constraint mini-DSL (`keep MIC 3mm from CPX*`) | Future |
-| Golden copper overlay figure in README | Future |
-
-**Default investment order for the next few milestones:** (1) stricter DRC-gated export + copper current-density maps, (2) CPX concurrent bundle + length match, (3) golden HALO copper diff figure, (4) rip-up/conflict learning, (5) PI AC impedance for MCU decaps—always with **unlocked-only placement** and **KiCad DRC as the legality oracle**.
+1. Clearance routes do **not** paint illegal straight “soft” copper; open edges beat overlaps.
+2. Official **KiCad DRC** is the legality oracle after apply/autoroute.
+3. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may apply 180° for display).
+4. Native `pr_native` is used automatically when built; otherwise pure Python.
 
 ---
 
-## References (selected)
+## Control plane
 
-For the complete annotated survey and bibliography, see **[RESEARCH.md](RESEARCH.md)**.
+```bash
+physics-router serve --host 127.0.0.1 --port 8765
+```
 
-### Classical placement & routing
+| Step | UI |
+|------|-----|
+| Setup | Preset (HALO-90 / synthetic), YAML, locked vs free parts |
+| Place | SA on unlocked footprints; physics weights |
+| Route | Guide / clearance, **KiCad-layer 2D canvas**, apply copper + DRC/ERC |
+| Simulate | Score, spice/OpenEMS proxies, rebuild 3D GLB |
+| Validate | pytest, CI regression, DRC, ERC |
 
-1. C. Y. Lee, “An algorithm for path connections and its applications,” *IRE Trans. Electronic Computers*, 1961.  
-2. S. Kirkpatrick, C. D. Gelatt, M. P. Vecchi, “Optimization by simulated annealing,” *Science*, 1983.  
-3. K. M. Hall, “An r-dimensional quadratic placement algorithm,” *Management Science*, 1970.  
-4. S. Jain, H. C. Gea, “PCB Layout Design Using a Genetic Algorithm,” *J. Electronic Packaging*, 1996.  
+Assets: `viewer/` (UI), `viewer/assets/*.glb` (regenerated locally; large files gitignored).
 
-### Topological / free-angle routing
+---
 
-5. T. Dayan, *Rubberband based topological router*, PhD thesis, UC Santa Cruz, 1997.  
-6. W. W.-M. Dai, T. Dayan, D. Staepelaere, “Topological routing in SURF: generating a rubber-band sketch,” *DAC*, 1991.  
-7. [TopoR](https://en.wikipedia.org/wiki/TopoR) (Eremex) — commercial topological free-angle autorouter.  
-8. FreeRouting — open shape-based Specctra-compatible autorouter.  
+## Native C++ core (optional)
 
-### Congestion-aware & industrial PCB placement
+| Path | Role |
+|------|------|
+| `native/` | Grid A\*, multi-net route, batch score |
+| OpenCL | GPU batch clearance (e.g. Apple M3) |
+| OpenMP | Parallel score batches when the toolchain provides it |
+| `scripts/build_native.sh` | CMake + pybind11 → `pr_native*.so` |
+| `./native/build/pr_bench` | Micro-benchmark |
 
-9. C.-K. Cheng, C.-T. Ho, C. Holtz, “Net Separation-Oriented Printed Circuit Board Placement via Margin Maximization,” [arXiv:2210.14259](https://arxiv.org/abs/2210.14259), 2022 (**NS-Place**).  
-10. T.-C. Lin et al., “A unified printed circuit board routing algorithm with complicated constraints and differential pairs,” *ASP-DAC*, 2021.  
+```bash
+bash scripts/build_native.sh
+PYTHONPATH=native/build:src python -c "from physics_router.native_bridge import info; print(info())"
+```
 
-### RL / ML for place & route
+---
 
-11. A. Mirhoseini, A. Goldie, et al., “A graph placement methodology for fast chip design,” *Nature*, 2021 ([arXiv:2004.10746](https://arxiv.org/abs/2004.10746)); Circuit Training / AlphaChip.  
-12. P. Crocker, *Physically Constrained PCB Placement Using Deep Reinforcement Learning*, MIT, 2021.  
-13. L. Vassallo, J. Bajada, “Learning Circuit Placement Techniques Through Reinforcement Learning with Adaptive Rewards,” *DATE*, 2024; [RL_PCB](https://github.com/LukeVassallo/RL_PCB).  
-14. Y. He, *Towards automated PCB routing…*, PhD dissertation, Iowa State University, 2024 (DRL-MCTS, PCBench).  
-15. Q. Xiang et al., multi-agent RL PCB routing, IEEE, 2024.  
-16. Unet-Astar: deep learning-based fast routing for unified PCB routing, *IEEE Access*, ~2023.  
-17. K. L. Lim et al., “Component Centric Placement Using Deep Reinforcement Learning,” [arXiv:2602.23540](https://arxiv.org/html/2602.23540v1), 2026.  
-18. DreamerV3+FR: world-model RL + FreeRouting for PCB autorouting, *Expert Systems with Applications*, 2026.  
-19. PCB-Bench: Benchmarking LLMs for PCB Placement and Routing, *ICLR*, 2026.  
+## Architecture (modules)
 
-### Datasets & physics tools
+| Module | Role |
+|--------|------|
+| `models` / `config_io` | Net labels, physics weights, YAML |
+| `kicad_io` / `design_rules` | Footprints, stackup, DRC floors |
+| `placement` / `physics` | SA placement + multi-objective scores |
+| `router` / `routing_strategies` | Free-angle route, rubberband, multilayer policy |
+| `native_bridge` | Optional C++/OpenCL backend |
+| `kicad_tools` | DRC, ERC, STEP/GLB, renders |
+| `server` / `viewer` | HTTP API + three.js / 2D UI |
+| `dsn_export` / `compare` | Specctra DSN vs FreeRouting metrics |
 
-20. [PCBench](https://github.com/PCBench/PCBench) — KiCad routing dataset + RL environment.  
-21. [Open Schematics](https://huggingface.co/datasets/bshada/open-schematics) — large public schematic/PCB corpus.  
-22. [openEMS](https://docs.openems.de/) — open FDTD electromagnetic solver.  
-23. Ngspice — open circuit simulator.  
-24. KiCad — target open-source EDA host.
+---
 
-### Community / industry context
+## Requirements
 
-25. DeepPCB and similar products — RL-based commercial PCB routing at scale (multi-EDA, including KiCad).  
-26. Practitioner reports of custom grid autorouters and hybrid human+tool flows when pure ML autorouters fail on dense high-speed interfaces (public engineering discussions on X and forums).  
-27. Physics-aware commercial layout tools and agentic schematic→layout pipelines (e.g. Quilter-class, Flux, LLM + KiCad plugins)—strong for prototypes; expert review remains standard for SI/EMI-critical boards.
+- Python 3.10+
+- KiCad 8+ (`kicad-cli`) for DRC/ERC/STEP/GLB on real boards
+- Optional: Ngspice, OpenEMS/CSXCAD, CMake 3.16+ for native build
+
+---
+
+## License
+
+MIT — see package metadata. HALO-90 is a separate project; clone under `third_party/` (gitignored).
