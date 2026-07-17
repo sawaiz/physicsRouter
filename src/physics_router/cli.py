@@ -16,10 +16,17 @@ from physics_router.kicad_io import (
     load_board_from_kicad_pcb,
 )
 from physics_router.placement import optimize_placement, result_to_dict
+from physics_router.design_rules import load_design_rules
 from physics_router.router import (
     append_routes_to_kicad_pcb,
     clearance_aware_route,
     topological_guide_route,
+)
+from physics_router.routing_strategies import (
+    escape_hints,
+    estimate_via_budget,
+    multilayer_route,
+    pre_route_analysis,
 )
 
 
@@ -215,6 +222,37 @@ def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
     click.echo(json.dumps({"score": sb.as_dict(), "notes": sb.notes}, indent=2))
 
 
+@main.command("rules")
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--pro", "pro_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--out-json", type=click.Path(path_type=Path), default=None)
+def rules_cmd(pcb_path: Path, pro_path: Path | None, out_json: Path | None) -> None:
+    """Dump KiCad stackup, copper layers, and design rules (DRC floors / net classes)."""
+    rules = load_design_rules(pcb_path=pcb_path, pro_path=pro_path)
+    payload = rules.summary()
+    click.echo(json.dumps(payload, indent=2))
+    if out_json:
+        out_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        click.echo(f"Wrote {out_json}", err=True)
+
+
+@main.command("pre-route")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
+    """Run congestion / methodology checks before routing (multilayer advice)."""
+    config = load_config(config_path)
+    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    rules = load_design_rules(pcb_path=pcb_path) if pcb_path else None
+    from physics_router.design_rules import default_design_rules
+
+    rules = rules or default_design_rules()
+    report = pre_route_analysis(board, config, rules)
+    budget = estimate_via_budget(board, rules, config)
+    hints = escape_hints(board, config)
+    click.echo(json.dumps({**report.to_dict(), "via_budget": budget, "escape_hints": hints}, indent=2))
+
+
 @main.command("route")
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
@@ -225,31 +263,60 @@ def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
     default=None,
     help="Append segments/vias into a copy of the input PCB",
 )
-@click.option("--clearance", type=float, default=0.2, help="Clearance mm (0 = guide only)")
+@click.option(
+    "--clearance",
+    type=float,
+    default=None,
+    help="Clearance mm override (default: KiCad min_clearance from board rules)",
+)
 @click.option("--grid", type=float, default=None, help="Routing grid mm")
 @click.option("--no-vias/--vias", default=False, help="Disable vias / multi-layer")
 @click.option("--guide-only", is_flag=True, help="Legacy free-angle guide without clearance")
+@click.option(
+    "--ignore-kicad-rules",
+    is_flag=True,
+    help="Do not load stackup/DRC from KiCad (use defaults)",
+)
 def route_cmd(
     config_path: Path,
     pcb_path: Path | None,
     out_json: Path,
     out_pcb: Path | None,
-    clearance: float,
+    clearance: float | None,
     grid: float | None,
     no_vias: bool,
     guide_only: bool,
+    ignore_kicad_rules: bool,
 ) -> None:
-    """Clearance-aware TopoR-style free-angle autorouter."""
+    """Clearance-aware multilayer TopoR-style autorouter (respects KiCad DRC/stackup)."""
     config = load_config(config_path)
     board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
 
+    rules = None
+    if pcb_path and not ignore_kicad_rules:
+        rules = load_design_rules(pcb_path=pcb_path)
+        click.echo(
+            f"KiCad rules: {len(rules.copper_layers)} copper layers {rules.copper_layers}, "
+            f"min_clearance={rules.constraints.min_clearance_mm}mm, "
+            f"min_track={rules.constraints.min_track_width_mm}mm"
+        )
+
     if guide_only:
         routes = topological_guide_route(board, config)
+    elif rules is not None:
+        routes = multilayer_route(
+            board,
+            config,
+            rules,
+            clearance_mm=clearance,
+            grid_mm=grid,
+            allow_vias=not no_vias,
+        )
     else:
         routes = clearance_aware_route(
             board,
             config,
-            clearance_mm=clearance,
+            clearance_mm=clearance if clearance is not None else 0.2,
             grid_mm=grid,
             allow_vias=not no_vias,
             guide_only=False,
@@ -352,6 +419,7 @@ def export_openems_cmd(
             n.name for n in config.nets if n.simulate_em or n.emi_sensitive or n.critical
         }
 
+    design_rules = load_design_rules(pcb_path=pcb_path) if pcb_path else None
     paths = export_openems_bundle(
         out_dir,
         board=board,
@@ -361,6 +429,7 @@ def export_openems_cmd(
         nets_filter=nets_filter,
         f0_hz=f0,
         fc_hz=fc,
+        design_rules=design_rules,
     )
     click.echo(f"OpenEMS export → {out_dir}")
     for k, p in paths.items():

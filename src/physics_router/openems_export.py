@@ -44,6 +44,37 @@ class Stackup:
             ]
         )
 
+    @staticmethod
+    def from_design_rules(rules: object) -> Stackup:
+        """Build OpenEMS stackup from physics_router.design_rules.DesignRules."""
+        layers_in = getattr(rules, "stackup", None) or []
+        if not layers_in:
+            th = getattr(getattr(rules, "constraints", None), "board_thickness_mm", 1.6)
+            return Stackup.default_2layer(dielectric_mm=max(0.2, th - 0.07))
+        out: list[StackupLayer] = []
+        for ly in layers_in:
+            name = getattr(ly, "name", None) or ly.get("name")  # type: ignore[union-attr]
+            ltype = getattr(ly, "layer_type", None) or ly.get("layer_type", "other")  # type: ignore[union-attr]
+            thick = getattr(ly, "thickness_mm", None)
+            if thick is None:
+                thick = ly.get("thickness_mm", 0.0)  # type: ignore[union-attr]
+            mat = getattr(ly, "material", None) or ly.get("material", "")  # type: ignore[union-attr]
+            z0 = getattr(ly, "z0_mm", None)
+            if z0 is None:
+                z0 = ly.get("z0_mm", 0.0)  # type: ignore[union-attr]
+            material = "copper" if ltype == "copper" else (mat or "FR4")
+            if ltype in ("core", "prepreg"):
+                material = "FR4"
+            out.append(
+                StackupLayer(
+                    name=str(name),
+                    thickness_mm=float(thick or 0.0),
+                    material=str(material),
+                    z0_mm=float(z0 or 0.0),
+                )
+            )
+        return Stackup(layers=out)
+
     def z_center_mm(self, copper_name: str) -> float:
         for ly in self.layers:
             if ly.name == copper_name:
@@ -54,7 +85,7 @@ class Stackup:
     def total_height_mm(self) -> float:
         if not self.layers:
             return 1.6
-        top = self.layers[-1]
+        top = max(self.layers, key=lambda L: L.z0_mm + L.thickness_mm)
         return top.z0_mm + top.thickness_mm
 
 
@@ -326,10 +357,13 @@ def export_openems_bundle(
     nets_filter: set[str] | None = None,
     f0_hz: float = 1e9,
     fc_hz: float = 1e9,
+    design_rules: object | None = None,
 ) -> dict[str, Path]:
     """Write geometry JSON + openEMS Python script. Returns map of artifact paths."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if stackup is None and design_rules is not None:
+        stackup = Stackup.from_design_rules(design_rules)
     stackup = stackup or Stackup.default_2layer()
 
     prims: list[CopperPrimitive] = []
