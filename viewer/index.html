@@ -110,8 +110,16 @@
     .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.35rem; align-items: center;
       font-size: 0.7rem; margin: 0.18rem 0; }
     #route2d {
-      width: 100%; height: 260px; background: #0b0f14; border: 1px solid var(--line);
+      width: 100%; height: 380px; background: #0a0e14; border: 1px solid var(--line);
       border-radius: 10px; display: block; cursor: crosshair;
+    }
+    .kicad-layers {
+      display: flex; flex-wrap: wrap; gap: 0.35rem 0.55rem; margin: 0.35rem 0 0.45rem;
+      font-size: 0.72rem; color: var(--muted);
+    }
+    .kicad-layers label { display: flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+    .kicad-layers .sw {
+      width: 10px; height: 10px; border-radius: 2px; display: inline-block; border: 1px solid #0006;
     }
     .variant-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
     .variant-btn {
@@ -970,9 +978,10 @@
         <button type="button" class="btn" data-job="route_guide">Guide</button>
         <button type="button" class="btn primary" data-job="route_clearance">Clearance route</button>
       </div>
-      <h2 style="font-size:0.78rem;margin:0.65rem 0 0.35rem;color:var(--muted)">2D route preview · pick a variant</h2>
+      <h2 style="font-size:0.78rem;margin:0.65rem 0 0.35rem;color:var(--muted)">2D KiCad-style preview · pick a variant</h2>
       <div class="variant-row" id="routeVariants"></div>
-      <canvas id="route2d" width="640" height="260"></canvas>
+      <div class="kicad-layers" id="kicadLayerToggles"></div>
+      <canvas id="route2d" width="720" height="380"></canvas>
       <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Run Guide or Clearance to populate variants.</p>
       <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run a route</div>
       <div class="actions">
@@ -1275,19 +1284,65 @@
     }
   }
 
+  // KiCad default-ish layer palette (matches pcbnew layer manager)
+  const KICAD_LAYER = {
+    'F.Cu': '#C83434',
+    'Front': '#C83434',
+    'In1.Cu': '#4CA64C',
+    'In2.Cu': '#C87A28',
+    'B.Cu': '#3A6BC8',
+    'Back': '#3A6BC8',
+    'F.SilkS': '#E8D060',
+    'F.Silkscreen': '#E8D060',
+    'B.SilkS': '#D0B878',
+    'F.Mask': '#8B5CF6',
+    'B.Mask': '#2A9A8A',
+    'Edge.Cuts': '#D0D8E0',
+    'F.Courtyard': '#D040D0',
+    'B.Courtyard': '#40C0D0',
+    'F.Fab': '#A0A0A0',
+    'B.Fab': '#606080',
+  };
+
+  function ensureKicadLayerToggles() {
+    const host = $('#kicadLayerToggles');
+    if (!host) return;
+    const layers = state.viewer?.board?.copper_layers || ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu'];
+    const extras = ['F.SilkS', 'Edge.Cuts'];
+    const all = [...layers, ...extras];
+    if (host.dataset.built === all.join(',')) return;
+    host.dataset.built = all.join(',');
+    host.innerHTML = all.map((ly, i) => {
+      const col = KICAD_LAYER[ly] || '#888';
+      const checked = true;
+      return `<label><span class="sw" style="background:${col}"></span>
+        <input type="checkbox" data-kly="${esc(ly)}" ${checked ? 'checked' : ''}/> ${esc(ly)}</label>`;
+    }).join('');
+    host.onchange = () => drawRoute2d();
+  }
+
+  function kicadLayersOn() {
+    const boxes = $$('#kicadLayerToggles input[data-kly]');
+    if (!boxes.length) return null;
+    return new Set(boxes.filter(b => b.checked).map(b => b.dataset.kly));
+  }
+
   function drawRoute2d() {
     const canvas = $('#route2d');
     if (!canvas) return;
+    ensureKicadLayerToggles();
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 320;
-    const cssH = canvas.clientHeight || 260;
+    const cssW = canvas.clientWidth || 360;
+    const cssH = canvas.clientHeight || 380;
     if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
       canvas.width = Math.floor(cssW * dpr);
       canvas.height = Math.floor(cssH * dpr);
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0b0f14';
+
+    // KiCad canvas: dark blue-black + dotted grid
+    ctx.fillStyle = '#0a1020';
     ctx.fillRect(0, 0, cssW, cssH);
 
     const board = state.viewer?.board;
@@ -1295,6 +1350,7 @@
     const name = state.selectedRoute || Object.keys(routes)[0];
     const route = name ? routes[name] : null;
     const comps = board?.components || [];
+    const layersOn = kicadLayersOn();
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const c of comps) {
@@ -1310,50 +1366,95 @@
       maxY = Math.max(maxY, s.y1, s.y2);
     }
     if (!isFinite(minX)) {
-      ctx.fillStyle = '#8b9bb4';
-      ctx.font = '12px system-ui';
-      ctx.fillText('No geometry — run a route', 16, 28);
-      return;
+      // still draw empty KiCad-like grid
+      minX = -14; maxX = 14; minY = -14; maxY = 14;
     }
-    const pad = 1.5;
+    const pad = 1.2;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const bw = maxX - minX, bh = maxY - minY;
-    const scale = 0.92 * Math.min(cssW / bw, cssH / bh);
+    const scale = 0.94 * Math.min(cssW / bw, cssH / bh);
     const ox = cssW / 2 - scale * (minX + maxX) / 2;
     const oy = cssH / 2 + scale * (minY + maxY) / 2;
     const tx = (x, y) => [ox + scale * x, oy - scale * y];
 
-    // board outline
-    ctx.strokeStyle = '#3a4a60';
-    ctx.lineWidth = 1;
-    const [x0, y0] = tx(minX + pad, minY + pad);
-    const [x1, y1] = tx(maxX - pad, maxY - pad);
-    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
-
-    // components
-    for (const c of comps) {
-      const [x, y] = tx(c.x, c.y);
-      const w = Math.max(2, (c.w || 0.8) * scale);
-      const h = Math.max(2, (c.h || 0.8) * scale);
-      ctx.fillStyle = c.locked ? (String(c.ref).match(/^D\d/i) ? '#e85d4c' : '#6b4c7a') : '#4c78a8';
-      if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(x - w / 2, y - h / 2, w, h);
-      ctx.globalAlpha = 1;
+    // Dotted grid (KiCad style)
+    const gridMm = 1.0;
+    const g0x = Math.floor(minX / gridMm) * gridMm;
+    const g0y = Math.floor(minY / gridMm) * gridMm;
+    ctx.fillStyle = '#1a2840';
+    for (let gx = g0x; gx <= maxX; gx += gridMm) {
+      for (let gy = g0y; gy <= maxY; gy += gridMm) {
+        const [px, py] = tx(gx, gy);
+        if (px < 0 || py < 0 || px > cssW || py > cssH) continue;
+        ctx.fillRect(px - 0.5, py - 0.5, 1.2, 1.2);
+      }
     }
 
-    // routes by net color
-    const NET_C = {
-      power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
-      differential: '#9467bd', signal: '#8c564b', other: '#7aa2f7',
+    // Edge.Cuts — circular board when HALO-like, else rect
+    const showEdge = !layersOn || layersOn.has('Edge.Cuts');
+    if (showEdge) {
+      const cx = (minX + maxX) / 2 + 0; // approx
+      // fit circle from component ring (LEDs)
+      const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
+      let rBoard = Math.max(bw, bh) / 2 - pad;
+      if (leds.length > 10) {
+        const rs = leds.map(c => Math.hypot(c.x, c.y));
+        rBoard = Math.max(...rs) + 1.2;
+      }
+      // if board not centered at 0, use component centroid
+      let cxB = 0, cyB = 0;
+      if (comps.length) {
+        cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
+        cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
+      }
+      const [bcx, bcy] = tx(cxB, cyB);
+      // soldermask-ish fill (dark green FR4 under mask purple tint)
+      if (!layersOn || layersOn.has('F.Mask') || layersOn.has('F.Cu')) {
+        ctx.beginPath();
+        ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(20, 55, 40, 0.85)';
+        ctx.fill();
+        // mask tint
+        if (!layersOn || layersOn.has('F.Mask')) {
+          ctx.fillStyle = 'rgba(90, 40, 140, 0.12)';
+          ctx.fill();
+        }
+      }
+      ctx.beginPath();
+      ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
+      ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // ear hook bump if hook component
+      const hook = comps.find(c => c.ref === 'H1');
+      if (hook) {
+        const [hx, hy] = tx(hook.x, hook.y);
+        ctx.beginPath();
+        ctx.arc(hx, hy, Math.max(4, 2.2 * scale), 0, Math.PI * 2);
+        ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
+        ctx.stroke();
+      }
+    }
+
+    // Copper: back under front (pcbnew draw order)
+    const copperOrder = ['B.Cu', 'In2.Cu', 'In1.Cu', 'F.Cu'];
+    const segs = route?.segments || [];
+    const layerVisible = (ly) => {
+      if (!layersOn) return true;
+      if (layersOn.has(ly)) return true;
+      if (ly === 'F.Cu' && layersOn.has('Front')) return true;
+      if (ly === 'B.Cu' && layersOn.has('Back')) return true;
+      return false;
     };
-    const meta = board?.net_meta || {};
-    if (route?.segments) {
-      for (const s of route.segments) {
-        const cls = meta[s.net]?.class || 'signal';
-        ctx.strokeStyle = NET_C[cls] || NET_C.other;
-        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.4);
+    for (const ly of copperOrder) {
+      if (!layerVisible(ly)) continue;
+      const col = KICAD_LAYER[ly] || '#C83434';
+      for (const s of segs) {
+        if ((s.layer || 'F.Cu') !== ly) continue;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = Math.max(1.5, (s.width_mm || 0.25) * scale * 1.6);
         ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         const a = tx(s.x1, s.y1), b = tx(s.x2, s.y2);
         ctx.beginPath();
         ctx.moveTo(a[0], a[1]);
@@ -1361,25 +1462,116 @@
         ctx.stroke();
       }
     }
-    if (route?.vias) {
+
+    // Vias (through) — gold ring
+    if (route?.vias?.length) {
       for (const v of route.vias) {
         const [x, y] = tx(v.x, v.y);
+        const r = Math.max(2.2, (v.size_mm || 0.6) * scale / 2);
         ctx.beginPath();
-        ctx.arc(x, y, Math.max(2.5, (v.size_mm || 0.6) * scale / 2), 0, Math.PI * 2);
-        ctx.strokeStyle = '#d4a017';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#c0a060';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = '#0a1020';
+        ctx.fill();
       }
     }
 
-    // title
-    ctx.fillStyle = '#8b9bb4';
+    // Footprints — KiCad-like red pads / silk labels
+    const showSilk = !layersOn || layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen');
+    for (const c of comps) {
+      const [x, y] = tx(c.x, c.y);
+      const w = Math.max(2, (c.w || 0.8) * scale);
+      const h = Math.max(2, (c.h || 0.8) * scale);
+      const rot = ((c.rot || 0) * Math.PI) / 180;
+      const isLed = /^D\d+$/i.test(c.ref);
+      const isPad = /^TP/i.test(c.ref) || /TestPoint/i.test(c.footprint || '');
+      const isMcu = c.ref === 'U1' || c.ref === 'U2';
+      const isBatt = c.ref === 'BT1';
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-rot);
+
+      if (isLed) {
+        // 0402 red LED body like KiCad diode footprint
+        ctx.fillStyle = '#C83434';
+        ctx.strokeStyle = '#8B2020';
+        ctx.lineWidth = 0.8;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        // cathode notch
+        ctx.fillStyle = '#f0e080';
+        ctx.fillRect(-w / 2, -h / 2, w * 0.22, h);
+        // tiny silk ref if zoomed
+        if (showSilk && scale > 8) {
+          ctx.fillStyle = KICAD_LAYER['F.SilkS'];
+          ctx.font = `${Math.max(6, 0.6 * scale)}px system-ui`;
+          ctx.textAlign = 'center';
+          ctx.fillText(c.ref, 0, -h / 2 - 2);
+        }
+      } else if (isPad) {
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(w, h) / 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#C83434';
+        ctx.fill();
+        ctx.strokeStyle = KICAD_LAYER['F.SilkS'];
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else if (isBatt) {
+        ctx.fillStyle = 'rgba(60, 100, 160, 0.35)';
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(w, h) * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = KICAD_LAYER['F.SilkS'];
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      } else {
+        // SMD body (MCU, passives)
+        ctx.fillStyle = isMcu ? '#2a2a32' : '#3a3a44';
+        ctx.strokeStyle = showSilk ? KICAD_LAYER['F.SilkS'] : '#666';
+        ctx.lineWidth = 1;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        // pin1 marker
+        if (isMcu) {
+          ctx.fillStyle = '#C83434';
+          ctx.beginPath();
+          ctx.arc(-w / 2 + 1.5, -h / 2 + 1.5, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // Reference designator (silk)
+      if (showSilk && !isLed) {
+        ctx.fillStyle = KICAD_LAYER['F.SilkS'];
+        ctx.font = `${Math.max(8, Math.min(11, 0.55 * scale))}px "IBM Plex Sans", system-ui`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(c.ref, x, y - h / 2 - 2);
+      }
+    }
+
+    // Legend / HUD
+    ctx.fillStyle = 'rgba(10,16,32,0.75)';
+    ctx.fillRect(4, 4, 210, 36);
+    ctx.fillStyle = '#c8d0dc';
     ctx.font = '11px system-ui';
     ctx.textAlign = 'left';
-    ctx.fillText(
-      `${name || '—'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias`,
-      8, 14,
-    );
+    ctx.fillText(`${name || 'no route'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias`, 10, 18);
+    // mini layer swatches
+    let lx = 10;
+    for (const ly of ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']) {
+      ctx.fillStyle = KICAD_LAYER[ly];
+      ctx.fillRect(lx, 24, 10, 10);
+      lx += 12;
+    }
+    ctx.fillStyle = '#8b9bb4';
+    ctx.font = '9px system-ui';
+    ctx.fillText('F  In1 In2 B  (KiCad layers)', 58, 33);
   }
 
   function fillNetReports(route) {
