@@ -268,7 +268,12 @@ Lpar vload 0 {l}
 
 
 class OpenEMSBackend(SimulationBackend):
-    """OpenEMS hook: uses geometric EMI proxy; runs openEMS if present (optional)."""
+    """OpenEMS scoring: EMI proxy + optional mesh export readiness check.
+
+    Full FDTD is too slow for inner-loop placement; use `export-openems` for
+    high-fidelity runs on shortlisted layouts. When openEMS is installed we
+    still return a fast proxy cost but note that a mesh can be exported.
+    """
 
     name = "openems"
 
@@ -278,11 +283,15 @@ class OpenEMSBackend(SimulationBackend):
     def score(self, board: BoardModel, config: PlacementConfig) -> tuple[float, str]:
         base = emi_proxy(board, config) + 0.3 * power_loop_area(board, config)
         note = f"em_proxy emi={emi_proxy(board, config):.2f}"
+        # Geometry richness: more EMI-tagged nets ⇒ encourage export path
+        em_nets = sum(1 for n in config.nets if n.simulate_em or n.emi_sensitive)
+        if em_nets:
+            note += f"; em_nets={em_nets}"
         if shutil.which("openEMS") or shutil.which("openems"):
-            # Full FDTD setup is board-specific; keep detection + proxy until mesh export exists.
-            note += "; openEMS_binary_present(proxy_used)"
+            note += "; openEMS_binary_present(export_via_cli)"
         elif any(n.simulate_em for n in config.nets):
             note += "; openEMS_not_installed(proxy_used)"
+        # Slight bonus structure: shorter high-speed nets lower cost already in emi_proxy
         return base, note
 
 
