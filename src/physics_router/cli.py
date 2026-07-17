@@ -18,6 +18,8 @@ from physics_router.kicad_io import (
 from physics_router.placement import optimize_placement, result_to_dict
 from physics_router.design_rules import load_design_rules
 from physics_router.kicad_tools import (
+    export_simulation_bundle,
+    export_step,
     find_kicad_cli,
     find_kicad_python,
     render_board_suite,
@@ -27,6 +29,7 @@ from physics_router.kicad_tools import (
 from physics_router.router import (
     append_routes_to_kicad_pcb,
     clearance_aware_route,
+    rubberband_cleanup,
     topological_guide_route,
 )
 from physics_router.routing_strategies import (
@@ -427,6 +430,63 @@ def render_cmd(pcb_path: Path, out_dir: Path, layers: str, no_pcbnew: bool) -> N
         layers=layer_list,
     )
     click.echo(json.dumps(result, indent=2))
+
+
+@main.command("export-step")
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output .step path (default: <board>_sim.step)",
+)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="If set, write full simulation STEP bundle (tracks/pads/mask/silk)",
+)
+@click.option(
+    "--net-filter",
+    default="",
+    help="Optional KiCad net wildcard for copper-only STEP (e.g. 'CPX*')",
+)
+@click.option("--with-components/--board-only", default=False, help="Include footprint 3D models")
+def export_step_cmd(
+    pcb_path: Path,
+    output: Path | None,
+    out_dir: Path | None,
+    net_filter: str,
+    with_components: bool,
+) -> None:
+    """Export STEP with copper tracks, pads, soldermask, silkscreen for OpenEMS/FEM."""
+    if find_kicad_cli() is None:
+        raise click.ClickException("kicad-cli not found")
+    if out_dir is not None:
+        result = export_simulation_bundle(
+            pcb_path,
+            out_dir,
+            nets_filter=net_filter,
+            board_only=not with_components,
+        )
+        click.echo(json.dumps(result, indent=2))
+        return
+    output = output or Path(f"{pcb_path.stem}_sim.step")
+    path = export_step(
+        pcb_path,
+        output,
+        board_only=not with_components,
+        no_components=not with_components,
+        include_tracks=True,
+        include_pads=True,
+        include_zones=True,
+        include_inner_copper=True,
+        include_silkscreen=True,
+        include_soldermask=True,
+        net_filter=net_filter,
+    )
+    click.echo(f"Wrote STEP → {path} ({path.stat().st_size} bytes)")
 
 
 @main.command("route-guide")

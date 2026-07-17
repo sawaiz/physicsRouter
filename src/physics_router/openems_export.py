@@ -418,28 +418,58 @@ def export_openems_bundle(
         encoding="utf-8",
     )
 
+    # Prefer KiCad STEP (tracks + soldermask + silk) when a board path is known
+    step_path = None
+    if board is not None and board.source_path and Path(board.source_path).exists():
+        try:
+            from physics_router.kicad_tools import export_step
+
+            step_path = export_step(
+                board.source_path,
+                out_dir / "board_with_copper.step",
+                board_only=True,
+                no_components=True,
+                include_tracks=True,
+                include_pads=True,
+                include_zones=True,
+                include_inner_copper=True,
+                include_silkscreen=True,
+                include_soldermask=True,
+            )
+        except Exception as e:
+            step_path = None
+            (out_dir / "step_export_error.txt").write_text(str(e), encoding="utf-8")
+
     readme = out_dir / "OPENEMS_README.txt"
     readme.write_text(
         "OpenEMS export from physics-router\n"
         "==================================\n"
         "1. board_geometry.json — copper primitives in mm (boxes + polylines).\n"
         "2. simulate_board.py — loads JSON and builds a CSXCAD model.\n"
+        "3. board_with_copper.step — KiCad STEP with tracks, pads, zones,\n"
+        "   inner copper, soldermask, and silkscreen (when kicad-cli available).\n"
+        "   Prefer STEP for accurate 3D geometry in FreeCAD → mesh → OpenEMS.\n"
         "\n"
-        "Requirements: openEMS + Python CSXCAD bindings.\n"
+        "Requirements: openEMS + Python CSXCAD bindings; KiCad for STEP.\n"
         "  https://docs.openems.de/\n"
         "\n"
         "Run:\n"
         "  python simulate_board.py\n"
         "\n"
+        "Or: physics-router export-step --pcb board.kicad_pcb --out-dir sim_geo\n"
+        "\n"
         "The script maps copper as PEC metal and FR4 dielectric from stackup.\n"
         "Edit ports/excitation for your SI or EMI experiment.\n",
         encoding="utf-8",
     )
-    return {
+    out: dict[str, Path] = {
         "geometry": geom_path,
         "script": script_path,
         "readme": readme,
     }
+    if step_path is not None:
+        out["step"] = step_path
+    return out
 
 
 def _openems_python_script(

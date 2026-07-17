@@ -32,6 +32,7 @@ from physics_router.router import (
     RouteResult,
     Via,
     clearance_aware_route,
+    rubberband_cleanup,
     topological_guide_route,
 )
 
@@ -209,6 +210,9 @@ def multilayer_route(
         ),
         guide_only=False,
     )
+
+    # Dayan-style rubberband cleanup (shorten free-angle paths under DRC clearance)
+    result = rubberband_cleanup(result, board, config, clearance_mm=cl)
 
     # Enforce track widths & via sizes from DRC
     for seg in result.segments:

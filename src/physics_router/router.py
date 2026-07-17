@@ -558,6 +558,62 @@ def _route_point_to_point(
     return None, []
 
 
+def rubberband_cleanup(
+    result: RouteResult,
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    clearance_mm: float = 0.15,
+) -> RouteResult:
+    """Post-process routes: collapse collinear free-angle segments under clearance.
+
+    Classic Dayan-style improvement: keep topology, shorten geometry. Rebuilds
+    obstacle map from board + already-accepted copper so cleanup stays legal.
+    """
+    layers = sorted({s.layer for s in result.segments}) or ["F.Cu", "B.Cu"]
+    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    # Paint foreign nets first (preserve sequential paint order roughly by net)
+    by_net: dict[str, list[RouteSegment]] = {}
+    for s in result.segments:
+        by_net.setdefault(s.net, []).append(s)
+
+    new_segs: list[RouteSegment] = []
+    total = 0.0
+    for net, segs in by_net.items():
+        # Build polylines per layer
+        layer_pts: dict[str, list[tuple[float, float]]] = {}
+        for s in segs:
+            layer_pts.setdefault(s.layer, [])
+            pts = layer_pts[s.layer]
+            if not pts or pts[-1] != (s.x1, s.y1):
+                pts.append((s.x1, s.y1))
+            pts.append((s.x2, s.y2))
+        width = segs[0].width_mm if segs else 0.25
+        for layer, pts in layer_pts.items():
+            cleaned = _rubberband(pts, layer, net, om)
+            for i in range(len(cleaned) - 1):
+                x1, y1 = cleaned[i]
+                x2, y2 = cleaned[i + 1]
+                new_segs.append(
+                    RouteSegment(
+                        x1=x1, y1=y1, x2=x2, y2=y2, layer=layer, net=net, width_mm=width
+                    )
+                )
+                total += _dist((x1, y1), (x2, y2))
+                om.paint_trace(x1, y1, x2, y2, layer, width, net)
+
+    out = RouteResult(
+        segments=new_segs,
+        vias=list(result.vias),
+        via_count=result.via_count,
+        total_length_mm=total,
+        unrouted_nets=list(result.unrouted_nets),
+        clearance_violations=result.clearance_violations,
+        notes=list(result.notes) + [f"rubberband_cleanup segs {len(result.segments)}→{len(new_segs)}"],
+    )
+    return out
+
+
 def append_routes_to_kicad_pcb(
     source_path: str,
     dest_path: str,

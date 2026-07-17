@@ -104,10 +104,14 @@ This section synthesizes **scientific literature**, industrial practice, and com
 | Objective | Research / practice method |
 |-----------|----------------------------|
 | Power-loop inductance / EMI | Minimize loop area; partial-L models; OpenEMS FDTD |
+| IR drop / PI | Sheet-resistance on power & high-current nets |
+| Return path | HS/EMI nets near GND reference (stackup-aware) |
+| Matrix / CPX match | Length skew within charlieplex groups |
 | Signal integrity | Length match, impedance stackup, 2.5D/3D EM |
 | Thermal | Force-directed heat; FEM |
 | Circuit behavior | Ngspice with estimated parasitics |
-| Routability | Net-separation; post-route FreeRouting metrics |
+| Accurate 3D copper | **KiCad STEP** (tracks, pads, mask, silk) for OpenEMS/FEM |
+| Routability | Net-separation; post-route FreeRouting + **KiCad DRC** |
 
 Commercial and research systems increasingly treat placement as a **constrained multi-objective** problem (safe RL / CMDP surveys 2024–2025), not unconstrained wirelength minimization.
 
@@ -121,18 +125,17 @@ Floorplan seed (regions + fixed parts + optional spectral clusters)
         │
         ▼
 Global place — multi-candidate SA (→ future RL policy)
-   energy: weighted HPWL, power-loop area, critical length,
-           overlap, density, thermal, EMI proxy
+   energy: HPWL, loop L, IR drop, return path, CPX match,
+           overlap, density, thermal, EMI
         │
         ▼
-Physics rank — Ngspice + OpenEMS proxies (expensive sim on shortlist)
+Physics rank — Ngspice + OpenEMS proxies; STEP for accurate 3D
         │
         ▼
-TopoR-style free-angle route — clearance, priority nets, vias
-   (future: MCTS/RL on failed nets; FreeRouting handoff via DSN)
+TopoR free-angle route + rubberband cleanup + KiCad DRC
         │
         ▼
-Post-route metrics → re-place if vias/WL/DRC bad
+Post-route metrics / DRC → re-place if vias/WL/copper fails
 ```
 
 ### How physicsRouter maps to the research
@@ -142,9 +145,10 @@ Post-route metrics → re-place if vias/WL/DRC bad
 | SA multi-objective place | `placement.py` multi-candidate SA |
 | Net criticality / weights | `NetLabel` + `import-nets` from KiCad |
 | Net-separation / regions | Region constraints + density term (full NS-Place MILP: future) |
-| Dayan/TopoR free-angle | `router.py` LOS → detours → A\* → rubberband + vias |
+| Dayan/TopoR free-angle | `router.py` LOS → detours → A\* → **rubberband cleanup** + vias |
 | Lee/A\* maze | Grid A\* fallback inside free-angle search |
-| Post-route / physical rewards | Spice + EMI terms; OpenEMS export for FDTD |
+| Post-route / physical rewards | IR, loop L, return path, CPX match; spice/EMI; **KiCad DRC** |
+| Accurate EM geometry | `export-step` tracks/pads/mask/silk for OpenEMS/FEM |
 | RL placement/routing | Architecture ready; SA baseline first (as in DATE 2024 comparisons) |
 | FreeRouting / Specctra | DSN path documented; optional external baseline |
 | PCBench / open corpora | [DATASETS.md](DATASETS.md) |
@@ -261,21 +265,46 @@ physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
   --out-json route_result.json --out-pcb board_routed.kicad_pcb
 ```
 
-## OpenEMS export
+## OpenEMS / FEM geometry (STEP + JSON)
+
+KiCad can export a **STEP** of the board including **tracks, pads, zones, inner copper, soldermask, and silkscreen** — far more accurate for OpenEMS / FEM than extruded rectangles alone.
+
+```bash
+# Full simulation STEP (copper + mask + silk, board body, no components)
+physics-router export-step --pcb board.kicad_pcb --out-dir sim_geometry
+
+# Single STEP path
+physics-router export-step --pcb board.kicad_pcb -o board_sim.step
+
+# Net-filtered copper (e.g. charlieplex only)
+physics-router export-step --pcb board.kicad_pcb --out-dir sim_geometry --net-filter 'CPX*'
+```
 
 | Artifact | Content |
 |----------|---------|
-| `board_geometry.json` | Stackup + copper boxes/polylines (mm) |
-| `simulate_board.py` | CSXCAD/openEMS driver loading the JSON |
+| `board_with_copper.step` / `*_full.step` | KiCad STEP: tracks, pads, zones, mask, silk |
+| `board_geometry.json` | Lightweight polyline/box primitives (mm) |
+| `simulate_board.py` | CSXCAD/openEMS driver from JSON + stackup |
 | `OPENEMS_README.txt` | How to run |
 
 ```bash
 physics-router export-openems \
   --config placement_config.yaml \
   --pcb board.kicad_pcb \
-  --gerber F.Cu=F_Cu.gbr \
   --out-dir openems_export
+# → also attempts STEP when kicad-cli is available
 ```
+
+### Other high-impact features
+
+| Feature | Command / module | Why |
+|---------|------------------|-----|
+| **DRC-validated copper** | `drc`, `route --drc` | Official KiCad DRC JSON on written boards |
+| **Rubberband cleanup** | auto in `multilayer_route` | Shortens free-angle paths under clearance (Dayan-style) |
+| **IR drop + loop L** | `score` / placement energy | Power integrity proxies for coin-cell / GPIO drive |
+| **Return-path score** | placement energy | HS/EMI nets near GND reference |
+| **CPX length match** | placement energy | Uniform LED matrix drive paths |
+| **KiCad renders** | `render`, `generate_kicad_renders.py` | pcbnew plots + 3D PNGs |
 
 ## Architecture
 
@@ -291,7 +320,7 @@ physics-router export-openems \
 | `router` | Clearance-aware free-angle TopoR core |
 | `routing_strategies` | Pre-route tests, net order, multilayer DRC policy |
 | `openems_export` | Mesh/geometry from **KiCad stackup** + Gerbers |
-| `kicad_tools` | Official **DRC**, **SVG plots**, **3D render**, pcbnew plot |
+| `kicad_tools` | **DRC**, **SVG/3D render**, **STEP** (tracks/mask/silk), pcbnew plot |
 | `cli` | `physics-router` entry point |
 
 ## Setup

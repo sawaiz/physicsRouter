@@ -153,7 +153,7 @@ Beyond raw path search, research and practice emphasize **pre-route policy** tha
 | **Pair co-route** | Diff pairs / I2C matched length, same layer | ASP-DAC unified PCB router |
 | **Physics pre-checks** | Loop area, EMI, ngspice before final copper | This project; OpenEMS |
 
-**physicsRouter:** `design_rules` load from KiCad, `pre-route` report, ordered nets, `multilayer_route` with DRC widths/vias, pair hints, OpenEMS stackup from KiCad.
+**physicsRouter:** `design_rules` load from KiCad, `pre-route` report, ordered nets, `multilayer_route` with DRC widths/vias + rubberband cleanup, pair hints, IR/loop-L/return-path/matrix-match scores, OpenEMS JSON + **KiCad STEP** (tracks/pads/mask/silk) for accurate 3D EM.
 
 ## 7. Recommended algorithm stack (synthesis)
 

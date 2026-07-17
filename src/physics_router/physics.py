@@ -295,9 +295,189 @@ class OpenEMSBackend(SimulationBackend):
         return base, note
 
 
+def _net_hpwl_mm(board: BoardModel, net_name: str) -> float:
+    centers = component_centers(board)
+    refs = [r for r, _ in board.nets.get(net_name, []) if r in centers]
+    if len(refs) < 2:
+        return 0.0
+    xs = [centers[r][0] for r in refs]
+    ys = [centers[r][1] for r in refs]
+    return (max(xs) - min(xs)) + (max(ys) - min(ys))
+
+
+def ir_drop_proxy(board: BoardModel, config: PlacementConfig) -> tuple[float, str]:
+    """Estimate resistive IR drop cost on power / high-current nets.
+
+    Uses copper sheet resistance approximation:
+      R ≈ ρ_cu * length / (width * thickness)
+    with default 1 oz copper (35 µm) and width from class heuristics.
+    Current assumptions (mA) from net class / notes (charlieplex ~GPIO peak).
+    """
+    rho = 1.68e-8  # ohm-m
+    t_m = 35e-6  # 1 oz
+    cost = 0.0
+    details: list[str] = []
+    for lab in config.nets:
+        if lab.net_class not in (NetClass.POWER, NetClass.GROUND, NetClass.HIGH_SPEED):
+            if not lab.simulate_spice and not lab.power_loop_group:
+                continue
+        length_mm = _net_hpwl_mm(board, lab.name)
+        if length_mm <= 0:
+            continue
+        # track width mm
+        if lab.net_class in (NetClass.POWER, NetClass.GROUND):
+            w_mm = 0.4
+            i_a = 0.05  # 50 mA rail budget default
+        elif lab.net_class == NetClass.HIGH_SPEED or (
+            lab.power_loop_group and "charlie" in (lab.power_loop_group or "").lower()
+        ):
+            w_mm = 0.15
+            i_a = 0.02  # ~20 mA LED pulse
+        else:
+            w_mm = 0.2
+            i_a = 0.01
+        length_m = length_mm * 1e-3
+        width_m = w_mm * 1e-3
+        r = rho * length_m / max(width_m * t_m, 1e-15)
+        vdrop = r * i_a
+        # Cost scales with mV of drop (target << 50 mV on small boards)
+        term = max(0.0, vdrop * 1000.0 - 5.0)  # ignore <5 mV
+        if term > 0:
+            cost += term * config.weight_for_net(lab.name)
+            details.append(f"{lab.name}:{vdrop*1e3:.2f}mV")
+    note = "ir_drop " + (",".join(details[:6]) if details else "ok")
+    return cost, note
+
+
+def loop_inductance_nh(board: BoardModel, config: PlacementConfig) -> tuple[float, str]:
+    """Partial loop inductance proxy from power_loop_group geometry.
+
+    L ≈ μ0 * perimeter * (ln(perimeter/width) ) / 2π  (very rough wire-loop model)
+    Cost is sum of L_nH for each group — smaller loops are better for EMI/di/dt.
+    """
+    mu0 = 1.256637e-6
+    centers = component_centers(board)
+    groups: dict[str, set[str]] = {}
+    for lab in config.nets:
+        if lab.power_loop_group:
+            for ref, _ in board.nets.get(lab.name, []):
+                groups.setdefault(lab.power_loop_group, set()).add(ref)
+    total_nh = 0.0
+    parts: list[str] = []
+    for gid, refs in groups.items():
+        pts = [centers[r] for r in refs if r in centers]
+        if len(pts) < 2:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        # perimeter of bbox as loop path
+        w = max(0.5, max(xs) - min(xs))
+        h = max(0.5, max(ys) - min(ys))
+        peri_m = 2 * (w + h) * 1e-3
+        width_m = 0.3e-3
+        # Grover-ish loop
+        l_h = mu0 * peri_m * (math.log(max(peri_m / width_m, 1.1)) - 1.0) / (2 * math.pi)
+        l_nh = max(0.1, l_h * 1e9)
+        total_nh += l_nh
+        parts.append(f"{gid}:{l_nh:.1f}nH")
+    return total_nh, "loop_L " + (",".join(parts) if parts else "none")
+
+
+def return_path_score(board: BoardModel, config: PlacementConfig) -> tuple[float, str]:
+    """Penalize high-speed / EMI nets far from GND-connected copper centroids.
+
+    On multilayer boards, a nearby ground reference is assumed if GND components
+    cluster near the net; large distance ⇒ poor return path / larger loop.
+    """
+    centers = component_centers(board)
+    gnd_pts = []
+    for name, pins in board.nets.items():
+        lab = config.net_by_name().get(name)
+        if lab and lab.net_class == NetClass.GROUND:
+            gnd_pts.extend(centers[r] for r, _ in pins if r in centers)
+        elif name.upper() in ("GND", "AGND", "DGND", "PGND", "VSS"):
+            gnd_pts.extend(centers[r] for r, _ in pins if r in centers)
+    if not gnd_pts:
+        return 0.0, "return_path:no_gnd"
+    gcx = sum(p[0] for p in gnd_pts) / len(gnd_pts)
+    gcy = sum(p[1] for p in gnd_pts) / len(gnd_pts)
+    cost = 0.0
+    n = 0
+    for lab in config.nets:
+        if not (
+            lab.emi_sensitive
+            or lab.net_class
+            in (NetClass.HIGH_SPEED, NetClass.CLOCK, NetClass.RF, NetClass.DIFFERENTIAL)
+        ):
+            continue
+        refs = [r for r, _ in board.nets.get(lab.name, []) if r in centers]
+        if not refs:
+            continue
+        cx = sum(centers[r][0] for r in refs) / len(refs)
+        cy = sum(centers[r][1] for r in refs) / len(refs)
+        d = _dist((cx, cy), (gcx, gcy))
+        # Prefer < 5 mm to GND cluster on small boards
+        cost += max(0.0, d - 5.0) * config.weight_for_net(lab.name)
+        n += 1
+    # Multilayer with inner planes: soften penalty
+    if board.copper_layers and len(board.copper_layers) >= 4:
+        cost *= 0.5
+    return cost, f"return_path nets={n} gnd_centroid=({gcx:.1f},{gcy:.1f})"
+
+
+def matrix_length_match_score(board: BoardModel, config: PlacementConfig) -> tuple[float, str]:
+    """Penalize length skew within charlieplex / matrix net groups (CPX-*).
+
+    Uniform brightness on LED matrices needs similar drive-path lengths.
+    """
+    # Group by prefix CPX or power_loop_group containing matrix nets
+    buckets: dict[str, list[float]] = {}
+    for name in board.nets:
+        if name.upper().startswith("CPX"):
+            buckets.setdefault("CPX", []).append(_net_hpwl_mm(board, name))
+        lab = config.net_by_name().get(name)
+        if lab and lab.power_loop_group and "charlie" in lab.power_loop_group.lower():
+            buckets.setdefault(lab.power_loop_group, []).append(_net_hpwl_mm(board, name))
+    cost = 0.0
+    notes: list[str] = []
+    for gid, lens in buckets.items():
+        if len(lens) < 2:
+            continue
+        mean = sum(lens) / len(lens)
+        skew = max(lens) - min(lens)
+        # percent skew
+        pct = 100.0 * skew / max(mean, 0.1)
+        cost += max(0.0, pct - 10.0)  # allow 10% free
+        notes.append(f"{gid}:skew={skew:.1f}mm({pct:.0f}%)")
+    return cost, "matrix_match " + (",".join(notes) if notes else "n/a")
+
+
+def _total_from_weights(w: object, sb: ScoreBreakdown) -> float:
+    return (
+        float(getattr(w, "weighted_wirelength", 1.0)) * sb.weighted_wirelength
+        + float(getattr(w, "power_loop_area", 1.0)) * sb.power_loop_area
+        + float(getattr(w, "critical_net_length", 1.0)) * sb.critical_net_length
+        + float(getattr(w, "overlap_penalty", 1.0)) * sb.overlap_penalty
+        + float(getattr(w, "region_violation", 1.0)) * sb.region_violation
+        + float(getattr(w, "density_congestion", 1.0)) * sb.density_congestion
+        + float(getattr(w, "thermal_spread", 1.0)) * sb.thermal_spread
+        + float(getattr(w, "emi_proxy", 1.0)) * sb.emi_proxy
+        + float(getattr(w, "spice_score", 1.0)) * sb.spice_score
+        + float(getattr(w, "openems_score", 1.0)) * sb.openems_score
+        + float(getattr(w, "ir_drop", 1.0)) * sb.ir_drop
+        + float(getattr(w, "loop_inductance", 1.0)) * sb.loop_inductance
+        + float(getattr(w, "return_path", 1.0)) * sb.return_path
+        + float(getattr(w, "matrix_length_match", 1.0)) * sb.matrix_length_match
+    )
+
+
 def geometric_score(board: BoardModel, config: PlacementConfig) -> ScoreBreakdown:
     """Fast multi-objective score without external simulators."""
     w = config.physics
+    ir, ir_note = ir_drop_proxy(board, config)
+    lnh, l_note = loop_inductance_nh(board, config)
+    rp, rp_note = return_path_score(board, config)
+    mx, mx_note = matrix_length_match_score(board, config)
     sb = ScoreBreakdown(
         weighted_wirelength=weighted_wirelength(board, config),
         power_loop_area=power_loop_area(board, config),
@@ -307,17 +487,13 @@ def geometric_score(board: BoardModel, config: PlacementConfig) -> ScoreBreakdow
         density_congestion=density_congestion(board),
         thermal_spread=thermal_spread(board),
         emi_proxy=emi_proxy(board, config),
+        ir_drop=ir,
+        loop_inductance=lnh,
+        return_path=rp,
+        matrix_length_match=mx,
+        notes=[ir_note, l_note, rp_note, mx_note],
     )
-    sb.total = (
-        w.weighted_wirelength * sb.weighted_wirelength
-        + w.power_loop_area * sb.power_loop_area
-        + w.critical_net_length * sb.critical_net_length
-        + w.overlap_penalty * sb.overlap_penalty
-        + w.region_violation * sb.region_violation
-        + w.density_congestion * sb.density_congestion
-        + w.thermal_spread * sb.thermal_spread
-        + w.emi_proxy * sb.emi_proxy
-    )
+    sb.total = _total_from_weights(w, sb)
     return sb
 
 
@@ -341,17 +517,6 @@ def apply_simulation_scores(
         sb.openems_score = cost
         notes.append(note)
 
-    sb.total = (
-        w.weighted_wirelength * sb.weighted_wirelength
-        + w.power_loop_area * sb.power_loop_area
-        + w.critical_net_length * sb.critical_net_length
-        + w.overlap_penalty * sb.overlap_penalty
-        + w.region_violation * sb.region_violation
-        + w.density_congestion * sb.density_congestion
-        + w.thermal_spread * sb.thermal_spread
-        + w.emi_proxy * sb.emi_proxy
-        + w.spice_score * sb.spice_score
-        + w.openems_score * sb.openems_score
-    )
+    sb.total = _total_from_weights(w, sb)
     sb.notes = notes
     return sb
