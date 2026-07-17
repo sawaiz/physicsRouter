@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>physicsRouter — control plane</title>
+  <title>physicsRouter</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -14,179 +14,284 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; font-family: "IBM Plex Sans", system-ui, sans-serif;
       background: var(--bg); color: var(--text); font-size: 14px; }
-    #shell { display: grid; grid-template-rows: 52px 1fr; height: 100%; }
+    #app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; min-height: 0; }
+
     header {
-      display: flex; align-items: center; gap: 1rem; padding: 0 1rem;
+      display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 1rem;
       border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    header h1 { font-size: 1rem; margin: 0; font-weight: 600; white-space: nowrap; }
-    header .meta { color: var(--muted); font-size: 0.8rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pill {
-      font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px;
-      border: 1px solid var(--line); color: var(--muted);
-    }
+    header h1 { font-size: 0.95rem; margin: 0; font-weight: 600; }
+    header .meta { color: var(--muted); font-size: 0.78rem; flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pill { font-size: 0.7rem; padding: 0.12rem 0.45rem; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); }
     .pill.ok { color: var(--good); border-color: #2a5a44; }
     .pill.err { color: var(--bad); border-color: #5a2a2a; }
     .pill.run { color: var(--run); border-color: #2a3a5a; }
-    #main { display: grid; grid-template-columns: 220px 1fr 340px; min-height: 0; }
-    nav {
-      background: var(--panel); border-right: 1px solid var(--line);
-      padding: 0.75rem 0.5rem; overflow: auto;
+
+    /* Guided step bar */
+    #steps {
+      display: flex; gap: 0; border-bottom: 1px solid var(--line); background: #0e141c;
+      overflow-x: auto;
     }
-    nav button {
-      display: block; width: 100%; text-align: left; background: transparent;
-      border: none; color: var(--muted); padding: 0.55rem 0.75rem; border-radius: 8px;
-      cursor: pointer; font: inherit; margin-bottom: 2px;
+    .step {
+      flex: 1; min-width: 120px; padding: 0.65rem 0.75rem; border: none; background: transparent;
+      color: var(--muted); cursor: pointer; font: inherit; text-align: left;
+      border-bottom: 3px solid transparent; position: relative;
     }
-    nav button:hover { background: #1a2433; color: var(--text); }
-    nav button.active { background: #1e3a55; color: var(--text); }
-    nav .sec { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--muted); padding: 0.75rem 0.75rem 0.3rem; }
-    #content { overflow: auto; padding: 1rem; min-width: 0; }
-    #side {
-      border-left: 1px solid var(--line); background: var(--panel);
-      display: flex; flex-direction: column; min-height: 0;
+    .step:hover { background: #151c27; color: var(--text); }
+    .step.active { color: var(--text); border-bottom-color: var(--accent); background: #151c27; }
+    .step.done .n { background: #1a4a35; color: var(--good); }
+    .step .n {
+      display: inline-flex; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+      align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700;
+      background: #1a2433; color: var(--muted); margin-right: 0.4rem;
     }
-    #side .tabs { display: flex; border-bottom: 1px solid var(--line); }
-    #side .tabs button {
-      flex: 1; background: transparent; border: none; color: var(--muted);
-      padding: 0.6rem; cursor: pointer; font: inherit; border-bottom: 2px solid transparent;
+    .step.active .n { background: #2563a8; color: #fff; }
+    .step .t { font-weight: 600; font-size: 0.82rem; }
+    .step .d { display: block; font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; margin-left: 1.75rem; }
+
+    /* Main: board | right column */
+    #workspace {
+      display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+      min-height: 0; overflow: hidden;
     }
-    #side .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
-    #side .pane { flex: 1; overflow: auto; padding: 0.75rem; }
-    .card {
-      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-      padding: 0.9rem 1rem; margin-bottom: 0.85rem;
+    @media (max-width: 900px) {
+      #workspace { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
     }
-    .card h2 { margin: 0 0 0.65rem; font-size: 0.78rem; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
-    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-    @media (max-width: 1100px) {
-      #main { grid-template-columns: 180px 1fr; }
-      #side { display: none; }
-      .grid2, .grid3 { grid-template-columns: 1fr; }
+
+    #viz {
+      display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line);
+      background: #0b0f14;
     }
-    .stat { font-size: 0.82rem; color: var(--muted); }
-    .stat strong { color: var(--text); font-weight: 600; }
-    .big { font-size: 1.75rem; font-weight: 700; color: var(--good); }
-    label.field { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
-    input, select, textarea, button.btn {
-      width: 100%; background: #0f1419; color: var(--text); border: 1px solid var(--line);
-      border-radius: 8px; padding: 0.45rem 0.55rem; font: inherit;
+    #vizHeader {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+      padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-height: 280px; }
+    #vizHeader label { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; gap: 0.3rem; }
+    #vizHeader select { background: #0f1419; color: var(--text); border: 1px solid var(--line);
+      border-radius: 6px; padding: 0.25rem 0.4rem; font: inherit; }
+    #boardCanvas { flex: 1; width: 100%; min-height: 200px; display: block; cursor: crosshair; }
+    #vizFooter {
+      padding: 0.4rem 0.75rem; border-top: 1px solid var(--line); background: var(--panel);
+      font-size: 0.78rem; color: var(--muted);
+    }
+
+    #right {
+      display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel);
+    }
+    #metrics {
+      padding: 0.75rem; border-bottom: 1px solid var(--line); flex-shrink: 0;
+    }
+    #metrics .total-row { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.5rem; }
+    #metrics .big { font-size: 1.6rem; font-weight: 700; color: var(--good); }
+    #scoreChartWrap { height: 160px; position: relative; }
+    #scoreChartWrap canvas { max-height: 160px; }
+    #simStrip {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-top: 0.55rem;
+    }
+    .sim-chip {
+      background: #0f1419; border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem;
+      font-size: 0.72rem; color: var(--muted);
+    }
+    .sim-chip strong { display: block; color: var(--text); font-size: 0.9rem; margin-top: 0.1rem; }
+
+    #stepPanel {
+      flex: 1; overflow: auto; padding: 0.85rem 0.9rem;
+    }
+    #stepPanel h2 {
+      margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 600;
+    }
+    #stepPanel .hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 0.85rem; line-height: 1.4; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.85rem; }
     button.btn {
-      cursor: pointer; background: #1e3a55; border-color: #2d5a84; width: auto;
-      padding: 0.45rem 0.85rem; margin: 0.2rem 0.25rem 0.2rem 0;
+      background: #1e3a55; color: var(--text); border: 1px solid #2d5a84;
+      border-radius: 8px; padding: 0.45rem 0.75rem; font: inherit; cursor: pointer;
     }
     button.btn:hover { background: #274a6b; }
-    button.btn.primary { background: #2563a8; }
+    button.btn.primary { background: #2563a8; border-color: #3a7abd; }
     button.btn.good { background: #1a4a35; border-color: #2a6a4a; }
     button.btn.warn { background: #4a3a12; border-color: #7a5a20; }
+    button.btn.ghost { background: transparent; }
     button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    th, td { text-align: left; padding: 0.35rem 0.3rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-weight: 500; }
-    .job {
-      border: 1px solid var(--line); border-radius: 10px; padding: 0.55rem 0.65rem;
-      margin-bottom: 0.45rem; background: #0f1419; cursor: pointer;
+    label.field { display: block; font-size: 0.75rem; color: var(--muted); margin: 0.45rem 0 0.2rem; }
+    input, select, textarea {
+      width: 100%; background: #0f1419; color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 0.4rem 0.5rem; font: inherit;
     }
-    .job:hover, .job.sel { border-color: var(--accent); }
-    .job .top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
-    .bar { height: 6px; background: #1a2433; border-radius: 4px; margin-top: 0.4rem; overflow: hidden; }
-    .bar > i { display: block; height: 100%; background: linear-gradient(90deg, #3a7abd, #5b9fd4); width: 0%; transition: width 0.25s; }
+    textarea { font-family: ui-monospace, Menlo, monospace; font-size: 11px; min-height: 160px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
+    .chk input { width: auto; }
+    table.compact { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.compact th, table.compact td { text-align: left; padding: 0.3rem 0.2rem; border-bottom: 1px solid var(--line); }
+    table.compact th { color: var(--muted); font-weight: 500; }
+    .notes { font-size: 0.75rem; color: var(--muted); max-height: 100px; overflow: auto; margin: 0; padding-left: 1rem; }
+    .weight-row { display: grid; grid-template-columns: 1fr 90px 36px; gap: 0.4rem; align-items: center;
+      font-size: 0.72rem; margin: 0.2rem 0; }
+    .weight-row input[type=range] { width: 100%; }
+
+    /* Bottom progress dock — updates without redrawing main UI */
+    #dock {
+      border-top: 1px solid var(--line); background: #0e141c;
+      display: grid; grid-template-columns: 1fr 1.2fr; max-height: 160px; min-height: 0;
+    }
+    @media (max-width: 900px) { #dock { grid-template-columns: 1fr; max-height: 200px; } }
+    #dockJobs, #dockLog {
+      overflow: auto; padding: 0.5rem 0.75rem; min-height: 0;
+    }
+    #dockJobs { border-right: 1px solid var(--line); }
+    #dock h3 {
+      margin: 0 0 0.4rem; font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted); font-weight: 600;
+    }
+    .job {
+      border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem;
+      margin-bottom: 0.35rem; background: #0f1419; cursor: pointer; font-size: 0.78rem;
+    }
+    .job.sel { border-color: var(--accent); }
+    .job .top { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; }
+    .bar { height: 5px; background: #1a2433; border-radius: 3px; margin-top: 0.3rem; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #3a7abd, #5b9fd4);
+      transition: width 0.2s; }
     .bar.done > i { background: var(--good); }
     .bar.err > i { background: var(--bad); width: 100% !important; }
-    pre.log {
-      background: #0b0f14; border: 1px solid var(--line); border-radius: 8px;
-      padding: 0.6rem; font-size: 11px; max-height: 220px; overflow: auto;
-      white-space: pre-wrap; color: #b8c4d4; margin: 0.4rem 0 0;
+    #logBox {
+      margin: 0; font-size: 11px; font-family: ui-monospace, Menlo, monospace;
+      color: #b8c4d4; white-space: pre-wrap; word-break: break-word;
     }
-    #boardCanvas { width: 100%; height: 420px; background: #0b0f14; border-radius: 10px; border: 1px solid var(--line); display: block; }
-    .row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-    .chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; margin: 0.25rem 0; }
-    .chk input { width: auto; }
+    #offline {
+      display: none; background: #3a2a10; color: var(--warn); padding: 0.35rem 1rem;
+      font-size: 0.8rem; border-bottom: 1px solid #5a4a20;
+    }
+    #offline.show { display: block; }
     .muted { color: var(--muted); }
-    .weight-row { display: grid; grid-template-columns: 140px 1fr 48px; gap: 0.5rem; align-items: center; margin: 0.25rem 0; font-size: 0.8rem; }
-    .weight-row input[type=range] { width: 100%; }
-    .hidden { display: none !important; }
-    .tag { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.35rem; border-radius: 4px; background: #1a2433; color: var(--muted); margin-right: 0.2rem; }
-    .tag.crit { color: var(--warn); }
-    .tag.power { color: #f07178; }
-    .tag.ground { color: #5b9fd4; }
-    a { color: var(--accent); }
-    #offlineBanner {
-      display: none; background: #3a2a10; color: var(--warn); padding: 0.4rem 1rem;
-      font-size: 0.82rem; border-bottom: 1px solid #5a4a20;
-    }
-    #offlineBanner.show { display: block; }
+    .tag { font-size: 0.65rem; padding: 0.08rem 0.3rem; border-radius: 4px; background: #1a2433; margin-left: 0.25rem; }
   </style>
 </head>
 <body>
-  <div id="shell">
-    <div id="offlineBanner">
-      Offline / static mode — run <code>physics-router serve</code> for live jobs, config, and progress.
-      Loading local <code>viewer_data.json</code> if present.
-    </div>
+  <div id="offline">Offline — start with <code>physics-router serve</code> to run jobs. Showing static data if available.</div>
+  <div id="app">
     <header>
       <h1>physicsRouter</h1>
-      <span class="meta" id="hdrMeta">connecting…</span>
+      <span class="meta" id="hdrMeta">starting…</span>
       <span class="pill" id="apiPill">API</span>
-      <span class="pill" id="jobPill">0 jobs</span>
+      <span class="pill" id="jobPill">idle</span>
     </header>
-    <div id="main">
-      <nav id="nav">
-        <div class="sec">Explore</div>
-        <button type="button" data-view="overview" class="active">Overview</button>
-        <button type="button" data-view="board">Board view</button>
-        <button type="button" data-view="nets">Nets &amp; labels</button>
-        <button type="button" data-view="results">Results</button>
-        <div class="sec">Configure</div>
-        <button type="button" data-view="config">Config / YAML</button>
-        <button type="button" data-view="weights">Physics weights</button>
-        <div class="sec">Run</div>
-        <button type="button" data-view="run">Jobs &amp; pipeline</button>
-        <button type="button" data-view="sims">Simulations</button>
-        <button type="button" data-view="tests">Tests &amp; CI</button>
-      </nav>
-      <div id="content"></div>
-      <aside id="side">
-        <div class="tabs">
-          <button type="button" class="active" data-side="jobs">Jobs</button>
-          <button type="button" data-side="detail">Detail</button>
-          <button type="button" data-side="log">Log</button>
+
+    <nav id="steps">
+      <button type="button" class="step active" data-step="0">
+        <span class="n">1</span><span class="t">Setup</span>
+        <span class="d">Board &amp; config</span>
+      </button>
+      <button type="button" class="step" data-step="1">
+        <span class="n">2</span><span class="t">Place</span>
+        <span class="d">Unlocked parts</span>
+      </button>
+      <button type="button" class="step" data-step="2">
+        <span class="n">3</span><span class="t">Route</span>
+        <span class="d">TopoR copper</span>
+      </button>
+      <button type="button" class="step" data-step="3">
+        <span class="n">4</span><span class="t">Simulate</span>
+        <span class="d">Physics &amp; EMI</span>
+      </button>
+      <button type="button" class="step" data-step="4">
+        <span class="n">5</span><span class="t">Validate</span>
+        <span class="d">DRC · tests · CI</span>
+      </button>
+    </nav>
+
+    <div id="workspace">
+      <!-- Always-visible board visualization -->
+      <section id="viz">
+        <div id="vizHeader">
+          <strong style="font-size:0.8rem">Board</strong>
+          <label>Route
+            <select id="routeSel"><option value="">—</option></select>
+          </label>
+          <label><input type="checkbox" id="showComps" checked/> Parts</label>
+          <label><input type="checkbox" id="showRoutes" checked/> Copper</label>
+          <label><input type="checkbox" id="showVias" checked/> Vias</label>
+          <label><input type="checkbox" id="showEMI"/> EMI</label>
+          <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.4rem"></span>
         </div>
-        <div class="pane" id="sidePane"></div>
+        <canvas id="boardCanvas"></canvas>
+        <div id="vizFooter"><span id="boardStats">No board loaded</span></div>
+      </section>
+
+      <!-- Metrics (stable) + step guide -->
+      <aside id="right">
+        <div id="metrics">
+          <div class="total-row">
+            <div>
+              <div class="muted" style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em">Physics cost</div>
+              <div class="big" id="scoreTotal">—</div>
+            </div>
+            <div class="muted" style="font-size:0.75rem;line-height:1.35" id="scoreMeta">Run Score or Place to fill metrics</div>
+          </div>
+          <div id="scoreChartWrap"><canvas id="scoreChart"></canvas></div>
+          <div id="simStrip">
+            <div class="sim-chip">IR / loop L<strong id="mIr">—</strong></div>
+            <div class="sim-chip">Spice · OpenEMS<strong id="mSim">—</strong></div>
+            <div class="sim-chip">Route length<strong id="mLen">—</strong></div>
+            <div class="sim-chip">Vias · viol.<strong id="mVia">—</strong></div>
+          </div>
+        </div>
+        <div id="stepPanel"></div>
       </aside>
     </div>
+
+    <footer id="dock">
+      <div id="dockJobs">
+        <h3>Progress</h3>
+        <div id="jobList"><p class="muted" style="font-size:0.78rem;margin:0">No jobs yet</p></div>
+      </div>
+      <div id="dockLog">
+        <h3>Log · result</h3>
+        <pre id="logBox" class="muted">Select a job or start a step.</pre>
+      </div>
+    </footer>
   </div>
 
   <script>
-  const API = '';
   const NET_COLORS = {
     power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
     differential: '#9467bd', signal: '#8c564b', reset: '#e377c2', clock: '#17becf',
     rf: '#bcbd22', other: '#888888'
   };
 
+  const STEPS = [
+    { id: 'setup', title: '1 · Setup', hint: 'Pick a board preset. Unlocked parts will move later; mechanicals stay fixed.' },
+    { id: 'place', title: '2 · Place', hint: 'Score the board, then run simulated annealing on free components only.' },
+    { id: 'route', title: '3 · Route', hint: 'Free-angle guide first, then clearance-aware TopoR. Watch copper update on the left.' },
+    { id: 'sim', title: '4 · Simulate', hint: 'Physics proxies: IR/loop L (in score), spice/PI, OpenEMS EMI geometry on the board.' },
+    { id: 'validate', title: '5 · Validate', hint: 'Close the loop: unit tests, CI regression, and official KiCad DRC when a PCB is loaded.' },
+  ];
+
   const state = {
     live: false,
+    step: 0,
     snap: null,
     viewer: null,
     selectedJob: null,
-    side: 'jobs',
-    view: 'overview',
-    scoreChart: null,
-    pollTimer: null,
+    chart: null,
+    chartKey: '',          // only redraw chart when score fingerprint changes
+    layersBuilt: false,
+    boardDirty: true,
+    lastJobSig: '',
+    pollBusy: false,
   };
 
-  const $ = (s, el=document) => el.querySelector(s);
-  const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n, d = 2) => (n == null || Number.isNaN(+n) ? '—' : (+n).toFixed(d));
 
-  async function api(path, opts={}) {
-    const r = await fetch(API + path, {
-      headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) },
+  async function api(path, opts = {}) {
+    const r = await fetch(path, {
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
       ...opts,
     });
     const text = await r.text();
@@ -196,360 +301,396 @@
     return data;
   }
 
-  function fmt(n, d=2) {
-    if (n == null || Number.isNaN(n)) return '—';
-    if (typeof n !== 'number') return String(n);
-    return n.toFixed(d);
-  }
-
   function statusPill(st) {
-    const c = st === 'done' ? 'ok' : st === 'error' ? 'err' : st === 'running' ? 'run' : '';
+    const c = st === 'done' ? 'ok' : st === 'error' ? 'err' : st === 'running' || st === 'pending' ? 'run' : '';
     return `<span class="pill ${c}">${st}</span>`;
   }
 
-  // ---------- views ----------
-  function render() {
-    const c = $('#content');
-    const v = state.view;
-    if (v === 'overview') c.innerHTML = viewOverview();
-    else if (v === 'board') c.innerHTML = viewBoard();
-    else if (v === 'nets') c.innerHTML = viewNets();
-    else if (v === 'results') c.innerHTML = viewResults();
-    else if (v === 'config') c.innerHTML = viewConfig();
-    else if (v === 'weights') c.innerHTML = viewWeights();
-    else if (v === 'run') c.innerHTML = viewRun();
-    else if (v === 'sims') c.innerHTML = viewSims();
-    else if (v === 'tests') c.innerHTML = viewTests();
-    bindView();
-    renderSide();
-    if (v === 'overview') drawScoreChart();
-    if (v === 'board') drawBoard();
+  // ---------- Step panel (only rebuilt when step changes or user action) ----------
+  function renderStepPanel() {
+    const panel = $('#stepPanel');
+    const s = STEPS[state.step];
+    let body = '';
+    if (state.step === 0) body = panelSetup();
+    else if (state.step === 1) body = panelPlace();
+    else if (state.step === 2) body = panelRoute();
+    else if (state.step === 3) body = panelSim();
+    else body = panelValidate();
+
+    panel.innerHTML = `
+      <h2>${s.title}</h2>
+      <p class="hint">${s.hint}</p>
+      ${body}
+      <div class="actions" style="margin-top:1rem;border-top:1px solid var(--line);padding-top:0.75rem">
+        <button type="button" class="btn ghost" id="btnPrev" ${state.step === 0 ? 'disabled' : ''}>← Back</button>
+        <button type="button" class="btn primary" id="btnNext">${state.step === 4 ? 'Done' : 'Next →'}</button>
+      </div>
+    `;
+    bindStepPanel();
   }
 
-  function viewOverview() {
-    const s = state.snap?.session || state.viewer?.session || {};
-    const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
-    const total = score.total ?? state.snap?.last_score?.score_total ?? '—';
+  function panelSetup() {
+    const presets = state.snap?.presets || [{ id: 'synthetic', label: 'synthetic' }];
+    const sess = state.snap?.session || {};
+    return `
+      <label class="field">Board preset</label>
+      <select id="presetSel">
+        ${presets.map(p => `<option value="${p.id}" ${p.id === state.snap?.preset ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? ' · PCB' : ''}</option>`).join('')}
+      </select>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btnLoadPreset">Load preset</button>
+      </div>
+      <table class="compact">
+        <tr><th>Project</th><td id="infoProject">${esc(state.snap?.config?.project_name || '—')}</td></tr>
+        <tr><th>Parts</th><td>${sess.components ?? '—'} total · <strong>${sess.movable ?? '—'}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
+        <tr><th>Nets</th><td>${sess.nets ?? '—'}</td></tr>
+        <tr><th>Layers</th><td>${(sess.copper_layers || []).join(', ') || '—'}</td></tr>
+        <tr><th>PCB</th><td style="word-break:break-all">${esc(state.snap?.pcb_path || 'synthetic (no file)')}</td></tr>
+      </table>
+      <details style="margin-top:0.75rem">
+        <summary class="muted" style="cursor:pointer;font-size:0.8rem">Advanced: edit YAML config</summary>
+        <textarea id="yamlEditor" style="margin-top:0.4rem">${esc(state.snap?.config_text || '')}</textarea>
+        <div class="actions">
+          <button type="button" class="btn" id="btnApplyYaml">Apply YAML</button>
+        </div>
+      </details>
+    `;
+  }
+
+  function panelPlace() {
+    const cfg = state.snap?.config || {};
+    return `
+      <div class="row2">
+        <div><label class="field">Candidates</label><input type="number" id="rtCand" min="1" max="16" value="${cfg.num_candidates ?? 4}"/></div>
+        <div><label class="field">SA iterations</label><input type="number" id="rtSa" min="100" value="${Math.min(cfg.sa_iterations || 800, 2000)}"/></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" data-job="score">1. Score now</button>
+        <button type="button" class="btn primary" data-job="place">2. Place free parts</button>
+      </div>
+      <p class="hint">Only unlocked footprints move. Fixed connectors / LED ring / battery stay put.</p>
+      <details>
+        <summary class="muted" style="cursor:pointer;font-size:0.8rem">Physics weights</summary>
+        <div id="weightBox" style="margin-top:0.4rem"></div>
+        <button type="button" class="btn" id="btnApplyWeights" style="margin-top:0.4rem">Apply weights</button>
+      </details>
+    `;
+  }
+
+  function panelRoute() {
+    return `
+      <div class="row2">
+        <div><label class="field">Clearance mm</label><input type="number" id="rtClear" step="0.05" value="0.2"/></div>
+        <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.1" value="0.5"/></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" data-job="pre_route">Pre-route check</button>
+        <button type="button" class="btn" data-job="route_guide">Guide (fast)</button>
+        <button type="button" class="btn primary" data-job="route_clearance">Clearance route</button>
+      </div>
+      <p class="hint">Copper appears on the board view. Switch route variants in the toolbar above the canvas.</p>
+      <div id="routeTable"></div>
+    `;
+  }
+
+  function panelSim() {
+    return `
+      <p class="hint" style="margin-top:0">Metrics above update when jobs finish. EMI boxes draw on the board when OpenEMS runs.</p>
+      <div class="actions">
+        <button type="button" class="btn primary" data-job="score">Full physics score</button>
+        <button type="button" class="btn" data-job="spice">Spice / PI proxy</button>
+        <button type="button" class="btn" data-job="openems">OpenEMS + EMI</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-job="export_dsn">Export DSN</button>
+        <button type="button" class="btn ghost" data-job="export_step">Export STEP</button>
+        <button type="button" class="btn ghost" data-job="compare_routes">Compare routes</button>
+      </div>
+      <h2 style="font-size:0.78rem;margin-top:0.75rem;color:var(--muted)">Latest notes</h2>
+      <ul class="notes" id="simNotes"><li>Run a simulation…</li></ul>
+    `;
+  }
+
+  function panelValidate() {
+    return `
+      <div class="actions">
+        <button type="button" class="btn primary" data-job="tests">Unit tests</button>
+        <button type="button" class="btn" data-job="ci_regression">CI regression</button>
+        <button type="button" class="btn warn" data-job="drc">KiCad DRC</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn good" data-job="pipeline">Run full pipeline</button>
+        <button type="button" class="btn ghost" data-job="rebuild_viewer">Refresh viewer data</button>
+      </div>
+      <p class="hint">Full pipeline: score → place → guide → clearance → spice → openems. Progress stays in the dock below.</p>
+      <label class="field">pytest -k filter (optional)</label>
+      <input id="testK" placeholder="e.g. router or server"/>
+      <button type="button" class="btn" id="btnTestsK" style="margin-top:0.4rem">Run filtered tests</button>
+    `;
+  }
+
+  function bindStepPanel() {
+    $('#btnPrev')?.addEventListener('click', () => setStep(Math.max(0, state.step - 1)));
+    $('#btnNext')?.addEventListener('click', () => {
+      if (state.step < 4) setStep(state.step + 1);
+    });
+    $('#btnLoadPreset')?.addEventListener('click', async () => {
+      if (!state.live) return alert('Start: physics-router serve');
+      const id = $('#presetSel').value;
+      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: id }) });
+      state.viewer = await api('/api/viewer-data');
+      state.layersBuilt = false;
+      state.boardDirty = true;
+      state.chartKey = '';
+      updateMetrics();
+      updateRouteSelect();
+      updateLayers();
+      drawBoard();
+      renderStepPanel();
+      updateHeader();
+    });
+    $('#btnApplyYaml')?.addEventListener('click', async () => {
+      if (!state.live) return;
+      state.snap = await api('/api/config/apply', {
+        method: 'POST', body: JSON.stringify({ config_text: $('#yamlEditor').value }),
+      });
+      state.viewer = await api('/api/viewer-data');
+      state.layersBuilt = false;
+      state.boardDirty = true;
+      state.chartKey = '';
+      updateMetrics();
+      drawBoard();
+      renderStepPanel();
+    });
+    $$('[data-job]').forEach(btn => {
+      btn.addEventListener('click', () => startJob(btn.dataset.job).catch(e => alert(e.message)));
+    });
+    $('#btnTestsK')?.addEventListener('click', () => {
+      startJob('tests', { k: $('#testK')?.value }).catch(e => alert(e.message));
+    });
+    // weights
+    const box = $('#weightBox');
+    if (box) {
+      const w = state.snap?.config?.physics || {};
+      const keys = Object.keys(w);
+      box.innerHTML = keys.map(k => {
+        const v = Number(w[k] ?? 1);
+        return `<div class="weight-row" data-k="${k}">
+          <span>${k}</span>
+          <input type="range" min="0" max="20" step="0.1" value="${v}" data-w="${k}"/>
+          <span class="wval">${v.toFixed(1)}</span>
+        </div>`;
+      }).join('');
+      $$('input[data-w]', box).forEach(inp => {
+        inp.oninput = () => { inp.parentElement.querySelector('.wval').textContent = (+inp.value).toFixed(1); };
+      });
+      $('#btnApplyWeights')?.addEventListener('click', async () => {
+        const physics = { ...(state.snap?.config?.physics || {}) };
+        $$('input[data-w]').forEach(inp => { physics[inp.dataset.w] = parseFloat(inp.value); });
+        const cfg = { ...(state.snap.config || {}), physics };
+        state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
+        alert('Weights applied — re-run Score / Place');
+      });
+    }
+    fillRouteTable();
+    fillSimNotes();
+  }
+
+  function setStep(i) {
+    state.step = i;
+    $$('#steps .step').forEach((el, idx) => {
+      el.classList.toggle('active', idx === i);
+      el.classList.toggle('done', idx < i);
+    });
+    renderStepPanel();
+  }
+
+  // ---------- Metrics: targeted updates, chart only if data changed ----------
+  function scoreFingerprint(score) {
+    if (!score) return '';
+    return Object.keys(score).sort().map(k => `${k}:${score[k]}`).join('|');
+  }
+
+  function updateMetrics() {
+    const score = state.snap?.last_score?.score
+      || state.viewer?.physics?.score
+      || {};
+    const total = score.total ?? state.snap?.last_score?.score_total;
+    $('#scoreTotal').textContent = total == null ? '—' : fmt(total, 1);
+    const sess = state.snap?.session || state.viewer?.session || {};
+    $('#scoreMeta').textContent =
+      `${state.snap?.preset || state.viewer?.preset || '—'} · ${sess.movable ?? '—'} free / ${sess.components ?? '—'} parts`;
+
+    $('#mIr').textContent =
+      `IR ${fmt(score.ir_drop, 1)} · L ${fmt(score.loop_inductance, 1)}`;
+    $('#mSim').textContent =
+      `${fmt(score.spice_score, 1)} · ${fmt(score.openems_score, 1)}`;
+
     const routes = state.snap?.routes || state.viewer?.routes || {};
-    const routeRows = Object.entries(routes).map(([n, r]) =>
-      `<tr><td>${n}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td>
-       <td>${r.clearance_violations ?? '—'}</td><td>${r.segments ?? (r.segments?.length) ?? '—'}</td></tr>`
-    ).join('') || '<tr><td colspan=5 class=muted>No routes yet — run guide/clearance</td></tr>';
-    const notes = (state.snap?.last_score?.notes || state.viewer?.physics?.notes || []).slice(0, 12);
-    return `
-      <div class="grid3">
-        <div class="card"><h2>Total physics cost</h2>
-          <div class="big">${typeof total === 'number' ? fmt(total, 2) : total}</div>
-          <p class="stat">Lower is better · multi-objective</p>
-        </div>
-        <div class="card"><h2>Board session</h2>
-          <div class="stat"><strong>Project</strong> ${state.snap?.config?.project_name || s.project_name || '—'}</div>
-          <div class="stat"><strong>Preset</strong> ${state.snap?.preset || state.viewer?.preset || '—'}</div>
-          <div class="stat"><strong>Parts</strong> ${s.components ?? '—'} · <strong>movable</strong> ${s.movable ?? '—'} · <strong>locked</strong> ${s.locked ?? '—'}</div>
-          <div class="stat"><strong>Nets</strong> ${s.nets ?? '—'} · <strong>Layers</strong> ${(s.copper_layers||[]).join(', ') || '—'}</div>
-          <div class="stat"><strong>PCB</strong> ${state.snap?.pcb_path || 'synthetic'}</div>
-        </div>
-        <div class="card"><h2>Quick run</h2>
-          <button class="btn primary" data-job="score">Score</button>
-          <button class="btn" data-job="place">Place</button>
-          <button class="btn" data-job="route_guide">Guide route</button>
-          <button class="btn good" data-job="pipeline">Full pipeline</button>
-          <p class="stat" style="margin-top:0.5rem">Progress streams in the Jobs panel →</p>
-        </div>
-      </div>
-      <div class="grid2">
-        <div class="card"><h2>Score breakdown</h2><canvas id="scoreChart" height="220"></canvas></div>
-        <div class="card"><h2>Route variants</h2>
-          <table><thead><tr><th>Name</th><th>mm</th><th>Vias</th><th>Viol</th><th>Segs</th></tr></thead>
-          <tbody>${routeRows}</tbody></table>
-        </div>
-      </div>
-      <div class="card"><h2>Physics notes</h2>
-        <ul class="stat">${notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') || '<li class=muted>Run score to populate</li>'}</ul>
-      </div>
-    `;
+    const prefer = routes.topor || routes.guide || Object.values(routes)[0];
+    if (prefer) {
+      $('#mLen').textContent = `${fmt(prefer.total_length_mm)} mm`;
+      $('#mVia').textContent = `${prefer.via_count ?? 0} · ${prefer.clearance_violations ?? 0}`;
+    } else {
+      $('#mLen').textContent = '—';
+      $('#mVia').textContent = '—';
+    }
+
+    const fp = scoreFingerprint(score);
+    if (fp && fp !== state.chartKey) {
+      state.chartKey = fp;
+      drawScoreChart(score);
+    }
+    fillSimNotes();
+    fillRouteTable();
   }
 
-  function viewBoard() {
-    const layers = (state.viewer?.board?.copper_layers || state.snap?.session?.copper_layers || ['F.Cu','B.Cu']);
-    const routes = Object.keys(state.viewer?.routes || state.snap?.routes || { guide:1, topor:1 });
-    return `
-      <div class="card">
-        <h2>Interactive board</h2>
-        <div class="row" style="margin-bottom:0.5rem">
-          <label class="field" style="width:auto;margin:0">Route
-            <select id="routeSel" style="width:140px;display:inline-block;margin-left:0.3rem">
-              ${routes.map(r => `<option value="${r}">${r}</option>`).join('')}
-            </select>
-          </label>
-          <label class="chk"><input type="checkbox" id="showComps" checked/> Components</label>
-          <label class="chk"><input type="checkbox" id="showRoutes" checked/> Routes</label>
-          <label class="chk"><input type="checkbox" id="showVias" checked/> Vias</label>
-          <label class="chk"><input type="checkbox" id="showEMI" checked/> EMI boxes</label>
-          <span class="stat" id="boardStats"></span>
-        </div>
-        <div class="row" id="layerToggles" style="margin-bottom:0.5rem">
-          ${layers.map((ly,i) => `<label class="chk"><input type="checkbox" data-layer="${ly}" checked/> ${ly}</label>`).join('')}
-        </div>
-        <canvas id="boardCanvas"></canvas>
-      </div>
-    `;
+  function drawScoreChart(score) {
+    const canvas = $('#scoreChart');
+    if (!canvas || !window.Chart) return;
+    const labels = Object.keys(score).filter(k => k !== 'total' && (score[k] || 0) !== 0);
+    // show zeros for empty state
+    const labs = labels.length ? labels : Object.keys(score).filter(k => k !== 'total').slice(0, 8);
+    const values = labs.map(k => score[k] || 0);
+    if (state.chart) {
+      state.chart.data.labels = labs;
+      state.chart.data.datasets[0].data = values;
+      state.chart.update('none'); // no animation flash
+      return;
+    }
+    state.chart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labs,
+        datasets: [{
+          label: 'Cost',
+          data: values,
+          backgroundColor: 'rgba(91, 159, 212, 0.75)',
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b9bb4', font: { size: 9 } }, grid: { color: '#2a3548' } },
+          y: { ticks: { color: '#c8d0dc', font: { size: 9 } }, grid: { display: false } },
+        },
+      },
+    });
   }
 
-  function viewNets() {
-    const nets = state.snap?.config?.nets || state.viewer?.config?.nets || [];
-    const meta = state.viewer?.board?.net_meta || {};
-    const boardNets = state.viewer?.board?.nets || {};
-    const rows = (nets.length ? nets : Object.keys(meta).map(n => ({name:n, ...meta[n]}))).map(n => {
-      const pins = boardNets[n.name]?.length ?? '—';
-      const cls = n.net_class || n.class || 'signal';
-      return `<tr>
-        <td><strong>${escapeHtml(n.name)}</strong>
-          ${n.critical ? '<span class="tag crit">critical</span>' : ''}
-          <span class="tag ${cls}">${cls}</span>
-        </td>
-        <td>${fmt(n.weight, 1)}</td>
-        <td>${pins}</td>
-        <td>${n.power_loop_group || '—'}</td>
-        <td>${n.pair_with || '—'}</td>
-        <td class="stat">${escapeHtml(n.notes || '')}</td>
-      </tr>`;
-    }).join('') || '<tr><td colspan=6 class=muted>No net labels</td></tr>';
-    const fixed = (state.snap?.config?.fixed || []).map(f =>
-      `<tr><td>${f.ref}</td><td>${fmt(f.x_mm)}</td><td>${fmt(f.y_mm)}</td><td>${f.locked?'locked':'free'}</td><td class=stat>${escapeHtml(f.notes||'')}</td></tr>`
-    ).join('') || '<tr><td colspan=5 class=muted>No fixed placements</td></tr>';
-    return `
-      <div class="card"><h2>Labeled nets (${nets.length || Object.keys(meta).length})</h2>
-        <table><thead><tr><th>Net</th><th>W</th><th>Pins</th><th>Loop</th><th>Pair</th><th>Notes</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-      </div>
-      <div class="card"><h2>Fixed / locked mechanicals</h2>
-        <table><thead><tr><th>Ref</th><th>X</th><th>Y</th><th>Lock</th><th>Notes</th></tr></thead>
-        <tbody>${fixed}</tbody></table>
-        <p class="stat">Unlocked components move under SA; fixed parts stay put for EE constraints.</p>
-      </div>
-    `;
+  function fillSimNotes() {
+    const ul = $('#simNotes');
+    if (!ul) return;
+    const notes = state.snap?.last_score?.notes || state.viewer?.physics?.notes || [];
+    ul.innerHTML = notes.length
+      ? notes.slice(0, 10).map(n => `<li>${esc(n)}</li>`).join('')
+      : '<li>No notes yet</li>';
   }
 
-  function viewResults() {
-    const jobs = (state.snap?.jobs || []).filter(j => j.status === 'done' || j.status === 'error');
-    const rows = jobs.map(j => {
-      const rs = j.result_summary || {};
-      const sum = Object.entries(rs).map(([k,v]) => `${k}=${typeof v==='number'?fmt(v):v}`).join(' · ') || '—';
-      return `<tr data-jid="${j.id}" class="jobrow" style="cursor:pointer">
-        <td>${j.type}</td><td>${statusPill(j.status)}</td>
-        <td>${fmt(j.progress,0)}%</td><td class="stat">${escapeHtml(sum)}</td>
-        <td class="stat">${j.ended_at ? new Date(j.ended_at*1000).toLocaleTimeString() : '—'}</td>
-      </tr>`;
-    }).join('') || '<tr><td colspan=5 class=muted>No completed jobs yet</td></tr>';
-    return `
-      <div class="card"><h2>Completed / failed jobs</h2>
-        <table><thead><tr><th>Type</th><th>Status</th><th>Prog</th><th>Summary</th><th>Ended</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-      </div>
-      <div class="card"><h2>Selected result JSON</h2>
-        <pre class="log" id="resultJson">Select a job row…</pre>
-        <button class="btn" id="btnRefreshResults">Refresh artifacts list</button>
-        <div id="artifactList" class="stat" style="margin-top:0.5rem"></div>
-      </div>
-    `;
+  function fillRouteTable() {
+    const el = $('#routeTable');
+    if (!el) return;
+    const routes = state.snap?.routes || state.viewer?.routes || {};
+    const keys = Object.keys(routes);
+    if (!keys.length) {
+      el.innerHTML = '<p class="muted" style="font-size:0.78rem">No routes yet</p>';
+      return;
+    }
+    el.innerHTML = `<table class="compact"><thead><tr><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th></tr></thead><tbody>
+      ${keys.map(k => {
+        const r = routes[k];
+        return `<tr><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td><td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td></tr>`;
+      }).join('')}
+    </tbody></table>`;
   }
 
-  function viewConfig() {
-    const text = state.snap?.config_text || '';
-    const presets = state.snap?.presets || [{id:'synthetic',label:'synthetic'}];
-    return `
-      <div class="card">
-        <h2>Preset / board source</h2>
-        <div class="row">
-          <select id="presetSel" style="max-width:280px">
-            ${presets.map(p => `<option value="${p.id}" ${p.id===state.snap?.preset?'selected':''}>${p.label||p.id}${p.has_pcb?' · PCB':''}</option>`).join('')}
-          </select>
-          <button class="btn primary" id="btnLoadPreset">Load preset</button>
-          <button class="btn" id="btnApplyYaml">Apply YAML</button>
-          <button class="btn" id="btnSaveYaml">Save to runs/</button>
-        </div>
-        <p class="stat">Editing config reloads the session board. Unlocked parts will re-place on next Place job.</p>
-      </div>
-      <div class="card">
-        <h2>Placement config (YAML)</h2>
-        <textarea id="yamlEditor">${escapeHtml(text)}</textarea>
-      </div>
-      <div class="card">
-        <h2>SA / sim policy (quick)</h2>
-        <div class="grid3">
-          <div><label class="field">num_candidates</label><input type="number" id="cfgCand" value="${state.snap?.config?.num_candidates ?? 8}" min="1" max="64"/></div>
-          <div><label class="field">sa_iterations</label><input type="number" id="cfgSa" value="${state.snap?.config?.sa_iterations ?? 2000}" min="100"/></div>
-          <div><label class="field">random_seed</label><input type="number" id="cfgSeed" value="${state.snap?.config?.random_seed ?? 42}"/></div>
-          <div><label class="chk"><input type="checkbox" id="cfgSpice" ${state.snap?.config?.use_spice!==false?'checked':''}/> use_spice</label></div>
-          <div><label class="chk"><input type="checkbox" id="cfgOpenems" ${state.snap?.config?.use_openems!==false?'checked':''}/> use_openems</label></div>
-        </div>
-        <button class="btn" id="btnApplyQuick">Apply quick fields into config</button>
-      </div>
-    `;
-  }
-
-  function viewWeights() {
-    const w = state.snap?.config?.physics || state.viewer?.physics?.weights || {};
-    const keys = Object.keys(w).length ? Object.keys(w) : [
-      'weighted_wirelength','power_loop_area','critical_net_length','overlap_penalty',
-      'region_violation','density_congestion','thermal_spread','emi_proxy','spice_score',
-      'openems_score','ir_drop','loop_inductance','return_path','matrix_length_match'
-    ];
-    const rows = keys.map(k => {
-      const v = Number(w[k] ?? 1);
-      return `<div class="weight-row" data-k="${k}">
-        <span>${k}</span>
-        <input type="range" min="0" max="20" step="0.1" value="${v}" data-w="${k}"/>
-        <span class="wval">${v.toFixed(1)}</span>
+  // ---------- Jobs dock: only this re-renders on poll ----------
+  function updateJobsDock() {
+    const jobs = state.snap?.jobs || [];
+    const list = $('#jobList');
+    if (!jobs.length) {
+      list.innerHTML = '<p class="muted" style="font-size:0.78rem;margin:0">No jobs yet</p>';
+      return;
+    }
+    const sig = jobs.map(j => `${j.id}:${j.status}:${j.progress}:${j.stage}`).join(';');
+    // Always rebuild list — it's small; avoid thrashing log if same selection
+    list.innerHTML = jobs.slice(0, 12).map(j => {
+      const cls = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : '';
+      return `<div class="job ${state.selectedJob === j.id ? 'sel' : ''}" data-jid="${j.id}">
+        <div class="top"><span><strong>${esc(j.type)}</strong></span>${statusPill(j.status)}</div>
+        <div class="muted" style="font-size:0.72rem">${esc(j.stage)} · ${fmt(j.progress, 0)}%</div>
+        <div class="bar ${cls}"><i style="width:${j.progress || 0}%"></i></div>
       </div>`;
     }).join('');
-    return `
-      <div class="card">
-        <h2>Physics weights (higher = more important)</h2>
-        <p class="stat">Tune multi-objective placement energy. Apply then re-run Score / Place.</p>
-        ${rows}
-        <div class="row" style="margin-top:0.75rem">
-          <button class="btn primary" id="btnApplyWeights">Apply weights</button>
-          <button class="btn" data-job="score">Re-score</button>
-        </div>
-      </div>
-    `;
-  }
+    $$('.job', list).forEach(el => {
+      el.onclick = () => {
+        state.selectedJob = el.dataset.jid;
+        updateJobsDock();
+        loadJobDetail(el.dataset.jid);
+      };
+    });
 
-  function viewRun() {
-    const catalog = state.snap?.job_types || [];
-    const byGroup = {};
-    catalog.forEach(j => { (byGroup[j.group] = byGroup[j.group] || []).push(j); });
-    let html = `<div class="card"><h2>Pipeline</h2>
-      <p class="stat">Runs score → place → guide → clearance → spice → openems → rebuild with per-step progress.</p>
-      <div class="row">
-        <button class="btn good primary" data-job="pipeline">Run full pipeline</button>
-        <label class="field" style="width:100px;margin:0">clearance
-          <input id="rtClear" type="number" step="0.05" value="0.2" style="width:80px"/>
-        </label>
-        <label class="field" style="width:100px;margin:0">grid
-          <input id="rtGrid" type="number" step="0.1" value="0.5" style="width:80px"/>
-        </label>
-        <label class="field" style="width:100px;margin:0">candidates
-          <input id="rtCand" type="number" value="4" min="1" max="16" style="width:80px"/>
-        </label>
-        <label class="field" style="width:100px;margin:0">SA iters
-          <input id="rtSa" type="number" value="800" min="100" style="width:90px"/>
-        </label>
-      </div>
-    </div>`;
-    for (const [g, items] of Object.entries(byGroup)) {
-      html += `<div class="card"><h2>${g}</h2><div class="row">`;
-      for (const j of items) {
-        html += `<button class="btn" data-job="${j.id}" title="${escapeHtml(j.description)}">${j.label}</button>`;
-      }
-      html += `</div><p class="stat">${items.map(i => `<strong>${i.id}</strong>: ${escapeHtml(i.description)}`).join('<br/>')}</p></div>`;
+    const running = jobs.filter(j => j.status === 'running' || j.status === 'pending').length;
+    $('#jobPill').textContent = running ? `${running} running` : (jobs.length ? `${jobs.length} jobs` : 'idle');
+    $('#jobPill').className = 'pill' + (running ? ' run' : jobs.some(j => j.status === 'error') ? ' err' : jobs.length ? ' ok' : '');
+
+    // Auto-follow active job log
+    const active = jobs.find(j => j.id === state.selectedJob)
+      || jobs.find(j => j.status === 'running')
+      || jobs[0];
+    if (active && (active.status === 'running' || active.id === state.selectedJob || sig !== state.lastJobSig)) {
+      if (!state.selectedJob) state.selectedJob = active.id;
+      loadJobDetail(state.selectedJob || active.id);
     }
-    return html;
+    state.lastJobSig = sig;
   }
 
-  function viewSims() {
-    return `
-      <div class="grid2">
-        <div class="card">
-          <h2>Circuit / PI (Ngspice proxy)</h2>
-          <p class="stat">GeometricSpiceProxy + optional ngspice rail check for power-loop L and IR.</p>
-          <button class="btn primary" data-job="spice">Run spice proxy</button>
-          <button class="btn" data-job="score">Full score (incl. spice)</button>
-        </div>
-        <div class="card">
-          <h2>OpenEMS / EMI</h2>
-          <p class="stat">Export mesh geometry + OpenEMS score proxy; attach EMI boxes to board view.</p>
-          <button class="btn primary" data-job="openems">OpenEMS export + proxy</button>
-          <button class="btn" data-job="export_step">STEP (needs PCB)</button>
-        </div>
-        <div class="card">
-          <h2>Power / loop metrics</h2>
-          <p class="stat">IR drop, loop inductance, return path, CPX length match live in geometric score.</p>
-          <button class="btn" data-job="score">Compute all physics terms</button>
-        </div>
-        <div class="card">
-          <h2>FreeRouting baseline</h2>
-          <p class="stat">Export Specctra DSN, run FreeRouting externally, then compare.</p>
-          <button class="btn" data-job="export_dsn">Export DSN</button>
-          <button class="btn" data-job="compare_routes">Compare TopoR metrics</button>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Last sim notes</h2>
-        <pre class="log">${escapeHtml(JSON.stringify(state.snap?.last_score || state.viewer?.physics || {}, null, 2).slice(0, 4000))}</pre>
-      </div>
-    `;
-  }
-
-  function viewTests() {
-    return `
-      <div class="card">
-        <h2>Unit tests</h2>
-        <p class="stat">Runs pytest on the package. Progress + log stream in the Jobs panel.</p>
-        <button class="btn primary" data-job="tests">Run pytest</button>
-        <label class="field">Optional -k expression</label>
-        <input id="testK" placeholder="e.g. halo or router"/>
-        <button class="btn" id="btnTestsK">Run filtered tests</button>
-      </div>
-      <div class="card">
-        <h2>CI regression</h2>
-        <p class="stat">Synthetic score + guide length vs baselines (HALO if vendored).</p>
-        <button class="btn" data-job="ci_regression">Run CI regression</button>
-      </div>
-      <div class="card">
-        <h2>Manufacturability / DRC</h2>
-        <p class="stat">Official KiCad DRC oracle (requires halo-90 PCB or set pcb path).</p>
-        <button class="btn warn" data-job="drc">Run KiCad DRC</button>
-        <button class="btn" data-job="pre_route">Pre-route manufacturability hints</button>
-      </div>
-    `;
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  // ---------- side panel ----------
-  function renderSide() {
-    const pane = $('#sidePane');
-    if (state.side === 'jobs') {
-      const jobs = state.snap?.jobs || [];
-      pane.innerHTML = jobs.length ? jobs.map(j => {
-        const cls = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : '';
-        return `<div class="job ${state.selectedJob===j.id?'sel':''}" data-jid="${j.id}">
-          <div class="top"><strong>${j.type}</strong>${statusPill(j.status)}</div>
-          <div class="stat">${escapeHtml(j.stage)} · ${fmt(j.progress,0)}%</div>
-          <div class="bar ${cls}"><i style="width:${j.progress||0}%"></i></div>
-        </div>`;
-      }).join('') : '<p class="stat">No jobs yet. Start a run from Overview or Jobs.</p>';
-      $$('.job', pane).forEach(el => el.onclick = () => { state.selectedJob = el.dataset.jid; state.side = 'detail'; $$('#side .tabs button').forEach(b=>b.classList.toggle('active', b.dataset.side==='detail')); renderSide(); });
-    } else if (state.side === 'detail' || state.side === 'log') {
-      const j = (state.snap?.jobs || []).find(x => x.id === state.selectedJob);
-      if (!j) { pane.innerHTML = '<p class="stat">Select a job</p>'; return; }
-      // fetch full job
-      if (state.live) {
-        api(`/api/jobs/${j.id}`).then(full => {
-          const body = state.side === 'log'
-            ? `<pre class="log">${escapeHtml((full.log||[]).join(String.fromCharCode(10)))}</pre>`
-            : `<div class="stat"><strong>${full.type}</strong> ${statusPill(full.status)}</div>
-               <div class="stat">${escapeHtml(full.stage)} · ${fmt(full.progress,0)}%</div>
-               <div class="bar ${full.status==='done'?'done':full.status==='error'?'err':''}"><i style="width:${full.progress||0}%"></i></div>
-               <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">RESULT</h2>
-               <pre class="log">${escapeHtml(JSON.stringify(full.result, null, 2) || full.error || '…')}</pre>
-               <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">LOG</h2>
-               <pre class="log">${escapeHtml((full.log_tail||full.log||[]).join(String.fromCharCode(10)))}</pre>`;
-          pane.innerHTML = body;
-        }).catch(e => { pane.innerHTML = `<p class="stat">${escapeHtml(e.message)}</p>`; });
-        pane.innerHTML = '<p class="stat">Loading job…</p>';
-      } else {
-        pane.innerHTML = `<pre class="log">${escapeHtml(JSON.stringify(j, null, 2))}</pre>`;
-      }
+  let detailInflight = null;
+  async function loadJobDetail(jid) {
+    if (!state.live || !jid) return;
+    const my = Symbol();
+    detailInflight = my;
+    try {
+      const full = await api(`/api/jobs/${jid}`);
+      if (detailInflight !== my) return;
+      const log = (full.log_tail || full.log || []).join('\n');
+      const res = full.result
+        ? '\n\n── result ──\n' + JSON.stringify(full.result, null, 2).slice(0, 3500)
+        : (full.error ? '\n\nERROR: ' + full.error : '');
+      $('#logBox').textContent = `[${full.type}] ${full.status} · ${full.stage} · ${fmt(full.progress, 0)}%\n\n${log}${res}`;
+    } catch (e) {
+      if (detailInflight === my) $('#logBox').textContent = e.message;
     }
   }
 
-  // ---------- board canvas ----------
+  // ---------- Board canvas ----------
+  function updateRouteSelect() {
+    const sel = $('#routeSel');
+    const routes = state.viewer?.routes || {};
+    const cur = sel.value;
+    const names = Object.keys(routes);
+    sel.innerHTML = names.length
+      ? names.map(n => `<option value="${n}">${n}</option>`).join('')
+      : '<option value="">(no routes)</option>';
+    if (cur && names.includes(cur)) sel.value = cur;
+    else if (names.includes('topor')) sel.value = 'topor';
+    else if (names.includes('guide')) sel.value = 'guide';
+  }
+
+  function updateLayers() {
+    if (state.layersBuilt && $('#layerToggles').children.length) return;
+    const layers = state.viewer?.board?.copper_layers || ['F.Cu', 'B.Cu'];
+    $('#layerToggles').innerHTML = layers.map(ly =>
+      `<label><input type="checkbox" data-layer="${ly}" checked/> ${ly}</label>`
+    ).join('');
+    state.layersBuilt = true;
+  }
+
   function netColor(net) {
     const meta = state.viewer?.board?.net_meta?.[net];
     return NET_COLORS[meta?.class || 'signal'] || NET_COLORS.other;
@@ -560,257 +701,269 @@
     if (!canvas) return;
     const data = state.viewer;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
+    const parent = canvas.parentElement;
+    const rect = { width: parent.clientWidth, height: Math.max(200, parent.clientHeight - 70) };
+    // account for header/footer roughly via flex — use canvas client box
+    const cr = canvas.getBoundingClientRect();
+    const w = cr.width || rect.width;
+    const h = cr.height || 400;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+    }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#0b0f14';
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.fillRect(0, 0, w, h);
+
     if (!data?.board) {
       ctx.fillStyle = '#8b9bb4';
-      ctx.fillText('No board data — run serve or load demo', 20, 30);
+      ctx.font = '13px system-ui';
+      ctx.fillText('Load a preset to see the board', 24, 40);
+      $('#boardStats').textContent = 'No board';
       return;
     }
+
     const comps = data.board.components || [];
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const c of comps) {
-      minX=Math.min(minX,c.x-c.w/2); maxX=Math.max(maxX,c.x+c.w/2);
-      minY=Math.min(minY,c.y-c.h/2); maxY=Math.max(maxY,c.y+c.h/2);
+      minX = Math.min(minX, c.x - c.w / 2);
+      maxX = Math.max(maxX, c.x + c.w / 2);
+      minY = Math.min(minY, c.y - c.h / 2);
+      maxY = Math.max(maxY, c.y + c.h / 2);
     }
-    if (!isFinite(minX)) { minX=0; minY=0; maxX=data.board.width_mm||50; maxY=data.board.height_mm||40; }
-    const pad=2; minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
-    const bw=maxX-minX, bh=maxY-minY;
-    const scale=0.9*Math.min(rect.width/bw, rect.height/bh);
-    const ox=rect.width/2 - scale*(minX+maxX)/2;
-    const oy=rect.height/2 + scale*(minY+maxY)/2;
-    const tx=(x,y)=>[ox+scale*x, oy-scale*y];
-    ctx.strokeStyle='#3a4a60'; ctx.lineWidth=1;
-    const [x0,y0]=tx(minX+pad,minY+pad), [x1,y1]=tx(maxX-pad,maxY-pad);
-    ctx.strokeRect(x0,y1,x1-x0,y0-y1);
-    const layersOn=new Set($$('#layerToggles input:checked').map(e=>e.dataset.layer));
-    const rname=$('#routeSel')?.value;
-    const route=data.routes?.[rname];
-    if ($('#boardStats') && route) {
-      $('#boardStats').innerHTML = `<strong>len</strong> ${fmt(route.total_length_mm)} mm · <strong>vias</strong> ${route.via_count} · <strong>segs</strong> ${(route.segments||[]).length}`;
+    if (!isFinite(minX)) {
+      minX = 0; minY = 0;
+      maxX = data.board.width_mm || 50;
+      maxY = data.board.height_mm || 40;
     }
-    if ($('#showEMI')?.checked && data.emi_geometry?.primitives) {
+    const pad = 2;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const bw = maxX - minX, bh = maxY - minY;
+    const scale = 0.9 * Math.min(w / bw, h / bh);
+    const ox = w / 2 - scale * (minX + maxX) / 2;
+    const oy = h / 2 + scale * (minY + maxY) / 2;
+    const tx = (x, y) => [ox + scale * x, oy - scale * y];
+
+    ctx.strokeStyle = '#3a4a60';
+    ctx.lineWidth = 1;
+    const [x0, y0] = tx(minX + pad, minY + pad);
+    const [x1, y1] = tx(maxX - pad, maxY - pad);
+    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
+
+    const layersOn = new Set($$('#layerToggles input:checked').map(e => e.dataset.layer));
+    const rname = $('#routeSel').value;
+    const route = data.routes?.[rname];
+
+    if ($('#showEMI').checked && data.emi_geometry?.primitives) {
       for (const p of data.emi_geometry.primitives) {
-        if (p.kind!=='box') continue;
-        const [cx,cy]=tx(p.cx_mm,p.cy_mm);
-        ctx.globalAlpha=0.25; ctx.fillStyle='#5b9fd4';
-        ctx.fillRect(cx-(p.w_mm*scale)/2, cy-(p.h_mm*scale)/2, p.w_mm*scale, p.h_mm*scale);
-        ctx.globalAlpha=1;
+        if (p.kind !== 'box') continue;
+        const [cx, cy] = tx(p.cx_mm, p.cy_mm);
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = '#c0a060';
+        ctx.fillRect(cx - (p.w_mm * scale) / 2, cy - (p.h_mm * scale) / 2, p.w_mm * scale, p.h_mm * scale);
+        ctx.globalAlpha = 1;
       }
     }
-    if ($('#showRoutes')?.checked && route?.segments) {
+
+    if ($('#showRoutes').checked && route?.segments) {
       for (const s of route.segments) {
         if (layersOn.size && !layersOn.has(s.layer)) continue;
-        const a=tx(s.x1,s.y1), b=tx(s.x2,s.y2);
-        ctx.strokeStyle=netColor(s.net);
-        ctx.lineWidth=Math.max(1.2,(s.width_mm||0.2)*scale*1.2);
-        ctx.lineCap='round';
-        ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+        const a = tx(s.x1, s.y1), b = tx(s.x2, s.y2);
+        ctx.strokeStyle = netColor(s.net);
+        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.2);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
       }
     }
-    if ($('#showVias')?.checked && route?.vias) {
+
+    if ($('#showVias').checked && route?.vias) {
       for (const v of route.vias) {
-        const [x,y]=tx(v.x,v.y);
-        ctx.beginPath(); ctx.arc(x,y,Math.max(2,(v.size_mm||0.6)*scale/2),0,Math.PI*2);
-        ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+        const [x, y] = tx(v.x, v.y);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(2, (v.size_mm || 0.6) * scale / 2), 0, Math.PI * 2);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
     }
-    if ($('#showComps')?.checked) {
+
+    if ($('#showComps').checked) {
       for (const c of comps) {
-        const [x,y]=tx(c.x,c.y);
-        const w=Math.max(2,c.w*scale), h=Math.max(2,c.h*scale);
-        ctx.fillStyle = c.locked ? '#6b4c7a' : (c.ref?.match(/^D\\d/) ? '#f58518' : '#4c78a8');
-        if (c.ref==='U1'||c.ref==='BT1') ctx.fillStyle='#e45756';
-        ctx.globalAlpha=0.88; ctx.fillRect(x-w/2,y-h/2,w,h); ctx.globalAlpha=1;
-        if (!c.ref?.match(/^D\\d/)) {
-          ctx.fillStyle='#fff'; ctx.font='10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        const [x, y] = tx(c.x, c.y);
+        const cw = Math.max(2, c.w * scale), ch = Math.max(2, c.h * scale);
+        ctx.fillStyle = c.locked ? '#6b4c7a' : '#4c78a8';
+        if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
+        if (c.ref && /^D\d/.test(c.ref)) ctx.fillStyle = '#f58518';
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(x - cw / 2, y - ch / 2, cw, ch);
+        ctx.globalAlpha = 1;
+        if (c.ref && !/^D\d/.test(c.ref)) {
+          ctx.fillStyle = '#fff';
+          ctx.font = '10px system-ui';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
           ctx.fillText(c.ref, x, y);
         }
       }
     }
+
+    const free = comps.filter(c => !c.locked).length;
+    let stats = `${comps.length} parts (${free} free) · ${Object.keys(data.board.nets || {}).length} nets`;
+    if (route) {
+      stats += ` · ${rname}: ${fmt(route.total_length_mm)} mm, ${route.via_count} vias, ${(route.segments || []).length} segs`;
+    }
+    $('#boardStats').textContent = stats;
+    state.boardDirty = false;
   }
 
-  function drawScoreChart() {
-    const canvas = $('#scoreChart');
-    if (!canvas || !window.Chart) return;
-    const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
-    const labels = Object.keys(score).filter(k => k !== 'total');
-    const values = labels.map(k => score[k] || 0);
-    if (state.scoreChart) state.scoreChart.destroy();
-    state.scoreChart = new Chart(canvas, {
-      type: 'bar',
-      data: { labels, datasets: [{ label: 'Cost', data: values, backgroundColor: 'rgba(91,159,212,0.75)', borderRadius: 4 }] },
-      options: {
-        indexAxis: 'y',
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#8b9bb4' }, grid: { color: '#2a3548' } },
-          y: { ticks: { color: '#e7ecf3', font: { size: 10 } }, grid: { display: false } }
-        }
-      }
-    });
-  }
-
-  // ---------- actions ----------
-  async function startJob(type, params={}) {
+  // ---------- Jobs ----------
+  async function startJob(type, extra = {}) {
     if (!state.live) {
-      alert('Start the server: physics-router serve');
+      alert('Start the server:\n  physics-router serve --port 8765');
       return;
     }
-    // inject route/place params from form if present
-    if (type === 'route_clearance' || type === 'pipeline') {
-      const c = $('#rtClear')?.value, g = $('#rtGrid')?.value;
-      if (c) params.clearance_mm = parseFloat(c);
-      if (g) params.grid_mm = parseFloat(g);
-    }
+    const params = { ...extra };
     if (type === 'place' || type === 'pipeline') {
-      const cand = $('#rtCand')?.value, sa = $('#rtSa')?.value;
+      const cand = $('#rtCand')?.value;
+      const sa = $('#rtSa')?.value;
       if (cand) params.num_candidates = parseInt(cand, 10);
       if (sa) params.sa_iterations = parseInt(sa, 10);
       if (type === 'pipeline') {
-        params.place_params = { num_candidates: params.num_candidates || 4, sa_iterations: params.sa_iterations || 800 };
-        params.route_clearance_params = { clearance_mm: params.clearance_mm || 0.2, grid_mm: params.grid_mm || 0.5 };
+        params.place_params = {
+          num_candidates: params.num_candidates || 4,
+          sa_iterations: params.sa_iterations || 800,
+        };
+        params.route_clearance_params = {
+          clearance_mm: parseFloat($('#rtClear')?.value || '0.2'),
+          grid_mm: parseFloat($('#rtGrid')?.value || '0.5'),
+        };
       }
+    }
+    if (type === 'route_clearance') {
+      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
+      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
     }
     if (type === 'tests' && params.k) {
       params.patterns = [params.k];
+      delete params.k;
     }
     const res = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ type, params }) });
     state.selectedJob = res.job.id;
-    state.side = 'detail';
-    $$('#side .tabs button').forEach(b => b.classList.toggle('active', b.dataset.side === 'detail'));
-    await refreshSnapshot();
+    await pollOnce(true);
   }
 
-  function bindView() {
-    $$('[data-job]').forEach(btn => {
-      btn.onclick = () => startJob(btn.dataset.job).catch(e => alert(e.message));
-    });
-    $('#btnLoadPreset')?.addEventListener('click', async () => {
-      const id = $('#presetSel').value;
-      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: id }) });
-      state.viewer = await api('/api/viewer-data');
-      render();
-    });
-    $('#btnApplyYaml')?.addEventListener('click', async () => {
-      const config_text = $('#yamlEditor').value;
-      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config_text }) });
-      state.viewer = await api('/api/viewer-data');
-      render();
-    });
-    $('#btnSaveYaml')?.addEventListener('click', async () => {
-      await api('/api/config/save', { method: 'POST', body: '{}' });
-      alert('Saved session config under viewer/runs/');
-    });
-    $('#btnApplyQuick')?.addEventListener('click', async () => {
-      const cfg = { ...(state.snap?.config || {}) };
-      cfg.num_candidates = parseInt($('#cfgCand').value, 10);
-      cfg.sa_iterations = parseInt($('#cfgSa').value, 10);
-      cfg.random_seed = parseInt($('#cfgSeed').value, 10);
-      cfg.use_spice = $('#cfgSpice').checked;
-      cfg.use_openems = $('#cfgOpenems').checked;
-      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
-      render();
-    });
-    $('#btnApplyWeights')?.addEventListener('click', async () => {
-      const physics = { ...(state.snap?.config?.physics || {}) };
-      $$('input[data-w]').forEach(inp => { physics[inp.dataset.w] = parseFloat(inp.value); });
-      const cfg = { ...(state.snap?.config || {}), physics };
-      state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config: cfg }) });
-      render();
-    });
-    $$('input[data-w]').forEach(inp => {
-      inp.oninput = () => { inp.parentElement.querySelector('.wval').textContent = parseFloat(inp.value).toFixed(1); };
-    });
-    $('#btnTestsK')?.addEventListener('click', () => {
-      startJob('tests', { k: $('#testK').value }).catch(e => alert(e.message));
-    });
-    $('#btnRefreshResults')?.addEventListener('click', async () => {
-      if (!state.live) return;
-      const r = await api('/api/results');
-      $('#artifactList').innerHTML = (r.files||[]).slice(0,30).map(f =>
-        `<div>${escapeHtml(f.path)} <span class="muted">(${f.size} B)</span></div>`
-      ).join('') || 'No artifacts';
-    });
-    $$('.jobrow').forEach(tr => {
-      tr.onclick = async () => {
-        state.selectedJob = tr.dataset.jid;
-        if (state.live) {
-          const full = await api(`/api/jobs/${tr.dataset.jid}`);
-          $('#resultJson').textContent = JSON.stringify(full.result || full, null, 2);
-        }
-        renderSide();
-      };
-    });
-    ['routeSel','showComps','showRoutes','showVias','showEMI'].forEach(id => {
-      $(`#${id}`)?.addEventListener('change', drawBoard);
-    });
-    $('#layerToggles')?.addEventListener('change', drawBoard);
-  }
-
-  // ---------- boot / poll ----------
-  async function refreshSnapshot() {
-    if (!state.live) return;
-    state.snap = await api('/api/snapshot');
-    try { state.viewer = await api('/api/viewer-data'); } catch (_) {}
-    const s = state.snap.session || {};
+  function updateHeader() {
+    const s = state.snap?.session || {};
     $('#hdrMeta').textContent =
-      `${state.snap.preset} · ${s.components||0} parts · ${s.movable||0} free · ${s.nets||0} nets · v${state.snap.version}`;
-    const running = (state.snap.jobs||[]).filter(j => j.status==='running'||j.status==='pending').length;
-    $('#jobPill').textContent = `${(state.snap.jobs||[]).length} jobs` + (running ? ` · ${running} active` : '');
-    $('#jobPill').className = 'pill' + (running ? ' run' : '');
-    // live-update side + header stats without full re-render when on run views
-    if (state.side === 'jobs' || state.side === 'detail' || state.side === 'log') renderSide();
-    if (['overview','results','board','nets'].includes(state.view)) {
-      // soft refresh content for score/routes
-      const keepScroll = $('#content').scrollTop;
-      render();
-      $('#content').scrollTop = keepScroll;
+      `${state.snap?.preset || '—'} · ${s.components || 0} parts · ${s.movable || 0} free · ${s.nets || 0} nets`;
+  }
+
+  // ---------- Poll: never re-render step panel or destroy chart ----------
+  async function pollOnce(forceViewer = false) {
+    if (!state.live || state.pollBusy) return;
+    state.pollBusy = true;
+    try {
+      const prevRoutes = JSON.stringify(Object.keys(state.snap?.routes || {}));
+      const prevScore = state.chartKey;
+      state.snap = await api('/api/snapshot');
+      updateHeader();
+      updateJobsDock();
+
+      const jobs = state.snap.jobs || [];
+      const justFinished = jobs.some(j =>
+        j.status === 'done' && j.ended_at && (Date.now() / 1000 - j.ended_at) < 3
+      );
+      const running = jobs.some(j => j.status === 'running' || j.status === 'pending');
+
+      if (forceViewer || justFinished || !state.viewer) {
+        state.viewer = await api('/api/viewer-data');
+        updateRouteSelect();
+        if (!state.layersBuilt) updateLayers();
+        updateMetrics();
+        drawBoard();
+      } else if (running) {
+        // light metrics from snapshot only
+        updateMetrics();
+      } else {
+        // snapshot may have new score without full viewer
+        const fp = scoreFingerprint(state.snap?.last_score?.score || {});
+        if (fp && fp !== prevScore) {
+          state.viewer = await api('/api/viewer-data');
+          updateRouteSelect();
+          updateMetrics();
+          drawBoard();
+        }
+      }
+
+      const newRoutes = JSON.stringify(Object.keys(state.snap?.routes || {}));
+      if (newRoutes !== prevRoutes) {
+        state.viewer = await api('/api/viewer-data');
+        updateRouteSelect();
+        updateMetrics();
+        drawBoard();
+      }
+
+      // mark completed steps softly
+      const hasScore = !!(state.snap?.last_score);
+      const hasPlace = !!(state.snap?.last_placement);
+      const hasRoute = Object.keys(state.snap?.routes || {}).length > 0;
+      $$('#steps .step').forEach((el, idx) => {
+        let done = false;
+        if (idx === 0) done = !!state.snap?.preset;
+        if (idx === 1) done = hasScore || hasPlace;
+        if (idx === 2) done = hasRoute;
+        if (idx === 3) done = hasScore && (state.snap?.last_score?.score?.spice_score != null);
+        if (idx < state.step) done = true;
+        el.classList.toggle('done', done && idx !== state.step);
+      });
+    } catch (e) {
+      $('#apiPill').textContent = 'API error';
+      $('#apiPill').className = 'pill err';
+    } finally {
+      state.pollBusy = false;
     }
   }
 
   async function boot() {
-    $$('#nav button').forEach(b => b.onclick = () => {
-      $$('#nav button').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      state.view = b.dataset.view;
-      render();
+    $$('#steps .step').forEach(btn => {
+      btn.addEventListener('click', () => setStep(parseInt(btn.dataset.step, 10)));
     });
-    $$('#side .tabs button').forEach(b => b.onclick = () => {
-      $$('#side .tabs button').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      state.side = b.dataset.side;
-      renderSide();
+    ['routeSel', 'showComps', 'showRoutes', 'showVias', 'showEMI'].forEach(id => {
+      $(`#${id}`).addEventListener('change', drawBoard);
     });
+    $('#layerToggles').addEventListener('change', drawBoard);
+    window.addEventListener('resize', () => drawBoard());
 
     try {
       await api('/api/health');
       state.live = true;
-      $('#apiPill').textContent = 'API live';
+      $('#apiPill').textContent = 'live';
       $('#apiPill').className = 'pill ok';
-      await refreshSnapshot();
-      state.pollTimer = setInterval(async () => {
-        try {
-          const jobs = state.snap?.jobs || [];
-          const busy = jobs.some(j => j.status === 'running' || j.status === 'pending');
-          await refreshSnapshot();
-          // faster poll when busy is handled by always 1s when any job running
-        } catch (e) {
-          $('#apiPill').textContent = 'API error';
-          $('#apiPill').className = 'pill err';
-        }
-      }, 1000);
+      state.snap = await api('/api/snapshot');
+      state.viewer = await api('/api/viewer-data');
+      updateHeader();
+      updateLayers();
+      updateRouteSelect();
+      updateMetrics();
+      renderStepPanel();
+      drawBoard();
+      updateJobsDock();
+
+      // Poll jobs often when busy, slower when idle — never full-page refresh
+      const tick = async () => {
+        const busy = (state.snap?.jobs || []).some(j => j.status === 'running' || j.status === 'pending');
+        await pollOnce(false);
+        setTimeout(tick, busy ? 700 : 2500);
+      };
+      setTimeout(tick, 800);
     } catch {
       state.live = false;
-      $('#offlineBanner').classList.add('show');
+      $('#offline').classList.add('show');
       $('#apiPill').textContent = 'static';
-      $('#apiPill').className = 'pill';
-      // try local viewer_data
       try {
         const r = await fetch('viewer_data.json');
         if (r.ok) {
@@ -819,23 +972,26 @@
             preset: state.viewer.preset || 'static',
             session: state.viewer.session || {},
             config: state.viewer.config,
-            routes: Object.fromEntries(Object.entries(state.viewer.routes||{}).map(([k,v]) => [k, {
-              total_length_mm: v.total_length_mm, via_count: v.via_count,
-              clearance_violations: v.clearance_violations, segments: (v.segments||[]).length
-            }])),
+            config_text: '',
+            routes: state.viewer.routes || {},
             last_score: state.viewer.physics,
             jobs: [],
-            job_types: [],
             presets: [],
           };
-          $('#hdrMeta').textContent = `static · ${state.viewer.board?.components?.length||0} parts`;
+          updateHeader();
+          updateLayers();
+          updateRouteSelect();
+          updateMetrics();
+          renderStepPanel();
+          drawBoard();
         }
-      } catch (_) {}
+      } catch (_) {
+        renderStepPanel();
+        drawBoard();
+      }
     }
-    render();
   }
 
-  window.addEventListener('resize', () => { if (state.view === 'board') drawBoard(); });
   boot();
   </script>
 </body>
