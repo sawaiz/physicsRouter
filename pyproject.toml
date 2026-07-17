@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4"]
+# Native C++ module is built via scripts/build_native.sh (CMake + pybind11), not pip.
 
 [project.scripts]
 physics-router = "physics_router.cli:main"

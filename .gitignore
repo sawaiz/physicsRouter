@@ -35,3 +35,11 @@ viewer/assets/*.glb
 viewer/assets/*.step
 viewer/assets/*.stp
 viewer/assets/*_routed*.kicad_pcb
+
+# Native C++ build tree (rebuild with scripts/build_native.sh)
+native/build/
+native/build-*/
+*.so
+*.dylib
+*.a
+!**/pr_native*.so
