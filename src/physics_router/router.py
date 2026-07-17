@@ -955,28 +955,56 @@ def rubberband_cleanup(
 
     new_segs: list[RouteSegment] = []
     total = 0.0
+    # Paint all copper as obstacles first (same-net later allowed in segment_blocked)
+    for s in result.segments:
+        om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
+
     for net, segs in by_net.items():
-        # Build polylines per layer
-        layer_pts: dict[str, list[tuple[float, float]]] = {}
-        for s in segs:
-            layer_pts.setdefault(s.layer, [])
-            pts = layer_pts[s.layer]
-            if not pts or pts[-1] != (s.x1, s.y1):
-                pts.append((s.x1, s.y1))
-            pts.append((s.x2, s.y2))
         width = segs[0].width_mm if segs else 0.25
-        for layer, pts in layer_pts.items():
-            cleaned = _rubberband(pts, layer, net, om)
-            for i in range(len(cleaned) - 1):
-                x1, y1 = cleaned[i]
-                x2, y2 = cleaned[i + 1]
-                new_segs.append(
-                    RouteSegment(
-                        x1=x1, y1=y1, x2=x2, y2=y2, layer=layer, net=net, width_mm=width
+        # Group into *continuous* polylines per layer (MST edges must not be chained)
+        polylines: dict[str, list[list[tuple[float, float]]]] = {}
+        for s in segs:
+            polylines.setdefault(s.layer, [])
+            chains = polylines[s.layer]
+            a, b = (s.x1, s.y1), (s.x2, s.y2)
+            attached = False
+            for chain in chains:
+                if chain[-1] == a:
+                    chain.append(b)
+                    attached = True
+                    break
+                if chain[-1] == b:
+                    chain.append(a)
+                    attached = True
+                    break
+                if chain[0] == a:
+                    chain.insert(0, b)
+                    attached = True
+                    break
+                if chain[0] == b:
+                    chain.insert(0, a)
+                    attached = True
+                    break
+            if not attached:
+                chains.append([a, b])
+        for layer, chains in polylines.items():
+            for pts in chains:
+                cleaned = _rubberband(pts, layer, net, om)
+                for i in range(len(cleaned) - 1):
+                    x1, y1 = cleaned[i]
+                    x2, y2 = cleaned[i + 1]
+                    new_segs.append(
+                        RouteSegment(
+                            x1=x1,
+                            y1=y1,
+                            x2=x2,
+                            y2=y2,
+                            layer=layer,
+                            net=net,
+                            width_mm=width,
+                        )
                     )
-                )
-                total += _dist((x1, y1), (x2, y2))
-                om.paint_trace(x1, y1, x2, y2, layer, width, net)
+                    total += _dist((x1, y1), (x2, y2))
 
     out = RouteResult(
         segments=new_segs,
