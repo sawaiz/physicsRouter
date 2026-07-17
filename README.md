@@ -291,6 +291,7 @@ physics-router export-openems \
 | `router` | Clearance-aware free-angle TopoR core |
 | `routing_strategies` | Pre-route tests, net order, multilayer DRC policy |
 | `openems_export` | Mesh/geometry from **KiCad stackup** + Gerbers |
+| `kicad_tools` | Official **DRC**, **SVG plots**, **3D render**, pcbnew plot |
 | `cli` | `physics-router` entry point |
 
 ## Setup
@@ -337,7 +338,7 @@ Route geometry: [`examples/halo-90/route_guide.json`](examples/halo-90/route_gui
 
 > **Note:** Dense charlieplex geometry still reports many soft clearance-violation flags at coarse grid (router falls back to straight free-angle links). Finer grids improve legality but cost much more CPU — use `pre-route` recommendations and iterate.
 
-### Visualizations
+### Visualizations (analysis)
 
 ![HALO-90 placement overview](docs/images/placement_overview.png)
 
@@ -358,6 +359,66 @@ Route geometry: [`examples/halo-90/route_guide.json`](examples/halo-90/route_gui
 ![Measured runtimes](docs/images/runtimes.png)
 
 *Wall-clock times for the steps above on the machine that generated these assets.*
+
+### Official KiCad renders (pcbnew / kicad-cli)
+
+Board graphics below are produced by **KiCad itself**, not matplotlib:
+
+- **2D layer plots** — `kicad-cli pcb export svg` (plot engine) and **pcbnew** `PLOT_CONTROLLER`
+- **3D views** — `kicad-cli pcb render`
+- **DRC-validated copper** — `kicad-cli pcb drc --format json`
+
+```bash
+# Official DRC on any board
+physics-router drc --pcb third_party/halo-90/pcb/halo-90.kicad_pcb --out-dir examples/halo-90/kicad_validation/drc
+
+# SVG plots + 3D PNGs via kicad-cli / pcbnew
+physics-router render --pcb third_party/halo-90/pcb/halo-90.kicad_pcb --out-dir examples/halo-90/kicad_validation/renders
+
+# Bundle into docs/images/kicad
+python scripts/generate_kicad_renders.py
+```
+
+Route → write PCB → auto-DRC:
+
+```bash
+physics-router route --config examples/halo-90/placement_config.yaml \
+  --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
+  --out-pcb /tmp/halo_routed.kicad_pcb --drc
+```
+
+#### DRC snapshot (released HALO-90 board)
+
+| Metric | Value |
+|--------|------:|
+| KiCad version | 10.0.4 |
+| Errors | 22 |
+| Warnings | 207 |
+| Copper-related issues | 13 |
+| Unconnected | 0 |
+
+Full JSON: [`examples/halo-90/kicad_validation/drc_summary.json`](examples/halo-90/kicad_validation/drc_summary.json).  
+Many hits are legacy/footprint/courtyard warnings on this open design; copper issues are tracked separately so autoroute quality can be gated on `copper_violation_count`.
+
+#### 3D (kicad-cli pcb render)
+
+![KiCad 3D top](docs/images/kicad/kicad_3d_top.png)
+
+![KiCad 3D isometric](docs/images/kicad/kicad_3d_isometric.png)
+
+![KiCad 3D bottom](docs/images/kicad/kicad_3d_bottom.png)
+
+#### Copper layers (kicad-cli SVG → PNG)
+
+| F.Cu | In1.Cu |
+|:----:|:------:|
+| ![F.Cu](docs/images/kicad/kicad_plot_F_Cu.png) | ![In1.Cu](docs/images/kicad/kicad_plot_In1_Cu.png) |
+
+| In2.Cu | B.Cu |
+|:------:|:----:|
+| ![In2.Cu](docs/images/kicad/kicad_plot_In2_Cu.png) | ![B.Cu](docs/images/kicad/kicad_plot_B_Cu.png) |
+
+Direct pcbnew plots are also stored under `docs/images/kicad/pcbnew_*.svg`.
 
 ## Training data
 

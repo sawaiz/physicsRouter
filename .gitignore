@@ -19,3 +19,4 @@ venv/
 third_party/
 examples/halo-90/placement_result.json
 examples/halo-90/openems_export/
+examples/halo-90/kicad_validation/renders/

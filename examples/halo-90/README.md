@@ -115,6 +115,23 @@ Regenerate with `python scripts/generate_docs_images.py` from the repo root (nee
 | route-guide | ~11 s | 207 segs, 854 mm |
 | route (grid 1 mm) | ~35 s | 208 segs, 4-layer DRC policy |
 
+## KiCad DRC + official renders
+
+```bash
+physics-router drc --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
+  --out-dir examples/halo-90/kicad_validation/drc
+physics-router render --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
+  --out-dir examples/halo-90/kicad_validation/renders
+python scripts/generate_kicad_renders.py
+```
+
+| Artifact | Path |
+|----------|------|
+| DRC summary | `kicad_validation/drc_summary.json` |
+| Layer SVGs (cli) | `kicad_validation/renders/svg_cli/` |
+| Layer SVGs (pcbnew) | `kicad_validation/renders/svg_pcbnew/` |
+| 3D PNGs | `docs/images/kicad/kicad_3d_*.png` |
+
 ## Licence
 
 HALO-90 content remains under its upstream licence (see `third_party/halo-90`). This folder only adds physicsRouter labels and scripts.

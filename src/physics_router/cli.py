@@ -17,6 +17,13 @@ from physics_router.kicad_io import (
 )
 from physics_router.placement import optimize_placement, result_to_dict
 from physics_router.design_rules import load_design_rules
+from physics_router.kicad_tools import (
+    find_kicad_cli,
+    find_kicad_python,
+    render_board_suite,
+    run_drc,
+    validate_copper_board,
+)
 from physics_router.router import (
     append_routes_to_kicad_pcb,
     clearance_aware_route,
@@ -277,6 +284,17 @@ def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
     is_flag=True,
     help="Do not load stackup/DRC from KiCad (use defaults)",
 )
+@click.option(
+    "--drc/--no-drc",
+    default=True,
+    help="After --out-pcb, run KiCad DRC on the written board (requires kicad-cli)",
+)
+@click.option(
+    "--drc-out",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory for DRC JSON/summary (default: alongside --out-pcb)",
+)
 def route_cmd(
     config_path: Path,
     pcb_path: Path | None,
@@ -287,6 +305,8 @@ def route_cmd(
     no_vias: bool,
     guide_only: bool,
     ignore_kicad_rules: bool,
+    drc: bool,
+    drc_out: Path | None,
 ) -> None:
     """Clearance-aware multilayer TopoR-style autorouter (respects KiCad DRC/stackup)."""
     config = load_config(config_path)
@@ -340,6 +360,73 @@ def route_cmd(
             sys.exit(2)
         append_routes_to_kicad_pcb(str(pcb_path), str(out_pcb), routes)
         click.echo(f"Wrote routed PCB to {out_pcb}")
+        if drc:
+            if find_kicad_cli() is None:
+                click.echo("kicad-cli not found — skip DRC (set KICAD_CLI)", err=True)
+            else:
+                ddir = drc_out or (out_pcb.parent / f"{out_pcb.stem}_drc")
+                summary = validate_copper_board(out_pcb, ddir)
+                click.echo(
+                    f"KiCad DRC: errors={summary['error_count']} "
+                    f"warnings={summary['warning_count']} "
+                    f"copper_issues={summary['copper_violation_count']} "
+                    f"passed={summary['passed']}"
+                )
+                click.echo(f"  report → {ddir / 'drc.json'}")
+                top = list(summary.get("by_type", {}).items())[:8]
+                if top:
+                    click.echo("  top issues: " + ", ".join(f"{k}={v}" for k, v in top))
+
+
+@main.command("drc")
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output directory for drc.json + summary",
+)
+@click.option("--refill-zones", is_flag=True, help="Refill zones before DRC")
+def drc_cmd(pcb_path: Path, out_dir: Path | None, refill_zones: bool) -> None:
+    """Run official KiCad DRC (kicad-cli) and summarize copper violations."""
+    if find_kicad_cli() is None:
+        raise click.ClickException("kicad-cli not found. Install KiCad or set KICAD_CLI.")
+    out_dir = out_dir or Path("drc_out")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report = run_drc(pcb_path, out_dir / "drc.json", refill_zones=refill_zones)
+    summary = report.to_dict()
+    (out_dir / "drc_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    click.echo(json.dumps(summary, indent=2))
+    if not report.passed:
+        sys.exit(2)
+
+
+@main.command("render")
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=Path("kicad_renders"),
+    help="Output directory for SVG plots and 3D PNGs",
+)
+@click.option(
+    "--layers",
+    default="F.Cu,B.Cu,In1.Cu,In2.Cu,Edge.Cuts,F.SilkS",
+    help="Comma-separated KiCad layer names",
+)
+@click.option("--no-pcbnew", is_flag=True, help="Skip direct pcbnew PLOT_CONTROLLER path")
+def render_cmd(pcb_path: Path, out_dir: Path, layers: str, no_pcbnew: bool) -> None:
+    """Render board with official KiCad tools (kicad-cli SVG/3D + optional pcbnew)."""
+    if find_kicad_cli() is None and find_kicad_python() is None:
+        raise click.ClickException("Neither kicad-cli nor KiCad Python/pcbnew found.")
+    layer_list = [x.strip() for x in layers.split(",") if x.strip()]
+    result = render_board_suite(
+        pcb_path,
+        out_dir,
+        use_pcbnew=not no_pcbnew,
+        layers=layer_list,
+    )
+    click.echo(json.dumps(result, indent=2))
 
 
 @main.command("route-guide")

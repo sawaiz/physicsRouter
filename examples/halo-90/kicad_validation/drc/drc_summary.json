@@ -1,0 +1,253 @@
+{
+  "source": "/Users/sawaiz/physicsRouter/third_party/halo-90/pcb/halo-90.kicad_pcb",
+  "kicad_version": "10.0.4",
+  "passed": false,
+  "error_count": 22,
+  "warning_count": 207,
+  "unconnected_count": 0,
+  "violation_count": 229,
+  "copper_violation_count": 13,
+  "by_type": {
+    "text_height": 100,
+    "text_thickness": 91,
+    "track_dangling": 9,
+    "malformed_courtyard": 7,
+    "silk_over_copper": 7,
+    "solder_mask_bridge": 5,
+    "nonmirrored_text_on_back_layer": 4,
+    "copper_edge_clearance": 2,
+    "shorting_items": 1,
+    "via_dangling": 1,
+    "lib_footprint_mismatch": 1,
+    "lib_footprint_issues": 1
+  },
+  "copper_sample": [
+    {
+      "type": "shorting_items",
+      "severity": "error",
+      "description": "Items shorting two nets (nets GND and )",
+      "items": [
+        {
+          "description": "Track [GND] on Front, length 0.6556 mm",
+          "pos": {
+            "x": 0.636396,
+            "y": -2.05061
+          },
+          "uuid": "4f56be0a-10c7-4c74-85f9-62233fff2881"
+        },
+        {
+          "description": "Pad 6 [<no net>] of U1 on Front",
+          "pos": {
+            "x": 0.636396,
+            "y": -2.05061
+          },
+          "uuid": "7bc52850-a75b-4935-97dc-c3d80e6b7142"
+        }
+      ]
+    },
+    {
+      "type": "copper_edge_clearance",
+      "severity": "error",
+      "description": "Board edge clearance violation (board setup constraints edge clearance 0.0100 mm; actual 0.0000 mm)",
+      "items": [
+        {
+          "description": "Arc on Edge.Cuts",
+          "pos": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "uuid": "76c4c142-3392-49b6-9d5c-7e6ef45c82c4"
+        },
+        {
+          "description": "Pad 1 [+3V] of BT1 on Back",
+          "pos": {
+            "x": -11.25,
+            "y": 0.0
+          },
+          "uuid": "0f1a819a-9e9e-45a3-b2c1-51119eaeab02"
+        }
+      ]
+    },
+    {
+      "type": "copper_edge_clearance",
+      "severity": "error",
+      "description": "Board edge clearance violation (board setup constraints edge clearance 0.0100 mm; actual 0.0000 mm)",
+      "items": [
+        {
+          "description": "Arc on Edge.Cuts",
+          "pos": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "uuid": "992e58e2-26f4-4af9-a52d-a7feb3699e09"
+        },
+        {
+          "description": "Pad 1 [+3V] of BT1 on Back",
+          "pos": {
+            "x": 11.25,
+            "y": 0.0
+          },
+          "uuid": "eae7723a-7300-442a-91c2-ec9dff04a593"
+        }
+      ]
+    },
+    {
+      "type": "via_dangling",
+      "severity": "warning",
+      "description": "Via is not connected or connected on only one layer",
+      "items": [
+        {
+          "description": "Via [<no net>] on Front - Back",
+          "pos": {
+            "x": 5.2586,
+            "y": 3.8206
+          },
+          "uuid": "dedd27e5-0125-4ef9-934f-8c4ede0d8a2d"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-0] on Front, length 0.1317 mm",
+          "pos": {
+            "x": 2.4561,
+            "y": 7.133
+          },
+          "uuid": "70e99313-1a77-4aba-b6ac-abb112f91724"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-0] on Front, length 0.1649 mm",
+          "pos": {
+            "x": 8.1839,
+            "y": 4.725
+          },
+          "uuid": "d6318207-9dc4-4609-9191-d211307305d4"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-7] on In2.Cu, length 1.0000 mm",
+          "pos": {
+            "x": 10.8329,
+            "y": 1.9101
+          },
+          "uuid": "ef21b86f-85e8-4bfe-b3c5-bb519120cac3"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-5] on In1.Cu, length 0.1553 mm",
+          "pos": {
+            "x": -6.1825,
+            "y": -6.4021
+          },
+          "uuid": "6c089b6b-f0e0-4f91-91bd-bfd1051362e4"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-5] on In1.Cu, length 0.1272 mm",
+          "pos": {
+            "x": -1.0143,
+            "y": -7.2171
+          },
+          "uuid": "c6b78125-17f4-421e-acf9-32be40f361a9"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-4] on In1.Cu, length 0.1649 mm",
+          "pos": {
+            "x": -1.3152,
+            "y": -9.358
+          },
+          "uuid": "b468d517-1794-45ab-90d5-629638fa3dea"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-4] on In1.Cu, length 0.1317 mm",
+          "pos": {
+            "x": 3.9977,
+            "y": -6.3977
+          },
+          "uuid": "f752ecc4-eb14-4dec-a9bb-4d488e39642b"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-1] on Front, length 0.1272 mm",
+          "pos": {
+            "x": 6.3116,
+            "y": 3.644
+          },
+          "uuid": "c32c90f7-bbab-4bec-bffd-2ab0a01ee456"
+        }
+      ]
+    },
+    {
+      "type": "track_dangling",
+      "severity": "warning",
+      "description": "Track has unconnected end",
+      "items": [
+        {
+          "description": "Track [CPX-1] on Front, length 0.1553 mm",
+          "pos": {
+            "x": 8.8512,
+            "y": -0.9303
+          },
+          "uuid": "d1c00806-e9b1-44ed-a04c-fe8b492dd0ac"
+        }
+      ]
+    }
+  ],
+  "raw_path": "/Users/sawaiz/physicsRouter/examples/halo-90/kicad_validation/drc/drc.json",
+  "exit_code": 0,
+  "tool": {
+    "kicad_cli": "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+    "kicad_python": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/bin/python3.9",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+  },
+  "copper_ok": false
+}
