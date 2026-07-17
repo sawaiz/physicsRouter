@@ -358,21 +358,21 @@
     // 1 scene unit = 1 mm after GLB m→mm fix. FOV for close-up PCB viewing.
     const camera = new THREE.PerspectiveCamera(35, w / h, 0.01, 5000);
     camera.up.set(0, 0, 1); // Z-up
-    // Default pose looking down on ~24 mm board (mm units)
-    camera.position.set(28, -32, 24);
+    // Default: high above XY ground so board face is visible (not edge-on)
+    camera.position.set(18, -22, 36);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.target.set(0, 0, 1);
+    controls.target.set(0, 0, 0.5);
     controls.screenSpacePanning = true;
     controls.zoomSpeed = 1.35;
     controls.panSpeed = 0.9;
-    // Allow microscopic zoom (zoom limit was blocking close-ups)
-    controls.minDistance = 0.2;   // 0.2 mm
+    controls.minDistance = 0.2;
     controls.maxDistance = 5000;
-    controls.maxPolarAngle = Math.PI * 0.98; // almost under-board
-    controls.minPolarAngle = 0.02;
+    // Keep camera above the ground plane (board stays face-on-ish)
+    controls.maxPolarAngle = Math.PI * 0.48; // from +Z axis; <90° stays above XY
+    controls.minPolarAngle = 0.05;
 
     // Studio lighting (positions in Z-up frame)
     const hemi = new THREE.HemisphereLight(0xd8e4f8, 0x1a2230, 0.9);
@@ -450,20 +450,20 @@
    */
   function frameCameraToBox(box, opts = {}) {
     if (!three.camera || !three.controls || !box || box.isEmpty()) return;
+    // elevation: angle from horizon toward +Z (π/2 = straight top-down)
     const fill = opts.fill ?? 0.85;
-    // elevation from XY plane toward +Z; azimuth in XY
-    const elevation = opts.elevation ?? 0.55;
-    const azimuth = opts.azimuth ?? 0.85;
+    const elevation = opts.elevation ?? 0.95;
+    const azimuth = opts.azimuth ?? 0.7;
 
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     const target = center.clone();
-    target.z = Math.max(center.z, size.z * 0.4); // aim at component height
+    target.z = Math.max(box.min.z + size.z * 0.5, 0.3);
 
-    // Board extent in plane XY
+    // Board lies in XY — use X/Y span for framing (ignore thickness)
     const planeW = Math.max(size.x, 1);
     const planeH = Math.max(size.y, 1);
-    const maxDim = Math.max(planeW, planeH, size.z, 1);
+    const maxDim = Math.max(planeW, planeH, 1);
 
     const fovY = three.camera.fov * (Math.PI / 180);
     const aspect = Math.max(three.camera.aspect || 1, 0.2);
@@ -471,19 +471,19 @@
 
     const distForH = (planeH / 2) / Math.tan(fovY / 2) / fill;
     const distForW = (planeW / 2) / Math.tan(fovX / 2) / fill;
-    let dist = Math.max(distForH, distForW, maxDim * 0.55);
+    let dist = Math.max(distForH, distForW, maxDim * 0.7);
 
-    // Direction in Z-up spherical coords
+    // Z-up spherical: elevation from XY plane so board faces camera, // ground
+    const elev = Math.min(Math.max(elevation, 0.35), 1.45);
     const dir = new THREE.Vector3(
-      Math.cos(elevation) * Math.sin(azimuth),
-      Math.cos(elevation) * Math.cos(azimuth),
-      Math.sin(elevation),
+      Math.cos(elev) * Math.sin(azimuth),
+      Math.cos(elev) * Math.cos(azimuth),
+      Math.sin(elev),
     ).normalize();
 
     three.camera.up.set(0, 0, 1);
     three.camera.position.copy(target).addScaledVector(dir, dist);
     three.controls.target.copy(target);
-    // Zoom: allow almost surface contact — previous minDistance (~0.25*board) blocked close-ups
     three.controls.minDistance = Math.max(0.15, maxDim * 0.008);
     three.controls.maxDistance = Math.max(200, maxDim * 40);
     three.camera.near = Math.max(0.01, dist / 500);
@@ -493,12 +493,13 @@
 
     placeLightsAround(center, maxDim);
     if (three.grid) {
-      const gSpan = Math.max(50, Math.max(planeW, planeH) * 3.5);
+      const gSpan = Math.max(50, maxDim * 3.5);
       three.grid.scale.set(gSpan / 80, 1, gSpan / 80);
-      three.grid.position.set(center.x, center.y, box.min.z - 0.05);
+      // Ground under the board (z slightly below)
+      three.grid.position.set(center.x, center.y, Math.min(0, box.min.z) - 0.05);
     }
     if (three.scene?.fog) {
-      three.scene.fog.density = 0.4 / Math.max(dist, 15);
+      three.scene.fog.density = 0.35 / Math.max(dist, 15);
     }
     three.lastBox = box.clone();
     three.boardMm = { x: size.x, y: size.y, z: size.z };
@@ -595,7 +596,7 @@
           return;
         }
 
-        // KiCad mm Z-up; optional VIEW_ROT_180 so 3D matches 2D/KiCad on-screen.
+        // World: Z-up, ground = XY grid. Board must lie in XY (normal = +Z).
         const root = new THREE.Group();
         root.name = 'kicad-board';
         root.add(model);
@@ -604,19 +605,63 @@
         let box0 = new THREE.Box3().setFromObject(root);
         let size0 = box0.getSize(new THREE.Vector3());
         const max0 = Math.max(size0.x, size0.y, size0.z);
-        let unitNote = 'mm (native GLB)';
+        let unitNote = 'mm';
         if (max0 > 0 && max0 < 0.5) {
           root.scale.setScalar(1000); // m → mm
-          unitNote = 'mm (GLB metres×1000)';
+          unitNote = 'mm (×1000 from m)';
           root.updateMatrixWorld(true);
           box0 = new THREE.Box3().setFromObject(root);
           size0 = box0.getSize(new THREE.Vector3());
         }
-        if (VIEW_ROT_180) {
-          // 180° about Z: (x,y) → (-x,-y), same as 2D viewXY
-          root.rotation.z = Math.PI;
-          unitNote += ' · view 180°';
+
+        // Flatten: rotate so the thinnest AABB axis becomes +Z (board // ground)
+        // KiCad/OCC sometimes exports Y-up (board in XZ) which looked edge-on.
+        root.updateMatrixWorld(true);
+        box0 = new THREE.Box3().setFromObject(root);
+        size0 = box0.getSize(new THREE.Vector3());
+        const ax = [
+          { a: 'x', s: size0.x },
+          { a: 'y', s: size0.y },
+          { a: 'z', s: size0.z },
+        ].sort((u, v) => u.s - v.s);
+        const thin = ax[0].a;
+        if (thin === 'y') {
+          root.rotation.x = -Math.PI / 2; // Y-up board → XY
+          unitNote += ' · flat Rx-90';
+        } else if (thin === 'x') {
+          root.rotation.y = Math.PI / 2;
+          unitNote += ' · flat Ry+90';
+        } else {
+          unitNote += ' · already XY';
         }
+        // In-plane 180° to match 2D / KiCad hook-at-top (viewXY)
+        if (VIEW_ROT_180) {
+          root.rotation.z += Math.PI;
+          unitNote += ' · 180°';
+        }
+
+        root.updateMatrixWorld(true);
+        // Sit board on the ground plane (z=0)
+        const boxSit = new THREE.Box3().setFromObject(root);
+        root.position.z -= boxSit.min.z;
+
+        // Align GLB XY to footprint centroid so routes (viewXY) overlay correctly
+        root.updateMatrixWorld(true);
+        const boxAl = new THREE.Box3().setFromObject(root);
+        const glbC = boxAl.getCenter(new THREE.Vector3());
+        const comps = state.viewer?.board?.components || [];
+        let cx = 0, cy = 0;
+        if (comps.length) {
+          for (const c of comps) {
+            const [vx, vy] = viewXY(c.x, c.y);
+            cx += vx;
+            cy += vy;
+          }
+          cx /= comps.length;
+          cy /= comps.length;
+        }
+        root.position.x += cx - glbC.x;
+        root.position.y += cy - glbC.y;
 
         let meshCount = 0;
         root.traverse((ch) => {
@@ -641,27 +686,28 @@
         three.gKicad.add(root);
         three.gKicad.visible = true;
 
-        // Frame on union of GLB + component/route coords (same space)
+        // Frame: board in XY, camera above (+Z) — parallel to ground
         root.updateMatrixWorld(true);
         const box2 = new THREE.Box3().setFromObject(root);
-        const comps = state.viewer?.board?.components || [];
         for (const c of comps) {
-          box2.expandByPoint(new THREE.Vector3(c.x, c.y, 0));
-          box2.expandByPoint(new THREE.Vector3(c.x, c.y, 2));
+          const [vx, vy] = viewXY(c.x, c.y);
+          box2.expandByPoint(new THREE.Vector3(vx, vy, 0));
+          box2.expandByPoint(new THREE.Vector3(vx, vy, 3));
         }
         const size2 = box2.getSize(new THREE.Vector3());
-        frameCameraToBox(box2, { fill: 0.88, elevation: 0.62, azimuth: 0.9 });
+        // Elevation ~55° from horizon → clear top-down, board face visible, not edge-on
+        frameCameraToBox(box2, { fill: 0.85, elevation: 0.95, azimuth: 0.7 });
         applyVisibility();
 
         const detail = state.viewer?.assets?.detail || 'KiCad GLB';
-        const okScale = size2.x > 10 && size2.x < 100;
+        const okFlat = size2.z < Math.max(size2.x, size2.y) * 0.35; // thickness << diameter
         $('#boardStats').textContent =
-          `KiCad 3D · Z-up · shared XY with routes · ${meshCount} meshes · ` +
-          `${fmt(size2.x, 2)}×${fmt(size2.y, 2)}×${fmt(size2.z, 2)} mm · ${unitNote}` +
-          (okScale ? ' · scale OK' : ' · check scale') +
+          `KiCad 3D · board // ground (XY) · ${meshCount} meshes · ` +
+          `${fmt(size2.x, 1)}×${fmt(size2.y, 1)} mm · t≈${fmt(size2.z, 2)} mm · ${unitNote}` +
+          (okFlat ? ' · flat OK' : ' · check flat') +
           ` · ${detail}`;
-        console.info('[physicsRouter] GLB loaded (aligned to KiCad coords)', resolved, {
-          meshCount, sizeMm: size2, nativeMax: max0, unitNote,
+        console.info('[physicsRouter] GLB flat on XY ground', resolved, {
+          meshCount, sizeMm: size2, thin, unitNote,
         });
       },
       (ev) => {
