@@ -4,6 +4,7 @@ Prefer official KiCad outputs for documentation and validation:
 - ``kicad-cli pcb drc`` — design rule check JSON/report
 - ``kicad-cli pcb export svg`` — 2D layer plots (pcbnew plot engine)
 - ``kicad-cli pcb render`` — 3D board render to PNG
+- ``kicad-cli pcb export step`` — 3D STEP with tracks/pads/soldermask/silkscreen
 - Optional direct ``pcbnew`` (KiCad-bundled Python) PLOT_CONTROLLER for SVG/PDF
 
 Environment overrides:
@@ -419,6 +420,121 @@ print("OK")
         Path(script_path).unlink(missing_ok=True)
 
     return sorted(out_dir.glob("*.svg"))
+
+
+def export_step(
+    pcb_path: str | Path,
+    out_step: str | Path,
+    *,
+    include_tracks: bool = True,
+    include_pads: bool = True,
+    include_zones: bool = True,
+    include_inner_copper: bool = True,
+    include_silkscreen: bool = True,
+    include_soldermask: bool = True,
+    board_only: bool = False,
+    no_components: bool = False,
+    fuse_shapes: bool = False,
+    force: bool = True,
+    net_filter: str = "",
+    timeout_s: float = 600,
+) -> Path:
+    """Export STEP with copper + soldermask + silkscreen for EM/mechanical sims.
+
+    KiCad 8+ ``pcb export step`` can embed tracks/pads/zones and mask/silk faces,
+    which gives OpenEMS / FEM tools a much more accurate board model than
+    extruded rectangles alone.
+    """
+    cli = find_kicad_cli()
+    if cli is None:
+        raise FileNotFoundError("kicad-cli not found")
+    pcb_path = Path(pcb_path).resolve()
+    out_step = Path(out_step)
+    out_step.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [str(cli), "pcb", "export", "step", "-o", str(out_step)]
+    if force:
+        cmd.append("--force")
+    if board_only:
+        cmd.append("--board-only")
+    if no_components:
+        cmd.append("--no-components")
+    if include_tracks:
+        cmd.append("--include-tracks")
+    if include_pads:
+        cmd.append("--include-pads")
+    if include_zones:
+        cmd.append("--include-zones")
+    if include_inner_copper:
+        cmd.append("--include-inner-copper")
+    if include_silkscreen:
+        cmd.append("--include-silkscreen")
+    if include_soldermask:
+        cmd.append("--include-soldermask")
+    if fuse_shapes:
+        cmd.append("--fuse-shapes")
+    if net_filter:
+        cmd.extend(["--net-filter", net_filter])
+    cmd.append(str(pcb_path))
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    if proc.returncode != 0 or not out_step.exists():
+        raise RuntimeError(f"STEP export failed: {proc.stderr or proc.stdout}")
+    return out_step
+
+
+def export_simulation_bundle(
+    pcb_path: str | Path,
+    out_dir: str | Path,
+    *,
+    nets_filter: str = "",
+    board_only: bool = True,
+) -> dict[str, Any]:
+    """Export STEP (+ optional net-filtered STEP) for OpenEMS / FEM pipelines."""
+    pcb_path = Path(pcb_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    full = export_step(
+        pcb_path,
+        out_dir / f"{pcb_path.stem}_full.step",
+        board_only=board_only,
+        no_components=board_only,
+        include_tracks=True,
+        include_pads=True,
+        include_zones=True,
+        include_inner_copper=True,
+        include_silkscreen=True,
+        include_soldermask=True,
+    )
+    result: dict[str, Any] = {
+        "pcb": str(pcb_path),
+        "step_full": str(full),
+        "size_bytes": full.stat().st_size,
+        "notes": [
+            "STEP includes tracks, pads, zones, inner copper, soldermask, silkscreen",
+            "Import into FreeCAD/CadQuery/OpenEMS converters as needed",
+        ],
+    }
+    if nets_filter:
+        filtered = export_step(
+            pcb_path,
+            out_dir / f"{pcb_path.stem}_nets.step",
+            board_only=True,
+            no_components=True,
+            include_tracks=True,
+            include_pads=True,
+            include_zones=True,
+            include_inner_copper=True,
+            include_silkscreen=False,
+            include_soldermask=True,
+            net_filter=nets_filter,
+        )
+        result["step_nets"] = str(filtered)
+        result["net_filter"] = nets_filter
+    (out_dir / "step_manifest.json").write_text(
+        json.dumps(result, indent=2) + "\n", encoding="utf-8"
+    )
+    return result
 
 
 def validate_copper_board(

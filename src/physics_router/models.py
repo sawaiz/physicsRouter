@@ -89,6 +89,11 @@ class PhysicsWeights(BaseModel):
     emi_proxy: float = 2.0
     spice_score: float = 4.0
     openems_score: float = 4.0
+    # High-impact physics extensions
+    ir_drop: float = 3.0
+    loop_inductance: float = 3.5
+    return_path: float = 2.5
+    matrix_length_match: float = 3.0
 
 
 class PlacementConfig(BaseModel):
@@ -189,6 +194,10 @@ class ScoreBreakdown(BaseModel):
     emi_proxy: float = 0.0
     spice_score: float = 0.0
     openems_score: float = 0.0
+    ir_drop: float = 0.0
+    loop_inductance: float = 0.0
+    return_path: float = 0.0
+    matrix_length_match: float = 0.0
     total: float = 0.0
     notes: list[str] = Field(default_factory=list)
 
@@ -204,6 +213,10 @@ class ScoreBreakdown(BaseModel):
             "emi_proxy": self.emi_proxy,
             "spice_score": self.spice_score,
             "openems_score": self.openems_score,
+            "ir_drop": self.ir_drop,
+            "loop_inductance": self.loop_inductance,
+            "return_path": self.return_path,
+            "matrix_length_match": self.matrix_length_match,
             "total": self.total,
         }
 
