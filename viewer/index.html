@@ -1025,28 +1025,26 @@
 
   function panelRoute() {
     return `
+      <p class="hint">Organic <strong>TopoR free-angle</strong> routing only. Progress draws live on the canvas and 3D overlay as each net finishes.</p>
       <div class="row2">
         <div><label class="field">Clearance mm</label><input type="number" id="rtClear" step="0.05" value="0.2"/></div>
         <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.1" value="0.5"/></div>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-job="pre_route">Pre-route</button>
-        <button type="button" class="btn" data-job="route_guide">Guide</button>
-        <button type="button" class="btn primary" data-job="route_clearance">Clearance route</button>
+        <button type="button" class="btn" data-job="pre_route">Pre-route check</button>
+        <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">▶ TopoR free-angle route</button>
       </div>
-      <h2 style="font-size:0.78rem;margin:0.65rem 0 0.35rem;color:var(--muted)">2D KiCad-style preview · pick a variant</h2>
-      <div class="variant-row" id="routeVariants"></div>
+      <div id="routeLiveBar" class="sim-chip" style="margin:0.45rem 0">Idle — start TopoR to see live copper</div>
       <div class="kicad-layers" id="kicadLayerToggles"></div>
       <canvas id="route2d" width="720" height="380"></canvas>
-      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Run Guide or Clearance to populate variants.</p>
-      <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run a route</div>
+      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Live preview updates as nets complete.</p>
+      <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run TopoR</div>
       <div class="actions">
         <button type="button" class="btn primary" id="btnApplyRoute">Apply to KiCad PCB</button>
         <button type="button" class="btn good" id="btnApplyRoute3d">Apply + rebuild 3D</button>
       </div>
       <p class="muted" id="routeApplyStatus" style="font-size:0.72rem"></p>
-      <div id="routeTable"></div>
-      <div id="netReportTable" style="margin-top:0.5rem;max-height:140px;overflow:auto"></div>`;
+      <div id="netReportTable" style="margin-top:0.5rem;max-height:160px;overflow:auto"></div>`;
   }
 
   function panelSim() {
@@ -1150,16 +1148,17 @@
 
   async function applySelectedRoute(rebuild3d) {
     if (!state.live) return alert('physics-router serve required');
-    const variant = state.selectedRoute
-      || state.snap?.selected_route
-      || Object.keys(state.viewer?.routes || state.snap?.routes || {})[0];
-    if (!variant) return alert('No route variant — run Guide or Clearance first');
-    $('#routeApplyStatus').textContent = `Applying ${variant}…`;
+    const variant = 'topor';
+    const routes = getRouteVariants();
+    if (!routes.topor && !Object.keys(routes).length) {
+      return alert('No TopoR route yet — run TopoR free-angle route first');
+    }
+    $('#routeApplyStatus').textContent = 'Applying TopoR copper to KiCad…';
     await api('/api/routes/select', { method: 'POST', body: JSON.stringify({ variant }) });
     await startJob('apply_route_pcb', { variant, rebuild_3d: !!rebuild3d });
     $('#routeApplyStatus').textContent = rebuild3d
-      ? `Applied ${variant} + 3D rebuild queued — watch Progress dock`
-      : `Applied ${variant} to KiCad — use “Apply + rebuild 3D” or Simulate → Rebuild board 3D`;
+      ? 'Applied TopoR + 3D rebuild — watch Progress dock'
+      : 'Applied TopoR to KiCad — use Apply + rebuild 3D for GLB with copper';
   }
 
   function setStep(i) {
@@ -1255,88 +1254,59 @@
   }
 
   function fillRouteTable() {
-    const el = $('#routeTable');
-    if (!el) return;
     const routes = getRouteVariants();
-    const keys = Object.keys(routes);
-    if (!state.selectedRoute) {
-      state.selectedRoute = state.snap?.selected_route || (keys.includes('topor') ? 'topor' : keys[0] || null);
-    }
-    // Variant picker buttons
-    const varEl = $('#routeVariants');
-    if (varEl) {
-      if (!keys.length) {
-        varEl.innerHTML = '<span class="muted" style="font-size:0.75rem">No variants yet</span>';
+    // Single TopoR engine — prefer "topor", else first available
+    state.selectedRoute = routes.topor ? 'topor' : (Object.keys(routes)[0] || 'topor');
+    const prefer = routes.topor || routes[state.selectedRoute] || Object.values(routes)[0];
+
+    const live = $('#routeLiveBar');
+    if (live) {
+      const jobs = state.snap?.jobs || [];
+      const running = jobs.find(j =>
+        (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide')
+        && (j.status === 'running' || j.status === 'pending'));
+      if (running) {
+        const segs = prefer?.segments?.length ?? 0;
+        live.innerHTML = `<strong>Routing…</strong> ${esc(running.stage || '')} · `
+          + `${fmt(running.progress, 0)}% · ${segs} segs · ${fmt(prefer?.total_length_mm, 1)} mm`;
+      } else if (prefer?.segments?.length) {
+        live.innerHTML = `<strong>TopoR ready</strong> · ${prefer.segments.length} segs · `
+          + `${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias`;
       } else {
-        varEl.innerHTML = keys.map(k => {
-          const r = routes[k];
-          const active = k === state.selectedRoute ? 'active' : '';
-          const segs = r.segments?.length ?? r.segments ?? '—';
-          return `<button type="button" class="variant-btn ${active}" data-variant="${esc(k)}">
-            ${esc(k)}
-            <small>${fmt(r.total_length_mm, 1)} mm · ${r.via_count ?? 0} vias · ${segs} segs</small>
-          </button>`;
-        }).join('');
-        $$('.variant-btn', varEl).forEach(btn => {
-          btn.onclick = async () => {
-            state.selectedRoute = btn.dataset.variant;
-            // sync 3D overlay + session
-            const sel = $('#routeSel');
-            if (sel && [...sel.options].some(o => o.value === state.selectedRoute)) {
-              sel.value = state.selectedRoute;
-              state.sceneKey = '';
-              rebuildScene();
-            }
-            if (state.live) {
-              try {
-                await api('/api/routes/select', { method: 'POST', body: JSON.stringify({ variant: state.selectedRoute }) });
-              } catch (_) {}
-            }
-            fillRouteTable();
-          };
-        });
+        live.textContent = 'Idle — start TopoR to see live copper';
       }
     }
 
-    el.innerHTML = keys.length
-      ? `<table class="compact"><thead><tr><th></th><th>Variant</th><th>mm</th><th>Vias</th><th>Viol</th><th>Grade</th></tr></thead><tbody>
-        ${keys.map(k => {
-          const r = routes[k];
-          const g = r.quality?.grade || r.quality?.score || '—';
-          const sel = k === state.selectedRoute ? '●' : '';
-          return `<tr data-pick="${esc(k)}" style="cursor:pointer">
-            <td>${sel}</td><td>${esc(k)}</td><td>${fmt(r.total_length_mm)}</td>
-            <td>${r.via_count ?? '—'}</td><td>${r.clearance_violations ?? '—'}</td>
-            <td>${esc(String(g))}</td></tr>`;
-        }).join('')}</tbody></table>`
-      : '<p class="muted" style="font-size:0.76rem">No routes yet</p>';
-    $$('tr[data-pick]', el).forEach(tr => {
-      tr.onclick = () => {
-        state.selectedRoute = tr.dataset.pick;
-        fillRouteTable();
-      };
-    });
-
     const qEl = $('#routeQuality');
-    const prefer = (state.selectedRoute && routes[state.selectedRoute])
-      || routes.topor || routes.guide || Object.values(routes)[0];
     if (qEl) {
       const q = prefer?.quality;
       if (q?.summary) {
-        qEl.innerHTML = `<strong>${esc(state.selectedRoute || '')}</strong> · Grade ${esc(q.grade)} · ${esc(q.summary)}`;
+        qEl.innerHTML = `<strong>TopoR</strong> · Grade ${esc(q.grade)} · ${esc(q.summary)}`;
       } else if (prefer) {
-        qEl.textContent = `${state.selectedRoute || ''}: ${prefer.total_length_mm?.toFixed?.(1) ?? prefer.total_length_mm} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} viol`;
+        qEl.textContent = `TopoR: ${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} viol`;
       }
     }
     fillNetReports(prefer);
     drawRoute2d();
+    // Keep 3D route overlay in sync while live routing
+    const sel = $('#routeSel');
+    if (sel && prefer) {
+      if (![...sel.options].some(o => o.value === 'topor')) {
+        updateRouteSelect();
+      }
+      if ([...sel.options].some(o => o.value === state.selectedRoute)) {
+        sel.value = state.selectedRoute;
+      }
+      state.sceneKey = '';
+      try { rebuildScene(); } catch (_) {}
+    }
     const hint = $('#route2dHint');
     if (hint) {
       const pcb = state.snap?.routed_pcb || state.snap?.session?.routed_pcb;
-      hint.textContent = state.selectedRoute
-        ? `Showing “${state.selectedRoute}” · click variant to switch · Apply writes copper to KiCad`
+      hint.textContent = prefer?.segments?.length
+        ? `TopoR free-angle · Apply writes copper to KiCad`
           + (pcb ? ` · last PCB: ${pcb}` : '')
-        : 'Run Guide or Clearance to populate variants.';
+        : 'Press TopoR free-angle route — canvas updates as each net completes.';
     }
   }
 
@@ -1760,9 +1730,11 @@
         };
       }
     }
-    if (type === 'route_clearance') {
+    if (type === 'route_topor' || type === 'route_clearance' || type === 'route_guide') {
+      type = 'route_topor';
       params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
       params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
+      params.auto_apply = false;
     }
     if (type === 'tests' && params.k) {
       params.patterns = [params.k];
@@ -1777,6 +1749,11 @@
     if (!state.live || state.pollBusy) return;
     state.pollBusy = true;
     try {
+      const jobsPeek = state.snap?.jobs || [];
+      const routingLive = jobsPeek.some(j =>
+        (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide')
+        && (j.status === 'running' || j.status === 'pending'));
+      if (routingLive) forceViewer = true;
       const prevRouteKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
       const prevScore = state.chartKey;
       state.snap = await api('/api/snapshot');
@@ -1789,7 +1766,7 @@
       const routeKeys = JSON.stringify(Object.keys(state.snap?.routes || {}));
 
       const prevGlb = state.viewer?.assets?.glb;
-      if (forceViewer || justFinished || !state.viewer || routeKeys !== prevRouteKeys) {
+      if (forceViewer || justFinished || !state.viewer || routeKeys !== prevRouteKeys || routingLive) {
         state.viewer = await api('/api/viewer-data');
         updateRouteSelect();
         if (!state.layersBuilt) updateLayers();
@@ -1797,9 +1774,12 @@
         const newGlb = state.viewer?.assets?.glb;
         if (newGlb && newGlb !== prevGlb) three.glbUrl = null;
         state.sceneKey = '';
-        rebuildScene();
+        // Live route canvas + 3D overlay while TopoR runs
+        if (state.step === 2 || routingLive) fillRouteTable();
+        else rebuildScene();
       } else if (running) {
         updateMetrics();
+        if (state.step === 2) fillRouteTable();
         // pick up GLB when export_board_3d finishes
         if (state.snap?.session?.glb && state.snap.session.glb !== prevGlb) {
           state.viewer = await api('/api/viewer-data');
@@ -1874,9 +1854,12 @@
       updateJobsDock();
 
       const tick = async () => {
-        const busy = (state.snap?.jobs || []).some(j => j.status === 'running' || j.status === 'pending');
-        await pollOnce(false);
-        setTimeout(tick, busy ? 700 : 2500);
+        const jobs = state.snap?.jobs || [];
+        const routing = jobs.some(j =>
+          String(j.type || '').startsWith('route') && (j.status === 'running' || j.status === 'pending'));
+        const busy = jobs.some(j => j.status === 'running' || j.status === 'pending');
+        await pollOnce(routing);
+        setTimeout(tick, routing ? 350 : (busy ? 700 : 2500));
       };
       setTimeout(tick, 800);
     } catch {

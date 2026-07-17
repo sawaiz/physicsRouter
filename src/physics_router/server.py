@@ -367,8 +367,9 @@ class AppState:
         runners: dict[str, Callable[[Job], dict[str, Any]]] = {
             "score": self._job_score,
             "place": self._job_place,
-            "route_guide": self._job_route_guide,
-            "route_clearance": self._job_route_clearance,
+            "route_guide": self._job_route_topor,  # alias → single TopoR path
+            "route_clearance": self._job_route_topor,
+            "route_topor": self._job_route_topor,
             "pre_route": self._job_pre_route,
             "spice": self._job_spice,
             "openems": self._job_openems,
@@ -501,74 +502,88 @@ class AppState:
             "movable": len(movable),
         }
 
-    def _job_route_guide(self, job: Job) -> dict[str, Any]:
-        self.set_progress(job, 5, "guide route")
-        self.log(job, "TopoR free-angle guide routing…")
-        with self.lock:
-            board = copy.deepcopy(self.board())
-            cfg = self.config
+    def _publish_live_route(self, partial: dict[str, Any], label: str = "topor") -> None:
+        """Push partial route geometry into session so the UI can redraw mid-job."""
+        from physics_router.router import RouteResult, RouteSegment, Via
 
-        def pcb(done_n, total, name, stage, detail):
-            frac = 10 + 75 * (done_n / max(total, 1))
-            self.set_progress(job, frac, f"guide {done_n}/{total} {name}")
-            if stage in ("ok", "soft_violation", "routing") and done_n % 3 == 0:
-                self.log(job, f"  [{done_n}/{total}] {name}: {stage}")
-
-        route = clearance_aware_route(
-            board, cfg, clearance_mm=0.0, allow_vias=False, guide_only=True, progress_cb=pcb
+        segs = [
+            RouteSegment(
+                x1=float(s["x1"]),
+                y1=float(s["y1"]),
+                x2=float(s["x2"]),
+                y2=float(s["y2"]),
+                layer=str(s.get("layer", "F.Cu")),
+                net=str(s.get("net", "")),
+                width_mm=float(s.get("width_mm", 0.25)),
+            )
+            for s in partial.get("segments") or []
+        ]
+        vias = [
+            Via(
+                x=float(v["x"]),
+                y=float(v["y"]),
+                net=str(v.get("net", "")),
+                size_mm=float(v.get("size_mm", 0.8)),
+                drill_mm=float(v.get("drill_mm", 0.4)),
+                layers=tuple(v.get("layers") or ("F.Cu", "B.Cu")),  # type: ignore[arg-type]
+            )
+            for v in partial.get("vias") or []
+        ]
+        live = RouteResult(
+            segments=segs,
+            vias=vias,
+            via_count=int(partial.get("via_count") or len(vias)),
+            total_length_mm=float(partial.get("total_length_mm") or 0),
+            unrouted_nets=list(partial.get("unrouted_nets") or []),
+            clearance_violations=int(partial.get("clearance_violations") or 0),
+            notes=["live routing progress…"],
         )
-        # keep topological_guide_route semantics via guide_only
-        self.set_progress(job, 90, "store")
-        d = route.to_dict()
         with self.lock:
-            self.routes["guide"] = route
-            self.selected_route = "guide"
+            self.routes[label] = live
+            self.selected_route = label
             self._refresh_viewer()
-            outp = WORK_DIR / f"route_guide_{job.id}.json"
-            outp.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
-        q = route.quality or route.compute_quality()
-        self.log(job, f"Guide: {q.get('summary')} · {len(route.segments)} segs")
-        return {
-            "total_length_mm": route.total_length_mm,
-            "via_count": route.via_count,
-            "clearance_violations": route.clearance_violations,
-            "segments": len(route.segments),
-            "unrouted": route.unrouted_nets,
-            "quality": q,
-            "net_reports": d.get("net_reports", [])[:40],
-            "length_by_layer_mm": d.get("length_by_layer_mm"),
-            "artifact": str(outp.relative_to(ROOT)),
-            "route": d,
-        }
 
-    def _job_route_clearance(self, job: Job) -> dict[str, Any]:
+    def _job_route_topor(self, job: Job) -> dict[str, Any]:
+        """Single organic TopoR free-angle route with live partial geometry."""
         p = job.params
         clearance = float(p.get("clearance_mm", 0.2))
         grid = float(p.get("grid_mm", 0.5))
-        self.set_progress(job, 5, "clearance route")
-        self.log(job, f"Clearance-aware TopoR (clearance={clearance} mm, grid={grid} mm)…")
+        self.set_progress(job, 3, "TopoR free-angle")
+        self.log(
+            job,
+            f"TopoR organic route (clearance={clearance} mm, grid={grid} mm) — live preview enabled",
+        )
         with self.lock:
             board = copy.deepcopy(self.board())
             cfg = self.config
             pcb_path = self.pcb_path
         rules = load_design_rules(pcb_path) if pcb_path and Path(pcb_path).exists() else None
 
-        def pcb(done_n, total, name, stage, detail):
-            frac = 8 + 80 * (done_n / max(total, 1))
-            self.set_progress(job, frac, f"route {done_n}/{total} · {name} · {stage}")
-            if isinstance(detail, dict) and detail.get("length_mm") is not None:
-                self.log(
-                    job,
-                    f"  [{done_n}/{total}] {name}: {stage} "
-                    f"L={detail.get('length_mm', 0):.2f}mm vias={detail.get('vias', 0)} "
-                    f"method={detail.get('method', '')}",
-                )
-            elif stage == "routing":
-                self.log(job, f"  [{done_n}/{total}] routing {name}…")
+        last_pub = {"n": -1}
+
+        def on_progress(done_n: int, total: int, name: str, stage: str, detail: dict) -> None:
+            frac = 5 + 80 * (done_n / max(total, 1))
+            self.set_progress(job, frac, f"TopoR {done_n}/{total} · {name} · {stage}")
+            if isinstance(detail, dict):
+                if detail.get("length_mm") is not None:
+                    self.log(
+                        job,
+                        f"  [{done_n}/{total}] {name}: {stage} "
+                        f"L={float(detail.get('length_mm') or 0):.2f}mm "
+                        f"vias={detail.get('vias', 0)} method={detail.get('method', '')}",
+                    )
+                partial = detail.get("partial")
+                # Publish after each net so the UI can animate copper growth
+                if partial and done_n != last_pub["n"] and stage != "routing":
+                    try:
+                        self._publish_live_route(partial, "topor")
+                        last_pub["n"] = done_n
+                    except Exception as e:
+                        self.log(job, f"  live preview skip: {e}")
 
         done: dict[str, Any] = {"r": None, "err": None}
 
-        def target():
+        def target() -> None:
             try:
                 if rules is not None:
                     done["r"] = multilayer_route(
@@ -577,7 +592,7 @@ class AppState:
                         rules,
                         grid_mm=grid,
                         clearance_mm=clearance,
-                        progress_cb=pcb,
+                        progress_cb=on_progress,
                     )
                 else:
                     done["r"] = clearance_aware_route(
@@ -585,7 +600,9 @@ class AppState:
                         cfg,
                         clearance_mm=clearance,
                         grid_mm=grid,
-                        progress_cb=pcb,
+                        soft_fallback=False,
+                        prefer_native=False,
+                        progress_cb=on_progress,
                     )
             except Exception as e:
                 done["err"] = e
@@ -593,13 +610,13 @@ class AppState:
         th = threading.Thread(target=target, daemon=True)
         th.start()
         while th.is_alive():
-            th.join(timeout=0.4)
+            th.join(timeout=0.25)
         if done["err"]:
             raise done["err"]
         route = done["r"]
         d = route.to_dict()
         with self.lock:
-            self.routes["topor"] = route
+            self.routes = {"topor": route}  # single variant only
             self.selected_route = "topor"
             self._refresh_viewer()
             outp = WORK_DIR / f"route_topor_{job.id}.json"
@@ -609,26 +626,24 @@ class AppState:
         for note in (route.notes or [])[-8:]:
             self.log(job, f"  note: {note}")
 
-        # Auto-apply to PCB + DRC when a real board is loaded (closed loop)
-        auto_apply = bool(job.params.get("auto_apply", True))
+        auto_apply = bool(p.get("auto_apply", False))  # manual apply from UI by default
         validation: dict[str, Any] = {}
         with self.lock:
             has_pcb = bool(self.pcb_path and Path(self.pcb_path).exists())
         if auto_apply and has_pcb and route.segments:
-            self.set_progress(job, 88, "auto-apply + DRC")
-            self.log(job, "Auto-applying copper to KiCad and running DRC…")
+            self.set_progress(job, 90, "auto-apply + DRC")
             sub = Job(
                 id=f"{job.id}-apply",
                 type="apply_route_pcb",
-                params={"variant": "topor", "rebuild_3d": bool(job.params.get("rebuild_3d", False))},
+                params={"variant": "topor", "rebuild_3d": bool(p.get("rebuild_3d", False))},
             )
             try:
                 validation = self._job_apply_route_pcb(sub)
-                self.log(job, f"Apply/DRC: {validation.get('drc', {}).get('error_count', '—')} DRC errors")
             except Exception as e:
                 validation = {"error": str(e)}
                 self.log(job, f"Auto-apply failed: {e}")
 
+        self.set_progress(job, 100, "complete")
         return {
             "total_length_mm": route.total_length_mm,
             "via_count": route.via_count,
@@ -1139,8 +1154,7 @@ class AppState:
         steps = job.params.get("steps") or [
             "score",
             "place",
-            "route_guide",
-            "route_clearance",
+            "route_topor",
             "spice",
             "openems",
             "rebuild_viewer",
@@ -1273,22 +1287,16 @@ JOB_CATALOG = [
         "description": "Density, layers, via budget, escape hints",
     },
     {
-        "id": "route_guide",
-        "label": "Route guide (free-angle)",
+        "id": "route_topor",
+        "label": "TopoR free-angle route",
         "group": "route",
-        "description": "TopoR-style topological guide without grid search",
-    },
-    {
-        "id": "route_clearance",
-        "label": "Route clearance (TopoR)",
-        "group": "route",
-        "description": "Clearance-aware free-angle + rubberband cleanup",
+        "description": "Organic free-angle clearance route with live preview (single engine)",
     },
     {
         "id": "apply_route_pcb",
         "label": "Apply route → KiCad PCB",
         "group": "route",
-        "description": "Write selected copper into .kicad_pcb; optional GLB rebuild for 3D",
+        "description": "Write TopoR copper into .kicad_pcb; optional GLB rebuild for 3D",
     },
     {
         "id": "spice",

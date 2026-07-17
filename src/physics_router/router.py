@@ -156,6 +156,50 @@ def pad_anchor(board: BoardModel, ref: str, _pad: str) -> tuple[float, float]:
     return (c.x_mm, c.y_mm)
 
 
+def _nets_at_ref(board: BoardModel, ref: str) -> list[str]:
+    nets: set[str] = set()
+    c = board.components.get(ref)
+    if c is None:
+        return []
+    for p in c.pads or []:
+        if p.get("net"):
+            nets.add(str(p["net"]))
+    # also from connectivity table
+    for n, pins in board.nets.items():
+        if any(r == ref for r, _ in pins):
+            nets.add(n)
+    return sorted(nets)
+
+
+def fanout_anchor(
+    board: BoardModel,
+    ref: str,
+    net_name: str,
+    *,
+    radius_mm: float | None = None,
+) -> tuple[float, float]:
+    """Escape point around a multi-net footprint so nets do not share one origin.
+
+    Charlieplex / MCU pins all map to the component center in our simplified
+    model; without angular fanout every CPX line leaves U1 along the same spoke
+    and stacks copper through the board center.
+    """
+    c = board.components[ref]
+    nets = _nets_at_ref(board, ref)
+    if len(nets) <= 1:
+        return (c.x_mm, c.y_mm)
+    r = radius_mm
+    if r is None:
+        r = max(0.8, 0.55 * max(c.width_mm, c.height_mm, 1.0))
+    try:
+        i = nets.index(net_name)
+    except ValueError:
+        i = abs(hash(net_name)) % max(len(nets), 1)
+    n = max(len(nets), 1)
+    ang = 2.0 * math.pi * (i / n)
+    return (c.x_mm + r * math.cos(ang), c.y_mm + r * math.sin(ang))
+
+
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -284,6 +328,16 @@ def board_extent(board: BoardModel, margin_mm: float = 2.0) -> tuple[float, floa
     return cx - half_w, cx + half_w, cy - half_h, cy + half_h
 
 
+@dataclass
+class PaintedSeg:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    width_mm: float
+    net: str
+
+
 class ObstacleMap:
     def __init__(
         self,
@@ -306,6 +360,8 @@ class ObstacleMap:
         self.layers = layers or ["F.Cu", "B.Cu"]
         self.clearance_mm = clearance_mm
         self.obstacles: dict[str, list[Obstacle]] = {ly: [] for ly in self.layers}
+        # Exact copper segments for continuous clearance (catches thin spokes)
+        self.painted: dict[str, list[PaintedSeg]] = {ly: [] for ly in self.layers}
 
     def add_rect(
         self,
@@ -319,6 +375,7 @@ class ObstacleMap:
     ) -> None:
         if layer not in self.obstacles:
             self.obstacles[layer] = []
+        # Inflate by full clearance on each side (not half) so min gap is clearance
         pad = self.clearance_mm * 2 if inflate else 0.0
         self.obstacles[layer].append(
             Obstacle(cx=cx, cy=cy, w=w + pad, h=h + pad, net=net, layer=layer)
@@ -335,6 +392,13 @@ class ObstacleMap:
                 continue
             if _point_in_rect(x, y, ob.cx, ob.cy, ob.w, ob.h):
                 return True
+        # Distance to painted foreign copper (half-width + clearance)
+        for ps in self.painted.get(layer, []):
+            if ps.net == net:
+                continue
+            need = self.clearance_mm + 0.5 * ps.width_mm
+            if _point_seg_dist(x, y, ps.x1, ps.y1, ps.x2, ps.y2) < need:
+                return True
         return False
 
     def segment_blocked(
@@ -345,16 +409,26 @@ class ObstacleMap:
         y2: float,
         layer: str,
         net: str,
+        width_mm: float = 0.25,
     ) -> bool:
+        """True if candidate segment would violate clearance vs obstacles or copper."""
         if not (self.in_bounds(x1, y1) and self.in_bounds(x2, y2)):
             return True
-        # Adaptive sample count by length
         length = _dist((x1, y1), (x2, y2))
-        samples = 4 if length < 2 else (6 if length < 10 else 8)
+        # Dense sampling along the path (every ~clearance/2)
+        step = max(self.clearance_mm * 0.4, 0.08)
+        samples = max(6, min(80, int(math.ceil(length / step)) + 1))
         for ob in self.obstacles.get(layer, []):
             if ob.net is not None and ob.net == net:
                 continue
             if _segment_hits_rect(x1, y1, x2, y2, ob.cx, ob.cy, ob.w, ob.h, samples=samples):
+                return True
+        # Continuous segment–segment clearance vs already painted foreign nets
+        for ps in self.painted.get(layer, []):
+            if ps.net == net:
+                continue
+            need = self.clearance_mm + 0.5 * (width_mm + ps.width_mm)
+            if _seg_seg_min_dist(x1, y1, x2, y2, ps.x1, ps.y1, ps.x2, ps.y2) < need:
                 return True
         return False
 
@@ -368,15 +442,23 @@ class ObstacleMap:
         width_mm: float,
         net: str,
     ) -> None:
+        """Record copper and paint inflated keepout so later nets cannot touch."""
+        if layer not in self.painted:
+            self.painted[layer] = []
+        self.painted[layer].append(
+            PaintedSeg(x1=x1, y1=y1, x2=x2, y2=y2, width_mm=width_mm, net=net)
+        )
         length = max(_dist((x1, y1), (x2, y2)), 0.01)
-        # Coarse paint: keep obstacle count manageable for A*
-        step = max(width_mm * 1.5, 0.8)
-        steps = max(1, min(40, int(math.ceil(length / step))))
+        # Keepout diameter = track width + 2*clearance (full gap for next track edge)
+        keep = width_mm + 2.0 * self.clearance_mm
+        step = max(self.clearance_mm * 0.5, keep * 0.35, 0.12)
+        steps = max(1, min(120, int(math.ceil(length / step))))
         for i in range(steps + 1):
             t = i / steps
             px = x1 + (x2 - x1) * t
             py = y1 + (y2 - y1) * t
-            self.add_rect(px, py, width_mm, width_mm, layer, net=net, inflate=True)
+            # inflate=False: keep already includes clearance
+            self.add_rect(px, py, keep, keep, layer, net=net, inflate=False)
 
 
 def build_obstacle_map(
@@ -441,18 +523,23 @@ def free_angle_route(
     grid_mm: float = 0.5,
     max_expansions: int = 2500,
     *,
+    width_mm: float = 0.25,
     method_out: list[str] | None = None,
 ) -> list[tuple[float, float]] | None:
     """Direct LOS, corner detours, then bounded 8-dir A* with rubberband.
 
+    Every candidate edge is checked for clearance vs painted copper and keepouts.
     If ``method_out`` is provided, appends one of: los | detour | detour2 | astar.
     """
     def _set_method(m: str) -> None:
         if method_out is not None:
             method_out.append(m)
 
+    def _blocked(x1: float, y1: float, x2: float, y2: float) -> bool:
+        return om.segment_blocked(x1, y1, x2, y2, layer, net, width_mm=width_mm)
+
     # 1) straight free-angle
-    if not om.segment_blocked(start[0], start[1], goal[0], goal[1], layer, net):
+    if not _blocked(start[0], start[1], goal[0], goal[1]):
         _set_method("los")
         return [start, goal]
 
@@ -483,9 +570,9 @@ def free_angle_route(
             continue
         if om.blocked(mid[0], mid[1], layer, net):
             continue
-        if om.segment_blocked(start[0], start[1], mid[0], mid[1], layer, net):
+        if _blocked(start[0], start[1], mid[0], mid[1]):
             continue
-        if om.segment_blocked(mid[0], mid[1], goal[0], goal[1], layer, net):
+        if _blocked(mid[0], mid[1], goal[0], goal[1]):
             continue
         _set_method("detour")
         return [start, mid, goal]
@@ -495,16 +582,16 @@ def free_angle_route(
     for a in cand:
         if om.blocked(a[0], a[1], layer, net) or not om.in_bounds(a[0], a[1]):
             continue
-        if om.segment_blocked(start[0], start[1], a[0], a[1], layer, net):
+        if _blocked(start[0], start[1], a[0], a[1]):
             continue
         for b in cand:
             if a == b:
                 continue
             if om.blocked(b[0], b[1], layer, net) or not om.in_bounds(b[0], b[1]):
                 continue
-            if om.segment_blocked(a[0], a[1], b[0], b[1], layer, net):
+            if _blocked(a[0], a[1], b[0], b[1]):
                 continue
-            if om.segment_blocked(b[0], b[1], goal[0], goal[1], layer, net):
+            if _blocked(b[0], b[1], goal[0], goal[1]):
                 continue
             _set_method("detour2")
             return [start, a, b, goal]
@@ -537,7 +624,7 @@ def free_angle_route(
             path[0] = start
             path[-1] = goal
             _set_method("astar")
-            return _rubberband(path, layer, net, om)
+            return _rubberband(path, layer, net, om, width_mm=width_mm)
 
         for dx, dy in _DIRS8:
             step = grid_mm * (1.414 if dx and dy else 1.0)
@@ -548,7 +635,7 @@ def free_angle_route(
             nkey = (int(round(nx / grid_mm)), int(round(ny / grid_mm)))
             if nkey in gscore and gscore[nkey] <= g:
                 continue
-            if om.segment_blocked(x, y, nx, ny, layer, net):
+            if _blocked(x, y, nx, ny):
                 continue
             ng = g + step
             if ng + 1e-9 < gscore.get(nkey, float("inf")):
@@ -565,6 +652,8 @@ def _rubberband(
     layer: str,
     net: str,
     om: ObstacleMap,
+    *,
+    width_mm: float = 0.25,
 ) -> list[tuple[float, float]]:
     if len(path) <= 2:
         return path
@@ -576,7 +665,7 @@ def _rubberband(
         while j > i + 1:
             x1, y1 = out[-1]
             x2, y2 = path[j]
-            if not om.segment_blocked(x1, y1, x2, y2, layer, net):
+            if not om.segment_blocked(x1, y1, x2, y2, layer, net, width_mm=width_mm):
                 out.append(path[j])
                 i = j
                 advanced = True
@@ -657,8 +746,10 @@ def clearance_aware_route(
     if soft_fallback is None:
         soft_fallback = bool(guide_only)
 
-    # --- Native C++ path (speed) ---
-    if prefer_native and not guide_only and progress_cb is None:
+    # Native C++ path is faster but lacks continuous segment–segment clearance
+    # and angular fanout; keep Python as the clearance authority for legal copper.
+    # Set prefer_native=True only when speed > legality (batch experiments).
+    if prefer_native and not guide_only and progress_cb is None and soft_fallback:
         try:
             from physics_router.native_bridge import available, route_board_native
 
@@ -715,7 +806,9 @@ def clearance_aware_route(
         anchors: list[tuple[float, float]] = []
         for ref, pad in pins:
             if ref in board.components:
-                anchors.append(pad_anchor(board, ref, pad))
+                # Angular fanout on multi-net parts (MCU/CPX) — prevents all
+                # nets sharing the component center and overlapping.
+                anchors.append(fanout_anchor(board, ref, net_name))
         uniq: list[tuple[float, float]] = []
         for a in anchors:
             if not any(_dist(a, u) < 0.05 for u in uniq):
@@ -778,6 +871,7 @@ def clearance_aware_route(
                 layers=net_layers,
                 grid_mm=grid,
                 allow_vias=allow_vias and not guide_only,
+                width_mm=width,
                 method_out=meth,
             )
             if path is None:
@@ -846,12 +940,45 @@ def clearance_aware_route(
 
         if progress_cb:
             try:
+                # Live partial geometry so the UI can redraw mid-route
                 progress_cb(
                     ni + 1,
                     total_nets,
                     net_name,
                     report.status,
-                    report.to_dict(),
+                    {
+                        **report.to_dict(),
+                        "partial": {
+                            "total_length_mm": result.total_length_mm,
+                            "via_count": result.via_count,
+                            "clearance_violations": result.clearance_violations,
+                            "segments": [
+                                {
+                                    "net": s.net,
+                                    "x1": s.x1,
+                                    "y1": s.y1,
+                                    "x2": s.x2,
+                                    "y2": s.y2,
+                                    "layer": s.layer,
+                                    "width_mm": s.width_mm,
+                                }
+                                for s in result.segments
+                            ],
+                            "vias": [
+                                {
+                                    "net": v.net,
+                                    "x": v.x,
+                                    "y": v.y,
+                                    "size_mm": v.size_mm,
+                                    "drill_mm": v.drill_mm,
+                                    "layers": list(v.layers),
+                                }
+                                for v in result.vias
+                            ],
+                            "unrouted_nets": list(result.unrouted_nets),
+                            "net_reports": [r.to_dict() for r in result.net_reports],
+                        },
+                    },
                 )
             except Exception:
                 pass
@@ -939,6 +1066,40 @@ def _point_seg_dist(
     return _dist((px, py), (x1 + t * dx, y1 + t * dy))
 
 
+def _seg_seg_min_dist(
+    ax1: float,
+    ay1: float,
+    ax2: float,
+    ay2: float,
+    bx1: float,
+    by1: float,
+    bx2: float,
+    by2: float,
+) -> float:
+    """Minimum distance between two finite segments in 2D."""
+    # Sample endpoints + closest approach via projection
+    d = min(
+        _point_seg_dist(ax1, ay1, bx1, by1, bx2, by2),
+        _point_seg_dist(ax2, ay2, bx1, by1, bx2, by2),
+        _point_seg_dist(bx1, by1, ax1, ay1, ax2, ay2),
+        _point_seg_dist(bx2, by2, ax1, ay1, ax2, ay2),
+    )
+    # Mid-segment samples for near-parallel long runs
+    for t in (0.25, 0.5, 0.75):
+        d = min(
+            d,
+            _point_seg_dist(
+                ax1 + (ax2 - ax1) * t,
+                ay1 + (ay2 - ay1) * t,
+                bx1,
+                by1,
+                bx2,
+                by2,
+            ),
+        )
+    return d
+
+
 def _route_point_to_point(
     start: tuple[float, float],
     goal: tuple[float, float],
@@ -947,14 +1108,39 @@ def _route_point_to_point(
     layers: list[str],
     grid_mm: float,
     allow_vias: bool,
+    *,
+    width_mm: float = 0.25,
     method_out: list[str] | None = None,
 ) -> tuple[list[tuple[float, float, str]] | None, list[Via]]:
     for layer in layers:
         meth: list[str] = []
         poly = free_angle_route(
-            start, goal, layer, net, om, grid_mm=grid_mm, method_out=meth
+            start,
+            goal,
+            layer,
+            net,
+            om,
+            grid_mm=grid_mm,
+            width_mm=width_mm,
+            method_out=meth,
         )
         if poly is not None and len(poly) >= 2:
+            # Final edge-by-edge clearance gate
+            ok = True
+            for i in range(len(poly) - 1):
+                if om.segment_blocked(
+                    poly[i][0],
+                    poly[i][1],
+                    poly[i + 1][0],
+                    poly[i + 1][1],
+                    layer,
+                    net,
+                    width_mm=width_mm,
+                ):
+                    ok = False
+                    break
+            if not ok:
+                continue
             if method_out is not None:
                 method_out.extend(meth or ["los"])
             return ([(p[0], p[1], layer) for p in poly], [])
@@ -963,7 +1149,6 @@ def _route_point_to_point(
         return None, []
 
     mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
-    # Limited via sites (dense grid was too slow for A*)
     g = max(grid_mm, 0.3)
     sites: list[tuple[float, float]] = [
         (mx, my),
@@ -977,7 +1162,6 @@ def _route_point_to_point(
         (mx - 5 * g, my - 5 * g),
     ]
 
-    # Prefer outer layer pairs first, then first↔last through
     pairs: list[tuple[str, str]] = []
     if len(layers) >= 2:
         pairs.append((layers[0], layers[-1]))
@@ -994,10 +1178,24 @@ def _route_point_to_point(
             if om.blocked(vx, vy, l0, net) or om.blocked(vx, vy, l1, net):
                 continue
             p0 = free_angle_route(
-                start, (vx, vy), l0, net, om, grid_mm=grid_mm, max_expansions=2500
+                start,
+                (vx, vy),
+                l0,
+                net,
+                om,
+                grid_mm=grid_mm,
+                max_expansions=2500,
+                width_mm=width_mm,
             )
             p1 = free_angle_route(
-                (vx, vy), goal, l1, net, om, grid_mm=grid_mm, max_expansions=2500
+                (vx, vy),
+                goal,
+                l1,
+                net,
+                om,
+                grid_mm=grid_mm,
+                max_expansions=2500,
+                width_mm=width_mm,
             )
             if p0 and p1:
                 if method_out is not None:
@@ -1062,7 +1260,7 @@ def rubberband_cleanup(
                 chains.append([a, b])
         for layer, chains in polylines.items():
             for pts in chains:
-                cleaned = _rubberband(pts, layer, net, om)
+                cleaned = _rubberband(pts, layer, net, om, width_mm=width)
                 for i in range(len(cleaned) - 1):
                     x1, y1 = cleaned[i]
                     x2, y2 = cleaned[i + 1]
