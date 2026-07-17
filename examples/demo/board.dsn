@@ -1,0 +1,129 @@
+(pcb physics_router_board
+  (parser
+    (string_quote ")
+    (space_in_quoted_tokens on)
+    (host_cad "physics_router")
+    (host_version "0.1")
+  )
+  (resolution mil 10)
+  (unit mil)
+  (structure
+    (layer "Signal_0" (type signal) (property (index 0) (preferred_direction horizontal)))
+    (layer "Signal_1" (type signal) (property (index 1) (preferred_direction vertical)))
+    (boundary
+      (path pcb 0
+        0 0  1969 0  1969 1575  0 1575  0 0
+      )
+    )
+    (via "Via[0-1]_0:24:12")
+    (rule (width 6) (clearance 8))
+  )
+  (library
+    (image "IMG_U1"
+      (outline (rect signal -98 -79 98 79))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_L1"
+      (outline (rect signal -39 -24 39 24))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_C_IN"
+      (outline (rect signal -39 -24 39 24))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_C_OUT"
+      (outline (rect signal -39 -24 39 24))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_D1"
+      (outline (rect signal -49 -30 49 30))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_X1"
+      (outline (rect signal -63 -49 63 49))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_U2"
+      (outline (rect signal -177 -177 177 177))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_J1"
+      (outline (rect signal -177 -157 177 157))
+      (pin "Pad" "1" 0 0)
+    )
+    (image "IMG_R_AIN"
+      (outline (rect signal -31 -16 31 16))
+      (pin "Pad" "1" 0 0)
+    )
+    (padstack "Pad"
+      (shape (circle "Signal_0" 20 0 0))
+      (shape (circle "Signal_1" 20 0 0))
+    )
+    (padstack "Via[0-1]_0:24:12"
+      (shape (circle "Signal_0" 24 0 0))
+      (shape (circle "Signal_1" 24 0 0))
+      (attach off)
+    )
+  )
+  (placement
+    (component "IMG_U1"
+      (place "U1" 591 787 front 0)
+    )
+    (component "IMG_L1"
+      (place "L1" 787 709 front 0)
+    )
+    (component "IMG_C_IN"
+      (place "C_IN" 472 591 front 0)
+    )
+    (component "IMG_C_OUT"
+      (place "C_OUT" 984 591 front 0)
+    )
+    (component "IMG_D1"
+      (place "D1" 709 984 front 0)
+    )
+    (component "IMG_X1"
+      (place "X1" 1378 1181 front 0)
+    )
+    (component "IMG_U2"
+      (place "U2" 1378 984 front 0)
+    )
+    (component "IMG_J1"
+      (place "J1" 79 787 front 0)
+    )
+    (component "IMG_R_AIN"
+      (place "R_AIN" 1575 394 front 0)
+    )
+  )
+  (network
+    (net "+5V"
+      (pins "U1"-"1" "C_OUT"-"1" "U2"-"VDD")
+      (rule (width 12) (clearance 8))
+    )
+    (net "GND"
+      (pins "U1"-"2" "C_IN"-"2" "C_OUT"-"2" "U2"-"GND" "J1"-"GND")
+      (rule (width 12) (clearance 8))
+    )
+    (net "SW"
+      (pins "U1"-"SW" "L1"-"1" "D1"-"A")
+      (rule (width 12) (clearance 8))
+    )
+    (net "CLK_MCU"
+      (pins "U2"-"OSC_IN" "X1"-"1")
+      (rule (width 10) (clearance 8))
+    )
+    (net "USB_DP"
+      (pins "J1"-"D+" "U2"-"USB_DP")
+      (rule (width 10) (clearance 8))
+    )
+    (net "USB_DM"
+      (pins "J1"-"D-" "U2"-"USB_DM")
+      (rule (width 10) (clearance 8))
+    )
+    (net "AIN0"
+      (pins "U2"-"PA0" "R_AIN"-"1")
+      (rule (width 10) (clearance 8))
+    )
+  )
+  (wiring
+  )
+)

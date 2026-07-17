@@ -1,0 +1,19 @@
+{
+  "topor": {
+    "source": "examples/demo/topor_route.json",
+    "total_length_mm": 180.2430475795562,
+    "via_count": 0,
+    "segments": 12,
+    "unrouted_nets": [],
+    "clearance_violations": 12,
+    "notes": [
+      "clearance_mm=0.2 free_angle+via layers=['F.Cu', 'B.Cu']"
+    ]
+  },
+  "winner": {},
+  "deltas": {},
+  "freerouting": null,
+  "notes": [
+    "No freerouting result provided. Run FreeRouting on the exported DSN and re-run compare with --ses or --baseline-json."
+  ]
+}

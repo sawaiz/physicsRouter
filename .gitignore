@@ -20,3 +20,10 @@ third_party/
 examples/halo-90/placement_result.json
 examples/halo-90/openems_export/
 examples/halo-90/kicad_validation/renders/
+
+# Large regenerable 3D/sim binaries (rebuild with scripts/build_viewer_demo.py)
+*.glb
+examples/demo/board_sim.step
+examples/demo/*_full.step
+/board_sim.step
+openems_export/

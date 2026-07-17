@@ -1,0 +1,581 @@
+{
+  "version": 1,
+  "board": {
+    "width_mm": 50.0,
+    "height_mm": 40.0,
+    "copper_layers": [
+      "F.Cu",
+      "B.Cu"
+    ],
+    "components": [
+      {
+        "ref": "U1",
+        "x": 15.0,
+        "y": 20.0,
+        "rot": 0.0,
+        "w": 5.0,
+        "h": 4.0,
+        "layer": "F.Cu",
+        "footprint": "Package_SO:SOIC-8",
+        "locked": false
+      },
+      {
+        "ref": "L1",
+        "x": 20.0,
+        "y": 18.0,
+        "rot": 0.0,
+        "w": 2.0,
+        "h": 1.2,
+        "layer": "F.Cu",
+        "footprint": "Inductor_SMD:L_0805",
+        "locked": false
+      },
+      {
+        "ref": "C_IN",
+        "x": 12.0,
+        "y": 15.0,
+        "rot": 0.0,
+        "w": 2.0,
+        "h": 1.2,
+        "layer": "F.Cu",
+        "footprint": "Capacitor_SMD:C_0805",
+        "locked": false
+      },
+      {
+        "ref": "C_OUT",
+        "x": 25.0,
+        "y": 15.0,
+        "rot": 0.0,
+        "w": 2.0,
+        "h": 1.2,
+        "layer": "F.Cu",
+        "footprint": "Capacitor_SMD:C_0805",
+        "locked": false
+      },
+      {
+        "ref": "D1",
+        "x": 18.0,
+        "y": 25.0,
+        "rot": 0.0,
+        "w": 2.5,
+        "h": 1.5,
+        "layer": "F.Cu",
+        "footprint": "Diode_SMD:D_SOD-123",
+        "locked": false
+      },
+      {
+        "ref": "X1",
+        "x": 35.0,
+        "y": 30.0,
+        "rot": 0.0,
+        "w": 3.2,
+        "h": 2.5,
+        "layer": "F.Cu",
+        "footprint": "Crystal:Crystal_SMD",
+        "locked": false
+      },
+      {
+        "ref": "U2",
+        "x": 35.0,
+        "y": 25.0,
+        "rot": 0.0,
+        "w": 9.0,
+        "h": 9.0,
+        "layer": "F.Cu",
+        "footprint": "Package_QFP:LQFP-48",
+        "locked": false
+      },
+      {
+        "ref": "J1",
+        "x": 2.0,
+        "y": 20.0,
+        "rot": 0.0,
+        "w": 9.0,
+        "h": 8.0,
+        "layer": "F.Cu",
+        "footprint": "Connector:USB_C",
+        "locked": true
+      },
+      {
+        "ref": "R_AIN",
+        "x": 40.0,
+        "y": 10.0,
+        "rot": 0.0,
+        "w": 1.6,
+        "h": 0.8,
+        "layer": "F.Cu",
+        "footprint": "Resistor_SMD:R_0603",
+        "locked": false
+      }
+    ],
+    "nets": {
+      "+5V": [
+        {
+          "ref": "U1",
+          "pad": "1"
+        },
+        {
+          "ref": "C_OUT",
+          "pad": "1"
+        },
+        {
+          "ref": "U2",
+          "pad": "VDD"
+        }
+      ],
+      "GND": [
+        {
+          "ref": "U1",
+          "pad": "2"
+        },
+        {
+          "ref": "C_IN",
+          "pad": "2"
+        },
+        {
+          "ref": "C_OUT",
+          "pad": "2"
+        },
+        {
+          "ref": "U2",
+          "pad": "GND"
+        },
+        {
+          "ref": "J1",
+          "pad": "GND"
+        }
+      ],
+      "SW": [
+        {
+          "ref": "U1",
+          "pad": "SW"
+        },
+        {
+          "ref": "L1",
+          "pad": "1"
+        },
+        {
+          "ref": "D1",
+          "pad": "A"
+        }
+      ],
+      "CLK_MCU": [
+        {
+          "ref": "U2",
+          "pad": "OSC_IN"
+        },
+        {
+          "ref": "X1",
+          "pad": "1"
+        }
+      ],
+      "USB_DP": [
+        {
+          "ref": "J1",
+          "pad": "D+"
+        },
+        {
+          "ref": "U2",
+          "pad": "USB_DP"
+        }
+      ],
+      "USB_DM": [
+        {
+          "ref": "J1",
+          "pad": "D-"
+        },
+        {
+          "ref": "U2",
+          "pad": "USB_DM"
+        }
+      ],
+      "AIN0": [
+        {
+          "ref": "U2",
+          "pad": "PA0"
+        },
+        {
+          "ref": "R_AIN",
+          "pad": "1"
+        }
+      ]
+    },
+    "net_meta": {
+      "+5V": {
+        "class": "power",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": "buck1",
+        "pair_with": null,
+        "notes": "Main 5V rail after buck; keep short to load and bulk cap."
+      },
+      "GND": {
+        "class": "ground",
+        "weight": 4.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": "buck1",
+        "pair_with": null,
+        "notes": "Return for buck loop; minimize loop area with SW node."
+      },
+      "SW": {
+        "class": "power",
+        "weight": 5.0,
+        "critical": true,
+        "emi_sensitive": true,
+        "power_loop_group": "buck1",
+        "pair_with": null,
+        "notes": "Switcher node: place inductor and diode/FET tight."
+      },
+      "CLK_MCU": {
+        "class": "clock",
+        "weight": 3.5,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "MCU crystal net; place X1 and load caps adjacent."
+      },
+      "USB_DP": {
+        "class": "differential",
+        "weight": 3.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": "USB_DM",
+        "notes": "USB 2.0 D+; length-match with USB_DM."
+      },
+      "USB_DM": {
+        "class": "differential",
+        "weight": 3.0,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": "USB_DP",
+        "notes": "USB 2.0 D-."
+      },
+      "AIN0": {
+        "class": "analog",
+        "weight": 2.5,
+        "critical": true,
+        "emi_sensitive": false,
+        "power_loop_group": null,
+        "pair_with": null,
+        "notes": "Quiet analog input; keep away from SW node."
+      }
+    },
+    "source_path": null
+  },
+  "routes": {
+    "topor": {
+      "name": "topor",
+      "total_length_mm": 180.2430475795562,
+      "via_count": 0,
+      "unrouted_nets": [],
+      "clearance_violations": 12,
+      "notes": [
+        "clearance_mm=0.2 free_angle+via layers=['F.Cu', 'B.Cu']"
+      ],
+      "segments": [
+        {
+          "net": "SW",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 20.0,
+          "y2": 18.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "SW",
+          "x1": 20.0,
+          "y1": 18.0,
+          "x2": 18.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "+5V",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 25.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "+5V",
+          "x1": 25.0,
+          "y1": 15.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 12.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 12.0,
+          "y1": 15.0,
+          "x2": 2.0,
+          "y2": 20.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 25.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 25.0,
+          "y1": 15.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "CLK_MCU",
+          "x1": 35.0,
+          "y1": 25.0,
+          "x2": 35.0,
+          "y2": 30.0,
+          "layer": "F.Cu",
+          "width_mm": 0.25
+        },
+        {
+          "net": "USB_DP",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.2
+        },
+        {
+          "net": "USB_DM",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.2
+        },
+        {
+          "net": "AIN0",
+          "x1": 35.0,
+          "y1": 25.0,
+          "x2": 40.0,
+          "y2": 10.0,
+          "layer": "F.Cu",
+          "width_mm": 0.25
+        }
+      ],
+      "vias": []
+    },
+    "guide": {
+      "name": "guide",
+      "total_length_mm": 180.2430475795562,
+      "via_count": 0,
+      "unrouted_nets": [],
+      "clearance_violations": 12,
+      "notes": [
+        "guide_only"
+      ],
+      "segments": [
+        {
+          "net": "SW",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 20.0,
+          "y2": 18.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "SW",
+          "x1": 20.0,
+          "y1": 18.0,
+          "x2": 18.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "+5V",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 25.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "+5V",
+          "x1": 25.0,
+          "y1": 15.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 15.0,
+          "y1": 20.0,
+          "x2": 12.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 12.0,
+          "y1": 15.0,
+          "x2": 2.0,
+          "y2": 20.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 25.0,
+          "y2": 15.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "GND",
+          "x1": 25.0,
+          "y1": 15.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.5
+        },
+        {
+          "net": "CLK_MCU",
+          "x1": 35.0,
+          "y1": 25.0,
+          "x2": 35.0,
+          "y2": 30.0,
+          "layer": "F.Cu",
+          "width_mm": 0.25
+        },
+        {
+          "net": "USB_DP",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.2
+        },
+        {
+          "net": "USB_DM",
+          "x1": 2.0,
+          "y1": 20.0,
+          "x2": 35.0,
+          "y2": 25.0,
+          "layer": "F.Cu",
+          "width_mm": 0.2
+        },
+        {
+          "net": "AIN0",
+          "x1": 35.0,
+          "y1": 25.0,
+          "x2": 40.0,
+          "y2": 10.0,
+          "layer": "F.Cu",
+          "width_mm": 0.25
+        }
+      ],
+      "vias": []
+    }
+  },
+  "assets": {
+    "glb": null,
+    "step": null,
+    "emi_geometry": null
+  },
+  "comparison": {
+    "topor": {
+      "source": "examples/demo/topor_route.json",
+      "total_length_mm": 180.2430475795562,
+      "via_count": 0,
+      "segments": 12,
+      "unrouted_nets": [],
+      "clearance_violations": 12,
+      "notes": [
+        "clearance_mm=0.2 free_angle+via layers=['F.Cu', 'B.Cu']"
+      ]
+    },
+    "winner": {},
+    "deltas": {},
+    "freerouting": null,
+    "notes": [
+      "No freerouting result provided. Run FreeRouting on the exported DSN and re-run compare with --ses or --baseline-json."
+    ]
+  },
+  "physics": {
+    "score": {
+      "weighted_wirelength": 1664.5,
+      "power_loop_area": 330.0,
+      "critical_net_length": 1664.5,
+      "overlap_penalty": 6.645187500000004,
+      "region_violation": 0.0,
+      "density_congestion": 0.59984375,
+      "thermal_spread": 0.00485071250072666,
+      "emi_proxy": 254.5,
+      "spice_score": 9.794397547853903,
+      "openems_score": 353.5,
+      "ir_drop": 0.0,
+      "loop_inductance": 80.12310181281595,
+      "return_path": 148.9495532385217,
+      "matrix_length_match": 0.0,
+      "total": 11289.438293161678
+    },
+    "notes": [
+      "ir_drop ok",
+      "loop_L buck1:80.1nH",
+      "return_path nets=4 gnd_centroid=(17.8,19.0)",
+      "matrix_match n/a",
+      "spice_proxy L\u224814.53nH loop_area=330.0mm\u00b2 power_len=85.0mm; ngspice_ok",
+      "em_proxy emi=254.50; em_nets=2; openEMS_binary_present(export_via_cli)"
+    ],
+    "weights": {
+      "weighted_wirelength": 1.0,
+      "power_loop_area": 4.0,
+      "critical_net_length": 3.0,
+      "overlap_penalty": 50.0,
+      "region_violation": 10.0,
+      "density_congestion": 1.5,
+      "thermal_spread": 0.5,
+      "emi_proxy": 2.0,
+      "spice_score": 5.0,
+      "openems_score": 5.0,
+      "ir_drop": 3.0,
+      "loop_inductance": 3.5,
+      "return_path": 2.5,
+      "matrix_length_match": 3.0
+    }
+  }
+}

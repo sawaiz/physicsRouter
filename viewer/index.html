@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>physicsRouter interactive viewer</title>
+  <style>
+    :root {
+      --bg: #0b0f14; --panel: #151c27; --text: #e8eef7; --muted: #8b9bb4;
+      --accent: #5b9fd4; --line: #2a3548;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: "IBM Plex Sans", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    #app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+    aside {
+      background: var(--panel); border-right: 1px solid var(--line);
+      padding: 1rem; overflow: auto; display: flex; flex-direction: column; gap: 0.85rem;
+    }
+    h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+    h2 { font-size: 0.75rem; margin: 0 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    label { display: block; font-size: 0.85rem; margin: 0.25rem 0; }
+    select, input[type=file], button {
+      width: 100%; background: #0f1419; color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 0.45rem 0.55rem; font: inherit;
+    }
+    button { cursor: pointer; background: #1e3a55; border-color: #2d5a84; }
+    button:hover { background: #274a6b; }
+    #viewport { position: relative; min-height: 0; }
+    #c2d, #c3d { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #c3d { display: none; }
+    .row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .row label { flex: 1 1 45%; }
+    .stat { font-size: 0.8rem; color: var(--muted); }
+    .stat strong { color: var(--text); }
+    .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+    a { color: var(--accent); }
+    #msg { font-size: 0.8rem; color: var(--warn, #f0b429); min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <h1>physicsRouter viewer</h1>
+      <p class="stat">Multi-layer routes · EMI geometry · 3D board (GLB)</p>
+
+      <div>
+        <h2>Data</h2>
+        <label>Load viewer_data.json <input type="file" id="fileJson" accept="application/json,.json"/></label>
+        <button type="button" id="btnDemo">Load demo data</button>
+        <p class="stat" id="dataSrc">No data loaded</p>
+      </div>
+
+      <div>
+        <h2>Route variant</h2>
+        <select id="routeSelect"></select>
+        <p class="stat" id="routeStats"></p>
+      </div>
+
+      <div>
+        <h2>Layers</h2>
+        <div id="layerToggles"></div>
+      </div>
+
+      <div>
+        <h2>View</h2>
+        <div class="row">
+          <button type="button" id="btn2d">2D PCB</button>
+          <button type="button" id="btn3d">3D</button>
+        </div>
+        <label><input type="checkbox" id="showComps" checked/> Components</label>
+        <label><input type="checkbox" id="showRoutes" checked/> Routes</label>
+        <label><input type="checkbox" id="showVias" checked/> Vias</label>
+        <label><input type="checkbox" id="showEMI" checked/> EMI / geometry primitives</label>
+      </div>
+
+      <div>
+        <h2>Physics budget</h2>
+        <div id="physicsBox" class="stat">—</div>
+        <p><a id="dashLink" href="../examples/demo/dashboard.html">Open dashboard</a></p>
+      </div>
+
+      <div>
+        <h2>Compare</h2>
+        <pre id="compareBox" class="stat" style="white-space:pre-wrap;max-height:120px;overflow:auto">—</pre>
+      </div>
+
+      <div id="msg"></div>
+    </aside>
+    <div id="viewport">
+      <canvas id="c2d"></canvas>
+      <div id="c3d"></div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+  const NET_COLORS = {
+    power: '#d62728', ground: '#1f77b4', high_speed: '#ff7f0e', analog: '#2ca02c',
+    differential: '#9467bd', signal: '#8c564b', reset: '#e377c2', clock: '#17becf',
+    rf: '#bcbd22', other: '#888888'
+  };
+
+  let data = null;
+  let mode3d = false;
+  let three = { renderer: null, scene: null, camera: null, controls: null, root: null };
+
+  const $ = (id) => document.getElementById(id);
+  const msg = (t) => { $('msg').textContent = t || ''; };
+
+  function netColor(net) {
+    const meta = data?.board?.net_meta?.[net];
+    const cls = meta?.class || 'signal';
+    return NET_COLORS[cls] || NET_COLORS.other;
+  }
+
+  function loadPayload(obj) {
+    data = obj;
+    $('dataSrc').textContent = data.board?.source_path || 'in-memory board';
+    // routes select
+    const sel = $('routeSelect');
+    sel.innerHTML = '';
+    const names = Object.keys(data.routes || {});
+    if (!names.length) {
+      sel.innerHTML = '<option value="">(no routes)</option>';
+    } else {
+      names.forEach((n) => {
+        const o = document.createElement('option');
+        o.value = n; o.textContent = n;
+        sel.appendChild(o);
+      });
+    }
+    // layers
+    const layers = data.board?.copper_layers || ['F.Cu', 'B.Cu'];
+    const box = $('layerToggles');
+    box.innerHTML = '';
+    layers.forEach((ly, i) => {
+      const id = `ly_${i}`;
+      const lab = document.createElement('label');
+      lab.innerHTML = `<input type="checkbox" id="${id}" data-layer="${ly}" checked/> ${ly}`;
+      box.appendChild(lab);
+    });
+    // physics
+    const ph = data.physics?.score;
+    if (ph) {
+      $('physicsBox').innerHTML = Object.entries(ph)
+        .map(([k, v]) => `<div><strong>${k}</strong>: ${typeof v === 'number' ? v.toFixed(2) : v}</div>`)
+        .join('');
+    } else {
+      $('physicsBox').textContent = 'No physics block in viewer_data.json';
+    }
+    $('compareBox').textContent = data.comparison
+      ? JSON.stringify(data.comparison.winner || data.comparison, null, 2)
+      : 'No comparison data';
+    draw2d();
+    if (mode3d) init3d();
+  }
+
+  async function loadDemo() {
+    msg('Loading demo…');
+    const candidates = [
+      '../examples/demo/viewer_data.json',
+      './viewer_data.json',
+      '../examples/halo-90/viewer_data.json',
+    ];
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) {
+          loadPayload(await r.json());
+          msg('');
+          return;
+        }
+      } catch (_) {}
+    }
+    msg('Demo data not found — use “Load viewer_data.json” or run scripts/build_viewer_demo.py');
+  }
+
+  function activeLayers() {
+    return [...document.querySelectorAll('#layerToggles input:checked')].map((el) => el.dataset.layer);
+  }
+
+  function currentRoute() {
+    const name = $('routeSelect').value;
+    return data?.routes?.[name] || null;
+  }
+
+  function draw2d() {
+    const canvas = $('c2d');
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0b0f14';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    if (!data?.board) return;
+
+    const comps = data.board.components || [];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of comps) {
+      minX = Math.min(minX, c.x - c.w / 2);
+      maxX = Math.max(maxX, c.x + c.w / 2);
+      minY = Math.min(minY, c.y - c.h / 2);
+      maxY = Math.max(maxY, c.y + c.h / 2);
+    }
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 50; maxY = 40; }
+    const pad = 2;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const bw = maxX - minX, bh = maxY - minY;
+    const scale = 0.9 * Math.min(rect.width / bw, rect.height / bh);
+    const ox = rect.width / 2 - scale * (minX + maxX) / 2;
+    const oy = rect.height / 2 + scale * (minY + maxY) / 2;
+    const tx = (x, y) => [ox + scale * x, oy - scale * y];
+
+    // board outline
+    ctx.strokeStyle = '#3a4a60';
+    ctx.lineWidth = 1;
+    const [x0, y0] = tx(minX + pad, minY + pad);
+    const [x1, y1] = tx(maxX - pad, maxY - pad);
+    ctx.strokeRect(x0, y1, x1 - x0, y0 - y1);
+
+    const layersOn = new Set(activeLayers());
+    const route = currentRoute();
+    if (route) {
+      $('routeStats').innerHTML =
+        `<strong>length</strong> ${route.total_length_mm?.toFixed?.(2) ?? route.total_length_mm} mm · ` +
+        `<strong>vias</strong> ${route.via_count} · <strong>segs</strong> ${(route.segments||[]).length}`;
+    }
+
+    // EMI geometry primitives
+    if ($('showEMI').checked && data.emi_geometry?.primitives) {
+      for (const p of data.emi_geometry.primitives) {
+        ctx.globalAlpha = 0.25;
+        if (p.kind === 'box') {
+          const [cx, cy] = tx(p.cx_mm, p.cy_mm);
+          const w = p.w_mm * scale, h = p.h_mm * scale;
+          ctx.fillStyle = '#5b9fd4';
+          ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+        } else if (p.kind === 'polyline' && p.points_mm?.length) {
+          ctx.strokeStyle = '#f0b429';
+          ctx.lineWidth = Math.max(1, (p.width_mm || 0.25) * scale);
+          ctx.beginPath();
+          p.points_mm.forEach((pt, i) => {
+            const [x, y] = tx(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // routes
+    if ($('showRoutes').checked && route?.segments) {
+      for (const s of route.segments) {
+        if (layersOn.size && !layersOn.has(s.layer)) continue;
+        const [a, b] = [tx(s.x1, s.y1), tx(s.x2, s.y2)];
+        ctx.strokeStyle = netColor(s.net);
+        ctx.lineWidth = Math.max(1.2, (s.width_mm || 0.2) * scale * 1.2);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+      }
+    }
+
+    // vias
+    if ($('showVias').checked && route?.vias) {
+      for (const v of route.vias) {
+        const [x, y] = tx(v.x, v.y);
+        const r = Math.max(2, (v.size_mm || 0.6) * scale / 2);
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // components
+    if ($('showComps').checked) {
+      for (const c of comps) {
+        const [x, y] = tx(c.x, c.y);
+        const w = Math.max(2, c.w * scale), h = Math.max(2, c.h * scale);
+        ctx.fillStyle = c.ref?.match(/^D\\d+$/) ? '#f58518' : '#4c78a8';
+        if (c.ref === 'U1' || c.ref === 'BT1') ctx.fillStyle = '#e45756';
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(x - w / 2, y - h / 2, w, h);
+        ctx.globalAlpha = 1;
+        if (!c.ref?.match(/^D\\d+$/)) {
+          ctx.fillStyle = '#fff';
+          ctx.font = '10px system-ui';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(c.ref, x, y);
+        }
+      }
+    }
+  }
+
+  function dispose3d() {
+    if (three.renderer) {
+      three.renderer.dispose();
+      $('c3d').innerHTML = '';
+      three = { renderer: null, scene: null, camera: null, controls: null, root: null };
+    }
+  }
+
+  function init3d() {
+    dispose3d();
+    const host = $('c3d');
+    host.style.display = 'block';
+    $('c2d').style.display = 'none';
+    const w = host.clientWidth || 800, h = host.clientHeight || 600;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0f14);
+    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
+    camera.position.set(40, 40, 60);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    host.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    const light = new THREE.DirectionalLight(0xffffff, 1.1);
+    light.position.set(50, 80, 40);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x6688aa, 0.45));
+    scene.add(new THREE.GridHelper(100, 20, 0x2a3548, 0x1a2332));
+
+    const root = new THREE.Group();
+    scene.add(root);
+    three = { renderer, scene, camera, controls, root };
+
+    // Prefer GLB asset
+    const glb = data?.assets?.glb;
+    if (glb) {
+      const loader = new GLTFLoader();
+      loader.load(
+        glb,
+        (gltf) => {
+          root.add(gltf.scene);
+          msg('');
+        },
+        undefined,
+        (err) => {
+          msg('GLB load failed — showing route extrusion');
+          addRouteMeshes(root);
+        }
+      );
+    } else {
+      addRouteMeshes(root);
+      // board plane
+      if (data?.board) {
+        const geo = new THREE.BoxGeometry(data.board.width_mm || 50, 1.0, data.board.height_mm || 40);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x1a5c3a, roughness: 0.8 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = -0.6;
+        root.add(mesh);
+      }
+    }
+
+    // EMI boxes
+    if ($('showEMI').checked && data?.emi_geometry?.primitives) {
+      for (const p of data.emi_geometry.primitives) {
+        if (p.kind !== 'box') continue;
+        const g = new THREE.BoxGeometry(p.w_mm || 1, p.t_mm || 0.035, p.h_mm || 1);
+        const m = new THREE.MeshStandardMaterial({ color: 0xc0a060, metalness: 0.8, roughness: 0.3 });
+        const mesh = new THREE.Mesh(g, m);
+        mesh.position.set(p.cx_mm || 0, (p.cz_mm || 0) + 0.5, p.cy_mm || 0);
+        root.add(mesh);
+      }
+    }
+
+    function animate() {
+      if (!three.renderer) return;
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+
+  function addRouteMeshes(root) {
+    const route = currentRoute();
+    if (!route?.segments) return;
+    const layersOn = new Set(activeLayers());
+    const zOf = (ly) => {
+      const layers = data.board?.copper_layers || ['F.Cu', 'B.Cu'];
+      const i = layers.indexOf(ly);
+      return (i < 0 ? 0 : i) * 0.4 + 0.2;
+    };
+    for (const s of route.segments) {
+      if (layersOn.size && !layersOn.has(s.layer)) continue;
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+      const len = Math.hypot(dx, dy) || 0.01;
+      const g = new THREE.BoxGeometry(len, Math.max(0.05, s.width_mm || 0.2), Math.max(0.05, s.width_mm || 0.2));
+      const col = new THREE.Color(netColor(s.net));
+      const m = new THREE.MeshStandardMaterial({ color: col, metalness: 0.7, roughness: 0.35 });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set((s.x1 + s.x2) / 2, zOf(s.layer), (s.y1 + s.y2) / 2);
+      mesh.rotation.y = -Math.atan2(dy, dx);
+      root.add(mesh);
+    }
+  }
+
+  function setMode(m3) {
+    mode3d = m3;
+    if (mode3d) {
+      $('c3d').style.display = 'block';
+      $('c2d').style.display = 'none';
+      init3d();
+    } else {
+      dispose3d();
+      $('c3d').style.display = 'none';
+      $('c2d').style.display = 'block';
+      draw2d();
+    }
+  }
+
+  $('btn2d').onclick = () => setMode(false);
+  $('btn3d').onclick = () => setMode(true);
+  $('btnDemo').onclick = loadDemo;
+  $('fileJson').onchange = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    loadPayload(JSON.parse(await f.text()));
+  };
+  ['routeSelect', 'showComps', 'showRoutes', 'showVias', 'showEMI'].forEach((id) => {
+    $(id).addEventListener('change', () => (mode3d ? init3d() : draw2d()));
+  });
+  document.getElementById('layerToggles').addEventListener('change', () => (mode3d ? init3d() : draw2d()));
+  window.addEventListener('resize', () => (mode3d ? init3d() : draw2d()));
+
+  loadDemo();
+  </script>
+</body>
+</html>
