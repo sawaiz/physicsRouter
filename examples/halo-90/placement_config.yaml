@@ -1,0 +1,474 @@
+# HALO-90 — physicsRouter placement/routing labels
+# Source project: https://github.com/openKolibri/halo-90  (KiCad in pcb/)
+# Derived from readme.md design notes, schematic nets, and component datasheets
+# (STM8L151G4, BL-HUB37A-AV-TRB LEDs, SPW2430HR5H-B mic, LSM6DSM, KXT3, BAT-HLD-001).
+#
+# Board: ~24 mm diameter open-source LED earring, CR2032 coin cell, 90 charlieplexed
+# 0402 red LEDs, STM8L151G4 MCU. Coordinate origin is board center (mm).
+
+project_name: halo-90
+board_width_mm: 24.0
+board_height_mm: 26.0
+grid_mm: 0.1
+notes: >
+  HALO-90 wearable LED earring. Dense circular layout: MCU + battery at center,
+  90 LEDs on a 4° ring (cathodes toward center), programming pogo pads, optional
+  LSM6DSM IMU. Power is severely constrained (CR2032, GPIO-driven LEDs with no
+  series resistors). Charlieplex CPX lines carry pulsed LED current and switch
+  at >1 kHz — treat as high-edge-rate / EMI-sensitive. Keep analog MIC and
+  I2C quiet relative to CPX. Mechanicals (battery holder, hook, tooling holes,
+  pogo pads) are fixed by product geometry.
+
+# ---------------------------------------------------------------------------
+# Net labels — weights drive placement affinity and routing priority
+# ---------------------------------------------------------------------------
+nets:
+  # --- Power (CR2032 / BAT-HLD-001; Vbat max 3.6 V abs, 1.8–3.6 V operating) ---
+  - name: "+3V"
+    net_class: power
+    weight: 5.0
+    critical: true
+    power_loop_group: coin_cell
+    simulate_spice: true
+    emi_sensitive: false
+    notes: >
+      Battery positive / VDD rail (readme: programmer pad "3V0" ties Batt+ and power).
+      CR2032 through BAT-HLD-001 sheet-metal holder; metal can is anode, PCB pad cathode
+      path completes GND. Must star/short to U1 VDD and bulk/decoupling C1/C2.
+      No LED series resistors — rail IR drop and battery ESR set LED current.
+      Keep low impedance to MCU and decoupling; avoid long loops with GND.
+
+  - name: GND
+    net_class: ground
+    weight: 5.0
+    critical: true
+    power_loop_group: coin_cell
+    simulate_spice: true
+    notes: >
+      System ground / battery return. Programmer pad GND. Decoupling C1/C2 return here.
+      Minimize +3V–GND loop area under U1 and around battery. LED returns go through
+      charlieplex matrix (not a shared LED GND plane).
+
+  # --- Charlieplex LED matrix (10 lines → 90 LEDs; GPIO direct drive) ---
+  # Naming: CPX-0 … CPX-9 on MCU pins PA2–PA5, PD1–PD3, PB3, PB5, PB7 (see schematic).
+  # Datasheet context: BL-HUB37A-AV-TRB 0402 red, Vf ~2.0–2.6 V (<2.7 V required).
+  # Firmware scans at >1 kHz; only one LED on at a time (setLed). High di/dt on lines.
+  - name: CPX-0
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: >
+      Charlieplex line 0 (U1 PA2). One of ten matrix rows/cols driving 0402 LEDs.
+      High peak GPIO current, no series R; length-match preference to other CPX lines
+      for uniform brightness. Keep clear of MIC analog path.
+
+  - name: CPX-1
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 1 (U1 PA4). Same class as CPX-0; matrix interconnect to LED ring."
+
+  - name: CPX-2
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 2 (U1 PB3). Matrix interconnect."
+
+  - name: CPX-3
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 3 (U1 PA5). Matrix interconnect."
+
+  - name: CPX-4
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 4 (U1 PD1). Matrix interconnect."
+
+  - name: CPX-5
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 5 (U1 PD2). Matrix interconnect."
+
+  - name: CPX-6
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 6 (U1 PD3). Matrix interconnect."
+
+  - name: CPX-7
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 7 (U1 PA3). Matrix interconnect."
+
+  - name: CPX-8
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 8 (U1 PB7). Matrix interconnect."
+
+  - name: CPX-9
+    net_class: high_speed
+    weight: 4.0
+    critical: true
+    power_loop_group: charlieplex
+    emi_sensitive: true
+    simulate_em: true
+    max_length_mm: 18.0
+    notes: "Charlieplex line 9 (U1 PB5). Matrix interconnect."
+
+  # --- Analog microphone (Knowles SPW2430HR5H-B amplified MEMS → MCU ADC) ---
+  - name: MIC
+    net_class: analog
+    weight: 3.5
+    critical: true
+    max_length_mm: 8.0
+    simulate_spice: true
+    emi_sensitive: false
+    notes: >
+      Amplified MEMS mic output to STM8L 12-bit ADC (U1 PD0). Audio-reactive firmware
+      mode depends on clean samples. Keep short, away from CPX switching and digital
+      edges; do not run under LED ring currents. MK1 at (0, -4.6) mm toward hook side.
+
+  # --- I2C to optional LSM6DSM IMU (often DNP — no firmware support / cost-down) ---
+  - name: SDA
+    net_class: differential
+    weight: 3.0
+    critical: true
+    pair_with: SCL
+    max_length_mm: 10.0
+    notes: >
+      I2C data (U1 PC0 ↔ U2). 10k pull-up R1 to +3V when IMU populated. Keep matched
+      length with SCL; route as a pair away from CPX if IMU fitted.
+
+  - name: SCL
+    net_class: differential
+    weight: 3.0
+    critical: true
+    pair_with: SDA
+    max_length_mm: 10.0
+    notes: >
+      I2C clock (U1 PC1 ↔ U2). 10k pull-up R2 to +3V when IMU populated. Length-match SDA.
+
+  - name: XL-INT1
+    net_class: signal
+    weight: 2.0
+    critical: false
+    max_length_mm: 10.0
+    notes: >
+      LSM6DSM INT1 → U1 PD4. Wake/interrupt from IMU. Optional (IMU often unpopulated).
+      Prefer short path U2→U1; low priority vs power/CPX/MIC.
+
+  - name: XL-INT2
+    net_class: signal
+    weight: 2.0
+    critical: false
+    max_length_mm: 10.0
+    notes: "LSM6DSM INT2 → U1 PC4. Optional second IMU interrupt."
+
+  # --- User button (C&K KXT311LHS ultra-low-profile, 100 g) ---
+  - name: SW-A
+    net_class: signal
+    weight: 2.5
+    critical: true
+    max_length_mm: 8.0
+    notes: >
+      Button side A (U1 PB1 ↔ S1). Mode change on press; 500 ms hold → deep sleep (~15 uA).
+      Short path; place switch at edge for nail access (product: S1 at x=-4.25).
+
+  - name: SW-B
+    net_class: signal
+    weight: 2.5
+    critical: true
+    max_length_mm: 8.0
+    notes: "Button side B (U1 PB6 ↔ S1). Mate of SW-A on KXT3 footprint."
+
+  # --- Debug / factory programming (⌀1 mm pogo pads; balanced layout) ---
+  - name: TX
+    net_class: signal
+    weight: 2.0
+    critical: false
+    max_length_mm: 12.0
+    notes: >
+      Serial out (readme: GPIO PB2 / also PC3 net). Programmer pad TX. Factory/test only;
+      length secondary to pogo pad placement for balanced spring force.
+
+  - name: RX
+    net_class: signal
+    weight: 2.0
+    critical: false
+    max_length_mm: 12.0
+    notes: >
+      Serial in (readme: GPIO PB4 / also PC2 net). Programmer pad RX. Mate with TX pad geometry.
+
+  - name: "Net-(R3-Pad2)"
+    net_class: reset
+    weight: 3.0
+    critical: true
+    max_length_mm: 8.0
+    notes: >
+      NRST node: U1 ~NRST, 10k pull-up R3 to +3V, programmer pad RST (TP5).
+      Active-low reset. Keep short, clean pull-up; do not couple to CPX edges.
+
+  - name: "Net-(TP2-Pad1)"
+    net_class: signal
+    weight: 2.5
+    critical: true
+    max_length_mm: 10.0
+    notes: >
+      SWIM programming interface (U1 SWIM pin ↔ TP2). STLink-V2 SWIM flashing of STM8L.
+      Critical for manufacturing; pad placement fixed by programmer jig geometry.
+
+# ---------------------------------------------------------------------------
+# Fixed mechanical / product geometry (from released layout, origin = center)
+# ---------------------------------------------------------------------------
+fixed:
+  - ref: U1
+    x_mm: 0.0
+    y_mm: 0.0
+    rotation_deg: -135.0
+    locked: true
+    notes: "STM8L151G4 UFQFPN28 — center of board; main compute + charlieplex driver."
+
+  - ref: BT1
+    x_mm: 0.0
+    y_mm: 0.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "BAT-HLD-001-HALO CR2032 holder — stacked on center; anode can / cathode pad."
+
+  - ref: H1
+    x_mm: 0.0
+    y_mm: -13.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "Earring hook/eyelet — top of product, extends ~2 mm beyond 24 mm disk."
+
+  - ref: S1
+    x_mm: -4.25
+    y_mm: 0.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "KXT3 tactile — edge placement for nail actuation."
+
+  - ref: MK1
+    x_mm: 0.0
+    y_mm: -4.6
+    rotation_deg: 90.0
+    locked: true
+    notes: "SPW2430 MEMS mic — acoustic port orientation fixed by case/face."
+
+  - ref: U2
+    x_mm: 0.0
+    y_mm: 4.8
+    rotation_deg: 0.0
+    locked: true
+    notes: "LSM6DSM IMU footprint (often DNP). Keep for optional populate."
+
+  # Decoupling / pull-ups — keep near U1 (datasheet STM8L local decoupling)
+  - ref: C1
+    x_mm: 2.7
+    y_mm: 3.6
+    rotation_deg: -90.0
+    locked: true
+    notes: "Decoupling cap (1 uF or 0.1 uF class) near U1 — +3V/GND loop."
+
+  - ref: C2
+    x_mm: -2.7
+    y_mm: 3.6
+    rotation_deg: -90.0
+    locked: true
+    notes: "Second decoupling near U1."
+
+  - ref: R3
+    x_mm: 5.1
+    y_mm: 0.0
+    rotation_deg: 180.0
+    locked: true
+    notes: "10k NRST pull-up to +3V."
+
+  - ref: R1
+    x_mm: -1.3
+    y_mm: 3.1
+    rotation_deg: 180.0
+    locked: true
+    notes: "10k I2C SDA pull-up (IMU populate)."
+
+  - ref: R2
+    x_mm: 1.3
+    y_mm: 3.1
+    rotation_deg: 0.0
+    locked: true
+    notes: "10k I2C SCL pull-up (IMU populate)."
+
+  # Programmer pogo pads — balanced forces (readme table)
+  - ref: TP1
+    x_mm: -6.2
+    y_mm: -1.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad TX"
+
+  - ref: TP2
+    x_mm: 6.2
+    y_mm: 1.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad SWIM"
+
+  - ref: TP3
+    x_mm: 2.8
+    y_mm: 5.5
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad (power/debug set)"
+
+  - ref: TP4
+    x_mm: -2.8
+    y_mm: 5.5
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad (power/debug set)"
+
+  - ref: TP5
+    x_mm: 6.2
+    y_mm: -1.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad RST"
+
+  - ref: TP6
+    x_mm: -6.2
+    y_mm: 1.0
+    rotation_deg: 0.0
+    locked: true
+    notes: "Pogo pad RX"
+
+  # Tooling / alignment holes (1.152 mm @ 2.8 / 5.5 mm from center)
+  - ref: MH1
+    x_mm: 2.8
+    y_mm: -5.5
+    rotation_deg: 0.0
+    locked: true
+    notes: "Alignment / tooling hole"
+
+  - ref: MH2
+    x_mm: -2.8
+    y_mm: -5.5
+    rotation_deg: 0.0
+    locked: true
+    notes: "Alignment / tooling hole"
+
+  - ref: MH3
+    x_mm: -5.5
+    y_mm: 2.8
+    rotation_deg: 0.0
+    locked: true
+    notes: "Alignment / tooling hole"
+
+  - ref: MH4
+    x_mm: 5.5
+    y_mm: 2.8
+    rotation_deg: 0.0
+    locked: true
+    notes: "Alignment / tooling hole"
+
+# ---------------------------------------------------------------------------
+# Floorplan regions (mm, origin = center)
+# ---------------------------------------------------------------------------
+regions:
+  - name: core_electronics
+    x_min_mm: -6.0
+    y_min_mm: -6.0
+    x_max_mm: 6.0
+    y_max_mm: 6.0
+    preferred_refs: [U1, BT1, C1, C2, R1, R2, R3, U2, MK1, S1]
+    preferred_net_classes: [power, ground, analog, reset]
+    notes: >
+      Center island — MCU, battery, decoupling, mic, button, optional IMU.
+      Prefer short power and reset here.
+
+  - name: led_ring
+    x_min_mm: -12.0
+    y_min_mm: -12.0
+    x_max_mm: 12.0
+    y_max_mm: 12.0
+    preferred_refs: []
+    preferred_net_classes: [high_speed]
+    notes: >
+      Annular zone for D1–D90 at ~11 mm radius, 4° spacing, cathodes toward center.
+      CPX routing fans from U1 into this ring. LEDs are geometric product constraints
+      (usually locked by construction scripts; re-place only with polar constraints).
+
+  - name: programmer_rim
+    x_min_mm: -7.0
+    y_min_mm: -7.0
+    x_max_mm: 7.0
+    y_max_mm: 7.0
+    preferred_refs: [TP1, TP2, TP3, TP4, TP5, TP6]
+    preferred_net_classes: []
+    notes: "⌀1 mm copper pogo pads balanced around board for spring-pin programmer."
+
+# ---------------------------------------------------------------------------
+# Multi-objective physics weights (emphasize power loop + CPX EMI vs pure HPWL)
+# ---------------------------------------------------------------------------
+physics:
+  weighted_wirelength: 1.0
+  power_loop_area: 5.0
+  critical_net_length: 3.5
+  overlap_penalty: 80.0
+  region_violation: 12.0
+  density_congestion: 2.0
+  thermal_spread: 0.3
+  emi_proxy: 3.5
+  spice_score: 4.0
+  openems_score: 3.0
+
+num_candidates: 4
+sa_iterations: 800
+sa_initial_temp: 8.0
+sa_cooling: 0.995
+random_seed: 90
+use_spice: true
+use_openems: true
+spice_on_top_n: 3
+openems_on_top_n: 2

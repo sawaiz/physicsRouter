@@ -265,6 +265,19 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Test project: HALO-90
+
+Real open-source wearable PCB ([openKolibri/halo-90](https://github.com/openKolibri/halo-90)) — 24 mm LED earring, STM8L, 90 charlieplexed LEDs, CR2032.
+
+```bash
+git clone git@github.com:openKolibri/halo-90.git third_party/halo-90
+physics-router score \
+  --config examples/halo-90/placement_config.yaml \
+  --pcb third_party/halo-90/pcb/halo-90.kicad_pcb
+```
+
+Net weights, power/EMI notes, fixed mechanicals, and regions are documented in [`examples/halo-90/`](examples/halo-90/) (authored from the project readme + component datasheets, not blind auto-import).
+
 ## Training data
 
 See **[DATASETS.md](DATASETS.md)** for PCBench, Open Schematics, Gerbers, and conversion paths used to train or evaluate place/route models.
