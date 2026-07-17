@@ -532,14 +532,14 @@
       if (state.live) {
         api(`/api/jobs/${j.id}`).then(full => {
           const body = state.side === 'log'
-            ? `<pre class="log">${escapeHtml((full.log||[]).join('\n'))}</pre>`
+            ? `<pre class="log">${escapeHtml((full.log||[]).join(String.fromCharCode(10)))}</pre>`
             : `<div class="stat"><strong>${full.type}</strong> ${statusPill(full.status)}</div>
                <div class="stat">${escapeHtml(full.stage)} · ${fmt(full.progress,0)}%</div>
                <div class="bar ${full.status==='done'?'done':full.status==='error'?'err':''}"><i style="width:${full.progress||0}%"></i></div>
                <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">RESULT</h2>
                <pre class="log">${escapeHtml(JSON.stringify(full.result, null, 2) || full.error || '…')}</pre>
                <h2 style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted)">LOG</h2>
-               <pre class="log">${escapeHtml((full.log_tail||full.log||[]).join('\n'))}</pre>`;
+               <pre class="log">${escapeHtml((full.log_tail||full.log||[]).join(String.fromCharCode(10)))}</pre>`;
           pane.innerHTML = body;
         }).catch(e => { pane.innerHTML = `<p class="stat">${escapeHtml(e.message)}</p>`; });
         pane.innerHTML = '<p class="stat">Loading job…</p>';
