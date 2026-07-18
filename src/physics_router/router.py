@@ -782,7 +782,18 @@ def _rubberband(
     return [(float(x), float(y)) for x, y in out]
 
 
-def _net_width(config: PlacementConfig | None, net: str) -> float:
+def _net_width(
+    config: PlacementConfig | None,
+    net: str,
+    *,
+    design_rules: Any | None = None,
+) -> float:
+    """Track width from design rules when available, else net-class heuristics."""
+    if design_rules is not None:
+        try:
+            return float(design_rules.track_width_for_net(net, config))
+        except Exception:
+            pass
     if config is None:
         return 0.25
     lab = config.net_by_name().get(net)
@@ -832,9 +843,13 @@ def clearance_aware_route(
     soft_fallback: bool | None = None,
     prefer_native: bool = True,
     net_order: list[str] | None = None,
+    nets_filter: list[str] | None = None,
+    seed_result: RouteResult | None = None,
     style: str = "isotropic",
     congestion: Any | None = None,
     k_homotopy: int | dict[str, int] | None = None,
+    design_rules: Any | None = None,
+    skip_hybrid: bool = False,
 ) -> RouteResult:
     """TopoR-inspired clearance-aware free-angle router with per-net feedback.
 
@@ -843,9 +858,11 @@ def clearance_aware_route(
     (leave edge unrouted instead of illegal copper); True only for guide_only.
 
     ``style``: ``isotropic`` (default) — any-angle paths, no preferred H/V.
-    ``ring`` / ``halo`` — concentric track + radial routing for charlieplex LED
-    rings (see docs/HALO_RING_ROUTING.md). Auto-selected when style is
-    ``auto`` and an LED ring is detected.
+    ``ring`` / ``halo`` — concentric track + radial (charlieplex LED rings).
+    ``auto`` / ``hybrid`` — multi-strategy hybrid (ring + power + critical + general).
+    ``nets_filter``: if set, only these nets are routed (hybrid buckets).
+    ``seed_result``: prior copper painted as obstacles (other strategies already done).
+    ``design_rules``: optional DesignRules for per-net width / clearance floors.
     ``net_order``: optional explicit paint order (multi-variant search).
 
     When the C++ extension ``pr_native`` is built, uses the OpenMP/GPU core unless
@@ -858,21 +875,41 @@ def clearance_aware_route(
     if soft_fallback is None:
         soft_fallback = bool(guide_only)
 
-    # HALO / charlieplex ring: concentric tracks beat free-angle chords
     style_l = (style or "isotropic").lower()
-    if not guide_only and style_l in ("ring", "halo", "halo_ring", "auto"):
+
+    # Hybrid multi-strategy (default for auto): region/net classifier
+    if (
+        not guide_only
+        and not skip_hybrid
+        and nets_filter is None
+        and seed_result is None
+        and style_l in ("auto", "hybrid")
+    ):
+        try:
+            from physics_router.hybrid_route import hybrid_route
+
+            return hybrid_route(
+                board,
+                config,
+                design_rules,
+                clearance_mm=float(clearance_mm),
+                progress_cb=progress_cb,
+            )
+        except Exception:
+            pass
+
+    # Explicit ring-only path
+    if not guide_only and style_l in ("ring", "halo", "halo_ring"):
         try:
             from physics_router.halo_ring import detect_led_ring, halo_ring_route
 
-            ring = detect_led_ring(board)
-            if style_l != "auto" or ring is not None:
-                if ring is not None:
-                    return halo_ring_route(
-                        board,
-                        config,
-                        clearance_mm=float(clearance_mm),
-                        progress_cb=progress_cb,
-                    )
+            if detect_led_ring(board) is not None:
+                return halo_ring_route(
+                    board,
+                    config,
+                    clearance_mm=float(clearance_mm),
+                    progress_cb=progress_cb,
+                )
         except Exception:
             pass
 
@@ -880,7 +917,14 @@ def clearance_aware_route(
     # post-rubberband, via minimize. Use when prefer_native and no live progress.
     # Soft-fallback native is OK for guide-like speed; for legal clearance routes
     # native now keeps soft_fallback=False by default.
-    if prefer_native and not guide_only and progress_cb is None:
+    # Skip native when seeding prior copper or filtering nets (Python path owns paint).
+    if (
+        prefer_native
+        and not guide_only
+        and progress_cb is None
+        and seed_result is None
+        and nets_filter is None
+    ):
         try:
             from physics_router.native_bridge import (
                 available,
@@ -933,6 +977,16 @@ def clearance_aware_route(
 
     om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
     result = RouteResult()
+    # Seed copper from prior hybrid phases as foreign-net obstacles
+    if seed_result is not None:
+        for s in seed_result.segments:
+            om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
+        for v in seed_result.vias:
+            for ly in layers:
+                om.add_rect(v.x, v.y, v.size_mm, v.size_mm, ly, net=v.net, inflate=True)
+        result.notes.append(
+            f"seed: {len(seed_result.segments)} segs + {len(seed_result.vias)} vias as obstacles"
+        )
     x0, x1, y0, y1 = om.x_min, om.x_max, om.y_min, om.y_max
     result.notes.append(
         "guide_only"
@@ -952,13 +1006,19 @@ def clearance_aware_route(
         pins = len(board.nets.get(n, []))
         return (-_net_priority(config, n), pins, n)
 
+    allowed = set(nets_filter) if nets_filter is not None else None
     if net_order:
-        # Preserve caller order; append any nets not listed
+        # Preserve caller order; optionally only listed nets (exclusive filter)
         seen = set(net_order)
         net_names = [n for n in net_order if n in board.nets]
-        net_names.extend(sorted((n for n in board.nets if n not in seen), key=net_sort_key))
+        if allowed is None:
+            net_names.extend(
+                sorted((n for n in board.nets if n not in seen), key=net_sort_key)
+            )
     else:
         net_names = sorted(board.nets.keys(), key=net_sort_key)
+    if allowed is not None:
+        net_names = [n for n in net_names if n in allowed]
     total_nets = len(net_names)
 
     for ni, net_name in enumerate(net_names):
@@ -992,10 +1052,18 @@ def clearance_aware_route(
             result.net_reports.append(report)
             continue
 
-        width = _net_width(config, net_name)
+        width = _net_width(config, net_name, design_rules=design_rules)
         # Prefer preferred layers for power/ground (inner if available)
         # Charlieplex / matrix: stripe across copper layers to cut same-layer crossings
         net_layers = _cpx_layer_order(net_name, layers)
+        if design_rules is not None:
+            try:
+                prefs = list(design_rules.layers_for_net(net_name, config))
+                if prefs:
+                    # Keep only layers present on this board, preserve preference order
+                    net_layers = [ly for ly in prefs if ly in layers] or net_layers
+            except Exception:
+                pass
         if config:
             lab = config.net_by_name().get(net_name)
             if lab is not None:
