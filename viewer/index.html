@@ -872,7 +872,7 @@
       const zMid = 0.4 + t / 2;
       const [vx, vy] = viewXY(c.x, c.y);
       mesh.position.set(vx, vy, zMid);
-      // Same convention as 2D: board CCW rot → -θ with view 180 applied via viewRotDeg
+      // Same convention as 2D: viewRotDeg (Y-flip) then -θ for Z-up scene
       mesh.rotation.z = -((viewRotDeg(c.rot) * Math.PI) / 180);
       mesh.userData = { ref: c.ref, locked: c.locked, led };
       three.gComps.add(mesh);
@@ -1619,14 +1619,15 @@
       }
     }
 
-    // Footprints — KiCad orientation: rot is CCW in board XY; canvas Y is flipped
-    // so we rotate by -θ. BL-HUB37A pad K (cathode) is at local +X.
+    // Footprints — KiCad θ is CCW in board XY. viewRotDeg() already accounts for
+    // VIEW_FLIP_Y (negates θ); canvas then uses rotate(-viewθ). That undoes the
+    // old 180° view bug that reversed LED / switch orientation left-right.
+    // BL-HUB37A: pad 2 pinfunction K (cathode) is at local +X.
     const showSilk = !layersOn || layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen');
     for (const c of comps) {
       const [x, y] = tx(c.x, c.y);
       const w = Math.max(1.5, (c.w || 0.8) * scale);
       const h = Math.max(1.2, (c.h || 0.5) * scale);
-      // Board θ → screen: -θ because of Y-flip (see viewXY + oy - scale*y)
       const rot = (viewRotDeg(c.rot) * Math.PI) / 180;
       const isLed = /^D\d+$/i.test(c.ref);
       const isPad = /^TP/i.test(c.ref) || /TestPoint/i.test(c.footprint || '');
@@ -1638,13 +1639,13 @@
       ctx.rotate(-rot);
 
       if (isLed) {
-        // Body along local X (pads at ±0.525); height is the short axis
+        // Body along local X (pads at ±0.525); short axis = height
         ctx.fillStyle = '#C83434';
         ctx.strokeStyle = '#8B2020';
         ctx.lineWidth = 0.8;
         ctx.fillRect(-w / 2, -h / 2, w, h);
         ctx.strokeRect(-w / 2, -h / 2, w, h);
-        // Cathode (K) mark on +X (matches pad "2" pinfunction K in HALO footprint)
+        // Cathode (K) on local +X — follows footprint rot after viewRotDeg fix
         ctx.fillStyle = '#f0e080';
         ctx.fillRect(w / 2 - w * 0.22, -h / 2, w * 0.22, h);
         // polarity bar (silk-like)
