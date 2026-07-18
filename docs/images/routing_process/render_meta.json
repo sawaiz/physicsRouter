@@ -2,37 +2,61 @@
   "synthetic": {
     "tag": "synthetic",
     "timings_s": {
-      "guide": 0.028,
-      "clearance_raw": 0.201,
-      "regeometry": 0.264
+      "guide": 0.027,
+      "clearance_raw": 0.049,
+      "regeometry": 0.051
     },
     "metrics": {
       "raw": {
-        "total_length_mm": 178.285,
+        "total_length_mm": 93.528,
         "via_count": 0,
-        "bend_count": 16,
-        "multi_bend_nets": 6,
+        "bend_count": 1,
+        "multi_bend_nets": 1,
         "arc_corners": 0,
-        "min_spacing_mm": -0.4673,
-        "segment_count": 33,
-        "net_count_routed": 7,
+        "min_spacing_mm": 0.6522,
+        "segment_count": 5,
+        "net_count_routed": 4,
         "notes": []
       },
       "regeometry": {
-        "total_length_mm": 178.005,
+        "total_length_mm": 93.565,
         "via_count": 0,
-        "bend_count": 69,
-        "multi_bend_nets": 7,
-        "arc_corners": 1,
-        "min_spacing_mm": -0.4502,
-        "segment_count": 92,
-        "net_count_routed": 7,
+        "bend_count": 35,
+        "multi_bend_nets": 4,
+        "arc_corners": 0,
+        "min_spacing_mm": 0.9399,
+        "segment_count": 41,
+        "net_count_routed": 4,
         "notes": [
-          "TopoR metrics: bends=69 multi_bend_nets=7 min_spacing=-0.450mm arcs=1"
+          "TopoR metrics: bends=35 multi_bend_nets=4 min_spacing=0.940mm arcs=0"
         ]
       },
       "guide_segs": 12,
-      "polished_segs": 92
+      "polished_segs": 41
+    },
+    "drc": {
+      "violations": 0,
+      "shorts": 0,
+      "spacing": 0,
+      "outline_outside": 0,
+      "area_outside": 0,
+      "areas_deferred_to_kicad": 3
+    },
+    "route": {
+      "segments": 41,
+      "vias": 0,
+      "areas": 3,
+      "length_mm": 93.565,
+      "unrouted_nets": [],
+      "net_status": {
+        "SW": "ok",
+        "+5V": "ok",
+        "GND": "ok",
+        "CLK_MCU": "ok",
+        "USB_DM": "ok",
+        "USB_DP": "ok",
+        "AIN0": "ok"
+      }
     },
     "images": [
       "synthetic_1_placement_outline.png",
@@ -40,43 +64,91 @@
       "synthetic_3_clearance_raw.png",
       "synthetic_4_regeometry.png",
       "synthetic_5_by_layer.png",
-      "synthetic_6_process_strip.png"
+      "synthetic_6_process_strip.png",
+      "synthetic_7_drc_map.png"
     ]
   },
   "halo90": {
     "tag": "halo90",
     "timings_s": {
-      "guide": 0.004,
-      "clearance_raw": 0.517,
-      "regeometry": 1.378
+      "guide": 0.016,
+      "clearance_raw": 2.39,
+      "regeometry": 0.51
     },
     "metrics": {
       "raw": {
-        "total_length_mm": 704.098,
-        "via_count": 3,
-        "bend_count": 181,
-        "multi_bend_nets": 17,
+        "total_length_mm": 436.147,
+        "via_count": 1,
+        "bend_count": 141,
+        "multi_bend_nets": 9,
         "arc_corners": 0,
-        "min_spacing_mm": -0.1476,
-        "segment_count": 220,
-        "net_count_routed": 23,
+        "min_spacing_mm": 0.2555,
+        "segment_count": 143,
+        "net_count_routed": 13,
         "notes": []
       },
       "regeometry": {
-        "total_length_mm": 685.896,
-        "via_count": 3,
-        "bend_count": 433,
-        "multi_bend_nets": 21,
-        "arc_corners": 44,
-        "min_spacing_mm": -0.1802,
-        "segment_count": 515,
-        "net_count_routed": 23,
-        "notes": [
-          "TopoR metrics: bends=433 multi_bend_nets=21 min_spacing=-0.180mm arcs=44"
-        ]
+        "total_length_mm": 436.147,
+        "via_count": 1,
+        "bend_count": 141,
+        "multi_bend_nets": 9,
+        "arc_corners": 0,
+        "min_spacing_mm": 0.2555,
+        "segment_count": 143,
+        "net_count_routed": 13,
+        "notes": []
       },
       "guide_segs": 217,
-      "polished_segs": 515
+      "polished_segs": 143
+    },
+    "drc": {
+      "violations": 0,
+      "shorts": 0,
+      "spacing": 0,
+      "outline_outside": 0,
+      "area_outside": 0,
+      "areas_deferred_to_kicad": 2
+    },
+    "route": {
+      "segments": 143,
+      "vias": 1,
+      "areas": 2,
+      "length_mm": 436.147,
+      "unrouted_nets": [
+        "CPX-1",
+        "CPX-2",
+        "CPX-5",
+        "CPX-6",
+        "CPX-7",
+        "CPX-8",
+        "CPX-9",
+        "XL-INT1"
+      ],
+      "net_status": {
+        "GND": "ok",
+        "+3V": "ok",
+        "MIC": "ok",
+        "CPX-0": "ok",
+        "CPX-3": "ok",
+        "CPX-4": "ok",
+        "Net-(R3-Pad2)": "ok",
+        "SCL": "ok",
+        "CPX-1": "unrouted",
+        "CPX-2": "unrouted",
+        "CPX-5": "unrouted",
+        "CPX-6": "unrouted",
+        "CPX-7": "unrouted",
+        "CPX-8": "unrouted",
+        "CPX-9": "unrouted",
+        "SDA": "ok",
+        "Net-(TP2-Pad1)": "ok",
+        "XL-INT1": "unrouted",
+        "SW-A": "ok",
+        "SW-B": "ok",
+        "RX": "ok",
+        "XL-INT2": "ok",
+        "TX": "ok"
+      }
     },
     "images": [
       "halo90_1_placement_outline.png",
@@ -84,7 +156,8 @@
       "halo90_3_clearance_raw.png",
       "halo90_4_regeometry.png",
       "halo90_5_by_layer.png",
-      "halo90_6_process_strip.png"
+      "halo90_6_process_strip.png",
+      "halo90_7_drc_map.png"
     ]
   }
 }

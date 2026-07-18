@@ -3,7 +3,8 @@
 
 Produces PNGs under docs/images/routing_process/ showing pipeline stages:
   1_placement_outline, 2_guide_topology, 3_clearance_raw,
-  4_regeometry, 5_by_layer, 6_process_strip
+  4_regeometry, 5_by_layer, 6_process_strip, 7_drc_map
+and machine-readable render_meta.json / drc_report.json.
 
 Usage (repo root, venv active, native built):
   python scripts/render_routing_process.py
@@ -22,8 +23,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
-from matplotlib.patches import Circle, FancyBboxPatch, Polygon, Rectangle  # noqa: E402
+from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules, load_design_rules
@@ -31,6 +31,7 @@ from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_
 from physics_router.regeometry import compute_topor_geometry_metrics, post_connect_regeometry
 from physics_router.router import (
     clearance_aware_route,
+    native_drc_check,
     outline_polygon_from_board,
     topological_guide_route,
 )
@@ -134,6 +135,21 @@ def _draw_board_base(ax, board, cfg, *, show_outline=True, dim_parts=False):
 
 
 def _draw_route(ax, route, cfg, *, alpha=0.9, by_layer=False):
+    for area in route.areas:
+        if len(area.outline) < 3:
+            continue
+        color = LAYER_COLORS.get(area.layer, "#aaaaaa")
+        ax.add_patch(
+            Polygon(
+                area.outline,
+                closed=True,
+                facecolor=color,
+                edgecolor=color,
+                linewidth=0.9,
+                alpha=0.24,
+                zorder=2,
+            )
+        )
     for seg in route.segments:
         if by_layer:
             col = LAYER_COLORS.get(seg.layer, "#aaaaaa")
@@ -238,8 +254,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
     _draw_route(ax, raw, cfg, alpha=0.9)
     ax.set_title(
-        f"3 · Clearance-aware free-angle (raw connectivity)\n"
-        f"grid=0.5 mm · soft_fallback=off · vias kept",
+        "3 · Clearance-aware free-angle (raw connectivity)\n"
+        "grid=0.5 mm · soft_fallback=off · vias kept",
         fontsize=10,
     )
     ax.set_xlabel("x (mm)")
@@ -262,6 +278,13 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     polished = post_connect_regeometry(
         raw, board, clearance_mm=cl, iterations=14, use_arcs=True, max_seg_mm=2.5
     )
+    raw_drc = native_drc_check(raw, clearance_mm=cl, board=board)
+    polished_drc = native_drc_check(polished, clearance_mm=cl, board=board)
+    if polished_drc["violations"] > raw_drc["violations"]:
+        polished = raw
+        polished.notes.append(
+            "docs render: reverted regeometry because exact DRC worsened"
+        )
     meta["timings_s"]["regeometry"] = round(time.perf_counter() - t0, 3)
     m_pol = compute_topor_geometry_metrics(polished)
     tg = (polished.quality or {}).get("topor_geometry") or m_pol.to_dict()
@@ -269,8 +292,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
     _draw_route(ax, polished, cfg, alpha=0.92)
     ax.set_title(
-        f"4 · Post-connect re-geometry (spacing + multi-bend + arcs)\n"
-        f"subdivide → repel → arc chords",
+        "4 · Post-connect re-geometry (spacing + multi-bend + arcs)\n"
+        "subdivide → repel → arc chords",
         fontsize=10,
     )
     ax.set_xlabel("x (mm)")
@@ -290,13 +313,28 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     plt.close(fig)
 
     # --- 5 By layer ---
-    layers = sorted({s.layer for s in polished.segments}) or list(board.copper_layers) or ["F.Cu"]
+    layers = sorted(
+        {s.layer for s in polished.segments} | {area.layer for area in polished.areas}
+    ) or list(board.copper_layers) or ["F.Cu"]
     n = max(1, len(layers))
     fig, axes = plt.subplots(1, n, figsize=(3.6 * n, 3.8), dpi=140)
     if n == 1:
         axes = [axes]
     for ax, ly in zip(axes, layers):
         _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
+        for area in polished.areas:
+            if area.layer == ly and len(area.outline) >= 3:
+                color = LAYER_COLORS.get(ly, "#aaa")
+                ax.add_patch(
+                    Polygon(
+                        area.outline,
+                        closed=True,
+                        facecolor=color,
+                        edgecolor=color,
+                        linewidth=0.8,
+                        alpha=0.28,
+                    )
+                )
         segs = [s for s in polished.segments if s.layer == ly]
         for seg in segs:
             col = LAYER_COLORS.get(ly, "#aaa")
@@ -310,7 +348,12 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
             )
         for v in polished.vias or []:
             ax.plot(v.x, v.y, "o", color="#c0a060", markersize=3.5, zorder=4)
-        ax.set_title(f"{ly} · {len(segs)} segs", fontsize=9, color="#e8eef7")
+        area_count = sum(1 for area in polished.areas if area.layer == ly)
+        ax.set_title(
+            f"{ly} · {len(segs)} segs · {area_count} areas",
+            fontsize=9,
+            color="#e8eef7",
+        )
         ax.set_xlabel("x (mm)", fontsize=7)
         ax.set_ylabel("y (mm)", fontsize=7)
     fig.suptitle(f"5 · Copper by layer — {tag}", color="#e8eef7", fontsize=11)
@@ -345,6 +388,40 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     fig.savefig(p6, bbox_inches="tight", facecolor="#0a1020")
     plt.close(fig)
 
+    # --- 7 Exact native DRC map ---
+    drc = native_drc_check(polished, clearance_mm=cl, board=board)
+    fig, ax = plt.subplots(figsize=(7.2, 7.2), dpi=140)
+    _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
+    _draw_route(ax, polished, cfg, alpha=0.9, by_layer=True)
+    marker_colors = {"short": "#ff3344", "spacing": "#ff9f32", "outline": "#ff55cc"}
+    for item in drc.get("items") or []:
+        ax.plot(
+            item["x"],
+            item["y"],
+            marker="x",
+            color=marker_colors.get(item["kind"], "#ffffff"),
+            markersize=6,
+            markeredgewidth=1.2,
+            zorder=6,
+        )
+    ax.set_title(
+        f"7 · Exact native DRC — {tag}\n"
+        f"{drc['violations']} violations · {len(polished.unrouted_nets)} open nets",
+        fontsize=10,
+    )
+    ax.set_xlabel("x (mm)")
+    ax.set_ylabel("y (mm)")
+    _metrics_box(
+        ax,
+        f"shorts={drc['shorts']}\nspacing={drc['spacing']}\n"
+        f"outside={drc['outline_outside']}\nareas={len(polished.areas)}\n"
+        f"unrouted={len(polished.unrouted_nets)}",
+    )
+    fig.tight_layout()
+    p7 = OUT / f"{tag}_7_drc_map.png"
+    fig.savefig(p7, bbox_inches="tight", facecolor="#0a1020")
+    plt.close(fig)
+
     # Canonical aliases for README (prefer synthetic if both, overwrite with last)
     for src, name in (
         (p1, "1_placement_outline.png"),
@@ -353,9 +430,11 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
         (p4, "4_regeometry.png"),
         (p5, "5_by_layer.png"),
         (p6, "6_process_strip.png"),
+        (p7, "7_drc_map.png"),
     ):
         dest = OUT / name
         dest.write_bytes(src.read_bytes())
+    (OUT / f"{tag}_drc_map.png").write_bytes(p7.read_bytes())
 
     meta["metrics"] = {
         "raw": m_raw.to_dict(),
@@ -363,7 +442,34 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
         "guide_segs": len(guide.segments),
         "polished_segs": len(polished.segments),
     }
-    meta["images"] = [p1.name, p2.name, p3.name, p4.name, p5.name, p6.name]
+    meta["drc"] = {
+        key: drc[key]
+        for key in (
+            "violations",
+            "shorts",
+            "spacing",
+            "outline_outside",
+            "area_outside",
+            "areas_deferred_to_kicad",
+        )
+    }
+    meta["route"] = {
+        "segments": len(polished.segments),
+        "vias": len(polished.vias),
+        "areas": len(polished.areas),
+        "length_mm": round(polished.total_length_mm, 3),
+        "unrouted_nets": list(polished.unrouted_nets),
+        "net_status": {report.net: report.status for report in polished.net_reports},
+    }
+    meta["images"] = [
+        p1.name,
+        p2.name,
+        p3.name,
+        p4.name,
+        p5.name,
+        p6.name,
+        p7.name,
+    ]
     return meta
 
 
@@ -411,6 +517,10 @@ def main() -> None:
             print("  timings", meta["timings_s"])
 
     (OUT / "render_meta.json").write_text(json.dumps(all_meta, indent=2) + "\n")
+    if "halo90" in all_meta:
+        (OUT / "drc_report.json").write_text(
+            json.dumps(all_meta["halo90"], indent=2) + "\n"
+        )
     print("Wrote images to", OUT)
     for p in sorted(OUT.glob("*.png")):
         print(" ", p.name, f"{p.stat().st_size // 1024} KB")

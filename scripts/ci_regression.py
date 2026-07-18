@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -52,11 +53,19 @@ def measure_halo() -> dict | None:
         "guide_length_mm": guide.total_length_mm,
         "components": len(board.components),
         "nets": len(board.nets),
+        "pcb_sha256": hashlib.sha256(HALO_PCB.read_bytes()).hexdigest(),
+        "config_sha256": hashlib.sha256(HALO_CFG.read_bytes()).hexdigest(),
     }
 
 
 def check(name: str, measured: dict, baseline: dict) -> list[str]:
     fails = []
+    for key in ("pcb_sha256", "config_sha256"):
+        if key in measured and key in baseline and measured[key] != baseline[key]:
+            return [
+                f"{name} fixture changed ({key}); inspect it and run "
+                "scripts/ci_regression.py --update-baselines"
+            ]
     for key, tol in (("score_total", TOL_SCORE), ("guide_length_mm", TOL_LENGTH)):
         if key not in baseline or key not in measured:
             continue
