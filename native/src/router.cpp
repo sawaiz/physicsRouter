@@ -81,7 +81,7 @@ void emit_poly(const std::vector<Vec2> &poly, int layer, int net_id, double widt
 
 } // namespace
 
-const char *native_version() { return "1.1.0-native-isotropic"; }
+const char *native_version() { return "1.2.0-native-atomic"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -481,7 +481,7 @@ void compute_quality(RouteResult &r) {
   int n = std::max(1, static_cast<int>(r.net_reports.size()));
   int routed = 0;
   for (const auto &nr : r.net_reports)
-    if (nr.status == "ok" || nr.status == "partial" || nr.status == "soft_violation")
+    if (nr.status == "ok" || nr.status == "soft_violation")
       ++routed;
   double completion = static_cast<double>(routed) / n;
   double viol_pen = std::min(40.0, r.clearance_violations * 4.0);
@@ -568,76 +568,110 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         layers.push_back(i);
     }
 
-    // Prim MST on anchors
+    // Prim-style tree on anchors.  Euclidean-nearest is only a preference:
+    // try every frontier edge until one can be legally geometrized.  An
+    // anchor is never admitted to the tree before copper reaches it.
     const size_t n = net.anchors.size();
     std::vector<char> in(n, 0);
     in[0] = 1;
     size_t in_count = 1;
     int open_edges = 0;
     std::string last_method;
+    std::vector<Segment> net_segments;
+    std::vector<Via> net_vias;
+    GridMap net_grid = grid;
 
     while (in_count < n) {
-      double best_d = 1e100;
-      size_t bi = 0, bj = 0;
+      struct Candidate {
+        double distance;
+        size_t from;
+        size_t to;
+      };
+      std::vector<Candidate> candidates;
       for (size_t i = 0; i < n; ++i)
         if (in[i])
           for (size_t j = 0; j < n; ++j)
-            if (!in[j]) {
-              double d = dist(net.anchors[i], net.anchors[j]);
-              if (d < best_d) {
-                best_d = d;
-                bi = i;
-                bj = j;
-              }
-            }
-      in[bj] = 1;
-      ++in_count;
+            if (!in[j])
+              candidates.push_back(
+                  {dist(net.anchors[i], net.anchors[j]), i, j});
+      std::sort(candidates.begin(), candidates.end(),
+                [](const Candidate &a, const Candidate &b) {
+                  return a.distance < b.distance;
+                });
 
-      std::vector<Segment> segs;
-      std::vector<Via> vias;
-      std::string method;
-      bool ok = route_edge(grid, cfg, net.anchors[bi], net.anchors[bj], net.net_id, layers,
-                           net.width_mm, segs, vias, method);
-      if (!ok) {
-        if (cfg.soft_fallback) {
-          Segment s{net.anchors[bi].x, net.anchors[bi].y, net.anchors[bj].x, net.anchors[bj].y,
-                    layers.front(), net.net_id, net.width_mm};
-          result.segments.push_back(s);
-          result.total_length_mm += best_d;
-          result.clearance_violations++;
-          rep.segments++;
-          rep.length_mm += best_d;
-          last_method = "straight_fallback";
-        } else {
-          ++open_edges;
-          last_method = "unrouted_edge";
+      bool connected = false;
+      for (const auto &candidate : candidates) {
+        std::vector<Segment> edge_segments;
+        std::vector<Via> edge_vias;
+        std::string method;
+        bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
+                             net.anchors[candidate.to], net.net_id, layers,
+                             net.width_mm, edge_segments, edge_vias, method);
+        if (!ok)
+          continue;
+        in[candidate.to] = 1;
+        ++in_count;
+        connected = true;
+        last_method = method;
+        net_segments.insert(net_segments.end(), edge_segments.begin(),
+                            edge_segments.end());
+        for (const auto &v : edge_vias) {
+          net_vias.push_back(v);
+          for (int ly = 0; ly < cfg.num_layers; ++ly)
+            net_grid.paint_rect(v.x, v.y,
+                                v.size_mm + cfg.clearance_mm,
+                                v.size_mm + cfg.clearance_mm, ly, net.net_id);
         }
+        break;
+      }
+
+      if (connected)
+        continue;
+
+      if (cfg.soft_fallback && !candidates.empty()) {
+        const auto &candidate = candidates.front();
+        const auto &a = net.anchors[candidate.from];
+        const auto &b = net.anchors[candidate.to];
+        Segment s{a.x, a.y, b.x, b.y, layers.front(), net.net_id,
+                  net.width_mm};
+        net_segments.push_back(s);
+        net_grid.paint_trace(s.x1, s.y1, s.x2, s.y2,
+                             s.width_mm + cfg.clearance_mm, s.layer, s.net_id);
+        result.clearance_violations++;
+        in[candidate.to] = 1;
+        ++in_count;
+        last_method = "straight_fallback";
         continue;
       }
-      last_method = method;
-      for (auto &s : segs) {
-        result.segments.push_back(s);
-        double L = dist({s.x1, s.y1}, {s.x2, s.y2});
-        result.total_length_mm += L;
-        rep.length_mm += L;
-        rep.segments++;
-      }
-      for (auto &v : vias) {
-        result.vias.push_back(v);
-        result.via_count++;
-        rep.vias++;
-        // Keep via as soft keepout on all layers
-        for (int ly = 0; ly < cfg.num_layers; ++ly)
-          grid.paint_rect(v.x, v.y, v.size_mm + cfg.clearance_mm, v.size_mm + cfg.clearance_mm,
-                          ly, net.net_id);
-      }
+
+      open_edges = static_cast<int>(n - in_count);
+      last_method = "unrouted_edge";
+      break;
     }
 
     rep.method = last_method;
-    if (open_edges && rep.segments == 0) {
+    const bool complete = in_count == n;
+    const bool commit = complete || !cfg.atomic_nets || cfg.soft_fallback;
+    if (commit) {
+      grid = std::move(net_grid);
+      for (const auto &s : net_segments) {
+        result.segments.push_back(s);
+        double length = dist({s.x1, s.y1}, {s.x2, s.y2});
+        result.total_length_mm += length;
+        rep.length_mm += length;
+        rep.segments++;
+      }
+      result.vias.insert(result.vias.end(), net_vias.begin(), net_vias.end());
+      result.via_count += static_cast<int>(net_vias.size());
+      rep.vias = static_cast<int>(net_vias.size());
+    }
+
+    if (!complete && (!commit || rep.segments == 0)) {
       rep.status = "unrouted";
       result.unrouted.push_back(net.name);
-    } else if (open_edges)
+      if (cfg.atomic_nets && !cfg.soft_fallback)
+        rep.method = "atomic_unrouted";
+    } else if (!complete || open_edges)
       rep.status = "partial";
     else if (last_method == "straight_fallback")
       rep.status = "soft_violation";
