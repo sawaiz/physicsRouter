@@ -13,6 +13,7 @@ struct Vec2 {
 struct RectObs {
   double cx = 0, cy = 0, w = 0, h = 0;
   int net_id = -1; // -1 = blocks all
+  std::vector<int> layers; // empty = all copper layers
 };
 
 struct Segment {
@@ -31,6 +32,20 @@ struct Via {
   int alternatives_considered = 0;
 };
 
+/** Refillable copper zone boundary.
+ *
+ * The polygon is native router output, while the PCB editor remains the fill
+ * authority so clearances, thermals, and same-layer cut-outs use fab rules.
+ */
+struct CopperArea {
+  std::vector<Vec2> outline;
+  int layer = 0;
+  int net_id = 0;
+  double clearance_mm = 0.2;
+  double min_thickness_mm = 0.25;
+  int priority = 0;
+};
+
 struct NetSpec {
   int net_id = 0;
   std::string name;
@@ -38,10 +53,15 @@ struct NetSpec {
   double priority = 1.0;
   double width_mm = 0.25;
   std::vector<int> preferred_layers; // empty = all
+  bool use_copper_area = false;
+  int area_layer = -1; // -1 = first preferred layer
+  double area_margin_mm = 0.8;
+  int area_priority = 0;
 };
 
 struct RouteConfig {
   double x_min = 0, x_max = 100, y_min = 0, y_max = 100;
+  std::vector<Vec2> board_outline; // optional true Edge.Cuts polygon
   double grid_mm = 0.1; // fine free-angle default (matches Python pipeline)
   double clearance_mm = 0.2;
   int num_layers = 2;
@@ -70,6 +90,7 @@ struct NetReport {
 struct RouteResult {
   std::vector<Segment> segments;
   std::vector<Via> vias;
+  std::vector<CopperArea> areas;
   double total_length_mm = 0;
   int via_count = 0;
   int clearance_violations = 0;

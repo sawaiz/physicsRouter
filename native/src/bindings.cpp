@@ -24,7 +24,8 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("cy", &pr::RectObs::cy)
       .def_readwrite("w", &pr::RectObs::w)
       .def_readwrite("h", &pr::RectObs::h)
-      .def_readwrite("net_id", &pr::RectObs::net_id);
+      .def_readwrite("net_id", &pr::RectObs::net_id)
+      .def_readwrite("layers", &pr::RectObs::layers);
 
   py::class_<pr::NetSpec>(m, "NetSpec")
       .def(py::init<>())
@@ -33,7 +34,11 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("anchors", &pr::NetSpec::anchors)
       .def_readwrite("priority", &pr::NetSpec::priority)
       .def_readwrite("width_mm", &pr::NetSpec::width_mm)
-      .def_readwrite("preferred_layers", &pr::NetSpec::preferred_layers);
+      .def_readwrite("preferred_layers", &pr::NetSpec::preferred_layers)
+      .def_readwrite("use_copper_area", &pr::NetSpec::use_copper_area)
+      .def_readwrite("area_layer", &pr::NetSpec::area_layer)
+      .def_readwrite("area_margin_mm", &pr::NetSpec::area_margin_mm)
+      .def_readwrite("area_priority", &pr::NetSpec::area_priority);
 
   py::class_<pr::RouteConfig>(m, "RouteConfig")
       .def(py::init<>())
@@ -41,6 +46,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("x_max", &pr::RouteConfig::x_max)
       .def_readwrite("y_min", &pr::RouteConfig::y_min)
       .def_readwrite("y_max", &pr::RouteConfig::y_max)
+      .def_readwrite("board_outline", &pr::RouteConfig::board_outline)
       .def_readwrite("grid_mm", &pr::RouteConfig::grid_mm)
       .def_readwrite("clearance_mm", &pr::RouteConfig::clearance_mm)
       .def_readwrite("num_layers", &pr::RouteConfig::num_layers)
@@ -73,6 +79,14 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readonly("reason", &pr::Via::reason)
       .def_readonly("alternatives_considered", &pr::Via::alternatives_considered);
 
+  py::class_<pr::CopperArea>(m, "CopperArea")
+      .def_readonly("outline", &pr::CopperArea::outline)
+      .def_readonly("layer", &pr::CopperArea::layer)
+      .def_readonly("net_id", &pr::CopperArea::net_id)
+      .def_readonly("clearance_mm", &pr::CopperArea::clearance_mm)
+      .def_readonly("min_thickness_mm", &pr::CopperArea::min_thickness_mm)
+      .def_readonly("priority", &pr::CopperArea::priority);
+
   py::class_<pr::NetReport>(m, "NetReport")
       .def_readonly("net_id", &pr::NetReport::net_id)
       .def_readonly("name", &pr::NetReport::name)
@@ -86,6 +100,7 @@ PYBIND11_MODULE(pr_native, m) {
   py::class_<pr::RouteResult>(m, "RouteResult")
       .def_readonly("segments", &pr::RouteResult::segments)
       .def_readonly("vias", &pr::RouteResult::vias)
+      .def_readonly("areas", &pr::RouteResult::areas)
       .def_readonly("total_length_mm", &pr::RouteResult::total_length_mm)
       .def_readonly("via_count", &pr::RouteResult::via_count)
       .def_readonly("clearance_violations", &pr::RouteResult::clearance_violations)

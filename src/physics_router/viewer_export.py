@@ -7,11 +7,18 @@ from pathlib import Path
 from typing import Any
 
 from physics_router.models import BoardModel, PlacementConfig
-from physics_router.physics import geometric_score, apply_simulation_scores, GeometricSpiceProxy, OpenEMSBackend
+from physics_router.physics import (
+    geometric_score,
+    apply_simulation_scores,
+    GeometricSpiceProxy,
+    OpenEMSBackend,
+)
 from physics_router.router import RouteResult
 
 
-def board_to_viewer_dict(board: BoardModel, config: PlacementConfig | None = None) -> dict[str, Any]:
+def board_to_viewer_dict(
+    board: BoardModel, config: PlacementConfig | None = None
+) -> dict[str, Any]:
     comps = []
     for ref, c in board.components.items():
         item: dict[str, Any] = {
@@ -30,12 +37,16 @@ def board_to_viewer_dict(board: BoardModel, config: PlacementConfig | None = Non
         if c.graphics:
             item["graphics"] = list(c.graphics)
         comps.append(item)
-    nets = {n: [{"ref": r, "pad": p} for r, p in pins] for n, pins in board.nets.items()}
+    nets = {
+        n: [{"ref": r, "pad": p} for r, p in pins] for n, pins in board.nets.items()
+    }
     net_meta = {}
     if config:
         for lab in config.nets:
             net_meta[lab.name] = {
-                "class": lab.net_class.value if hasattr(lab.net_class, "value") else str(lab.net_class),
+                "class": lab.net_class.value
+                if hasattr(lab.net_class, "value")
+                else str(lab.net_class),
                 "weight": lab.weight,
                 "critical": lab.critical,
                 "emi_sensitive": lab.emi_sensitive,
@@ -64,7 +75,8 @@ def route_to_viewer_dict(route: RouteResult, name: str = "route") -> dict[str, A
         "unrouted_nets": route.unrouted_nets,
         "clearance_violations": route.clearance_violations,
         "notes": route.notes,
-        "quality": d.get("quality") or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
+        "quality": d.get("quality")
+        or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
         "net_reports": d.get("net_reports") or [],
         "length_by_layer_mm": d.get("length_by_layer_mm") or {},
         "segments": [
@@ -78,6 +90,17 @@ def route_to_viewer_dict(route: RouteResult, name: str = "route") -> dict[str, A
                 "width_mm": s.width_mm,
             }
             for s in route.segments
+        ],
+        "areas": [
+            {
+                "net": area.net,
+                "layer": area.layer,
+                "outline": [[x, y] for x, y in area.outline],
+                "clearance_mm": area.clearance_mm,
+                "min_thickness_mm": area.min_thickness_mm,
+                "priority": area.priority,
+            }
+            for area in route.areas
         ],
         "vias": [
             {
@@ -127,7 +150,9 @@ def build_viewer_payload(
         payload["physics"] = {
             "score": sb.as_dict(),
             "notes": sb.notes,
-            "weights": config.physics.model_dump() if hasattr(config.physics, "model_dump") else {},
+            "weights": config.physics.model_dump()
+            if hasattr(config.physics, "model_dump")
+            else {},
         }
     if extra:
         payload["extra"] = extra

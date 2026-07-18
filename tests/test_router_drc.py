@@ -8,12 +8,14 @@ from physics_router.config_io import example_config
 from physics_router.kicad_io import board_from_synthetic
 from physics_router.models import BoardModel, Component
 from physics_router.router import (
+    CopperArea,
     RouteResult,
     RouteSegment,
     Via,
     attach_router_drc,
     clearance_aware_route,
     native_drc_check,
+    _net_fully_connected,
 )
 
 
@@ -75,7 +77,17 @@ def test_purge_shorting_copper_removes_cross():
         net_reports=[],
     )
     # Without config, priorities are equal — purge still removes one side of short
-    out = purge_shorting_copper(r, board=BoardModel(width_mm=20, height_mm=20, copper_layers=["F.Cu"], components={}, nets={"HIGH": [], "LOW": []}), clearance_mm=0.2)
+    out = purge_shorting_copper(
+        r,
+        board=BoardModel(
+            width_mm=20,
+            height_mm=20,
+            copper_layers=["F.Cu"],
+            components={},
+            nets={"HIGH": [], "LOW": []},
+        ),
+        clearance_mm=0.2,
+    )
     rep = native_drc_check(out, clearance_mm=0.2)
     assert rep["shorts"] == 0
     assert len(out.segments) < len(r.segments)
@@ -101,9 +113,7 @@ def test_outline_outside_counts_as_drc():
         ],
     )
     # Segment clearly outside the disk
-    route = RouteResult(
-        segments=[RouteSegment(14, -2, 16, 2, "F.Cu", "ESC", 0.25)]
-    )
+    route = RouteResult(segments=[RouteSegment(14, -2, 16, 2, "F.Cu", "ESC", 0.25)])
     rep = native_drc_check(route, clearance_mm=0.2, board=board)
     assert rep.get("outline_outside", 0) >= 1
     assert rep["violations"] >= 1
@@ -141,9 +151,7 @@ def test_sequential_zero_violation_no_shorts_python():
         prefer_native=False,
         allow_vias=True,
     )
-    assert any(
-        "zero-violation" in n or "full-net commit" in n for n in r.notes
-    )
+    assert any("zero-violation" in n or "full-net commit" in n for n in r.notes)
     assert r.clearance_violations == 0
     rep = native_drc_check(r, clearance_mm=0.2, board=board)
     assert rep["shorts"] == 0
@@ -216,3 +224,41 @@ def test_drc_guard_reverts_worse_regeometry():
     assert out.clearance_violations == (out.quality or {}).get("drc", {}).get(
         "violations", out.clearance_violations
     )
+
+
+def test_connectivity_requires_via_between_layers():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["F.Cu", "B.Cu"],
+        components={
+            "A": Component(ref="A", x_mm=0, y_mm=0),
+            "B": Component(ref="B", x_mm=10, y_mm=0),
+        },
+        nets={"N": [("A", "1"), ("B", "1")]},
+    )
+    segments = [
+        RouteSegment(0, 0, 5, 0, "F.Cu", "N", 0.25),
+        RouteSegment(5, 0, 10, 0, "B.Cu", "N", 0.25),
+    ]
+    assert not _net_fully_connected(board, "N", segments, [])
+    assert _net_fully_connected(board, "N", segments, [Via(5, 0, net="N")])
+
+
+def test_copper_area_connects_contained_anchors():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["B.Cu"],
+        components={
+            "A": Component(ref="A", x_mm=0, y_mm=0),
+            "B": Component(ref="B", x_mm=10, y_mm=0),
+        },
+        nets={"GND": [("A", "1"), ("B", "1")]},
+    )
+    area = CopperArea(
+        outline=[(-1, -2), (11, -2), (11, 2), (-1, 2)],
+        layer="B.Cu",
+        net="GND",
+    )
+    assert _net_fully_connected(board, "GND", [], [], areas=[area])

@@ -1437,8 +1437,8 @@
       const a = fromViewer[k];
       const b = fromSnap[k];
       // pick the one with segment list if possible
-      if (a?.segments?.length) out[k] = a;
-      else if (b?.segments?.length) out[k] = b;
+      if (a?.segments?.length || a?.areas?.length) out[k] = a;
+      else if (b?.segments?.length || b?.areas?.length) out[k] = b;
       else out[k] = a || b;
     }
     return out;
@@ -1835,6 +1835,9 @@
       expand(s.x1, s.y1);
       expand(s.x2, s.y2);
     }
+    for (const area of route?.areas || []) {
+      for (const point of area.outline || []) expand(point[0], point[1]);
+    }
     if (!isFinite(minX)) {
       minX = -14; maxX = 14; minY = -14; maxY = 14;
     }
@@ -1910,10 +1913,27 @@
     // Route copper: back under front, semi-transparent like KiCad
     const copperOrder = ['B.Cu', 'In2.Cu', 'In1.Cu', 'F.Cu'];
     const segs = route?.segments || [];
+    const areas = route?.areas || [];
     for (const ly of copperOrder) {
       if (!layerVisible(ly, layersOn)) continue;
       // Inner layers more transparent so stack is readable
       const alpha = ly.startsWith('In') ? 0.55 : 0.78;
+      for (const area of areas) {
+        if ((area.layer || 'F.Cu') !== ly || !(area.outline?.length >= 3)) continue;
+        const first = tx(area.outline[0][0], area.outline[0][1]);
+        ctx.beginPath();
+        ctx.moveTo(first[0], first[1]);
+        for (let i = 1; i < area.outline.length; i++) {
+          const point = tx(area.outline[i][0], area.outline[i][1]);
+          ctx.lineTo(point[0], point[1]);
+        }
+        ctx.closePath();
+        ctx.fillStyle = layerColor(ly, ly.startsWith('In') ? 0.28 : 0.38);
+        ctx.fill();
+        ctx.strokeStyle = layerColor(ly, alpha);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
       ctx.strokeStyle = layerColor(ly, alpha);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -2034,7 +2054,7 @@
     ctx.font = '11px system-ui';
     ctx.textAlign = 'left';
     const flipTag = viewFlipBoard ? ' · FLIPPED (V)' : '';
-    ctx.fillText(`${name || 'no route'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias${flipTag}`, 10, 18);
+    ctx.fillText(`${name || 'no route'} · ${(route?.segments || []).length} segs · ${(route?.areas || []).length} areas · ${route?.via_count ?? 0} vias${flipTag}`, 10, 18);
     let lx = 10;
     for (const ly of ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']) {
       ctx.fillStyle = layerColor(ly, 0.85);
