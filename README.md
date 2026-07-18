@@ -27,6 +27,7 @@ Matches the reasoning in [docs/TOPOR.md](docs/TOPOR.md) and [Eremex TopoR autoro
 | **SI / MFG costs** | Crosstalk parallel-run, return path, acute angles, via-near-pad, … |
 | **Why this via** | Each via stores blocked layers + alternatives; UI explain panel |
 | **Honesty policy** | Soft illegal copper **off** — open edges beat overlaps |
+| **Always-on router DRC** | Native exact check: shorts, spacing, via clearance, **Edge.Cuts escapes** after every route; polish (re-geometry/elastic) is **reverted if DRC worsens** |
 | **Via policy** | **Connectivity / clearance first**; via-minimize off by default |
 | **UX** | Live **2D** copper while routing; **3D EMS** only on Simulate |
 
@@ -67,9 +68,9 @@ python scripts/render_routing_process.py --halo
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
   --out route.json --out-pcb routed.kicad_pcb --variants 2
 
-# Quality tests (bends, clearance, re-geometry, outline bounds)
+# Quality tests (bends, clearance, re-geometry, outline bounds, router DRC)
 pytest tests/test_routing_quality.py tests/test_regeometry.py \
-  tests/test_outline_bounds.py tests/test_topor_style.py -q
+  tests/test_outline_bounds.py tests/test_router_drc.py tests/test_topor_style.py -q
 ```
 
 See [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) for the full three-representation design and literature map.
