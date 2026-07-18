@@ -395,6 +395,29 @@ def _footprint_graphics(fp: list[Any]) -> list[dict[str, Any]]:
     return gfx
 
 
+def _arc_to_polyline(
+    cx: float, cy: float, x_end: float, y_end: float, angle_deg: float, *, n: int = 48
+) -> list[list[float]]:
+    """Sample classic KiCad arc: center=(cx,cy), end point on circle, sweep angle_deg."""
+    import math
+
+    r = math.hypot(x_end - cx, y_end - cy)
+    if r < 1e-9:
+        return [[cx, cy]]
+    a0 = math.atan2(y_end - cy, x_end - cx)
+    # KiCad angle is the included sweep; end is the end point, start angle = end - sweep
+    sweep = math.radians(angle_deg)
+    a_start = a0 - sweep
+    pts: list[list[float]] = []
+    steps = max(8, int(abs(angle_deg) / 4) + 1)
+    steps = min(steps, n)
+    for i in range(steps + 1):
+        t = i / steps
+        a = a_start + sweep * t
+        pts.append([cx + r * math.cos(a), cy + r * math.sin(a)])
+    return pts
+
+
 def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
     """Edge.Cuts lines/arcs/circles in board coordinates."""
     out: list[dict[str, Any]] = []
@@ -412,7 +435,7 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         "layer": "Edge.Cuts",
                         "x1": _as_float(st[1]), "y1": _as_float(st[2]),
                         "x2": _as_float(en[1]), "y2": _as_float(en[2]),
-                        "width": _width_mm(gr, 0.1),
+                        "width": max(_width_mm(gr, 0.1), 0.15),
                     })
             elif tag == "gr_circle":
                 ctr = _find_first(gr, "center")
@@ -425,7 +448,7 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         "kind": "circle",
                         "layer": "Edge.Cuts",
                         "cx": cx, "cy": cy, "r": r,
-                        "width": _width_mm(gr, 0.1),
+                        "width": max(_width_mm(gr, 0.1), 0.15),
                         "fill": False,
                     })
             elif tag == "gr_rect":
@@ -437,21 +460,47 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         "layer": "Edge.Cuts",
                         "x1": _as_float(st[1]), "y1": _as_float(st[2]),
                         "x2": _as_float(en[1]), "y2": _as_float(en[2]),
-                        "width": _width_mm(gr, 0.1),
+                        "width": max(_width_mm(gr, 0.1), 0.15),
                         "fill": False,
                     })
             elif tag == "gr_arc":
-                # KiCad 6+: (gr_arc (start x y) (mid x y) (end x y) ...)
+                # Classic: (gr_arc (start cx cy) (end x y) (angle deg)) — start=center
+                # Modern:  (gr_arc (start x y) (mid x y) (end x y))
                 st = _find_first(gr, "start")
                 mid = _find_first(gr, "mid")
                 en = _find_first(gr, "end")
-                if st and en and len(st) >= 3 and len(en) >= 3:
-                    item = {
+                ang = _find_first(gr, "angle")
+                if st and en and len(st) >= 3 and len(en) >= 3 and ang and len(ang) >= 2:
+                    # center + end + sweep
+                    cx, cy = _as_float(st[1]), _as_float(st[2])
+                    ex, ey = _as_float(en[1]), _as_float(en[2])
+                    a_deg = _as_float(ang[1])
+                    pts = _arc_to_polyline(cx, cy, ex, ey, a_deg)
+                    out.append({
+                        "kind": "poly",
+                        "layer": "Edge.Cuts",
+                        "pts": pts,
+                        "width": max(_width_mm(gr, 0.1), 0.15),
+                        "fill": False,
+                        "closed": False,
+                    })
+                    # Also emit circle if near-full (helps fill)
+                    if abs(abs(a_deg) - 360) < 1 or abs(abs(a_deg) - 0) < 1:
+                        r = ((ex - cx) ** 2 + (ey - cy) ** 2) ** 0.5
+                        out.append({
+                            "kind": "circle",
+                            "layer": "Edge.Cuts",
+                            "cx": cx, "cy": cy, "r": r,
+                            "width": max(_width_mm(gr, 0.1), 0.15),
+                            "fill": False,
+                        })
+                elif st and en and len(st) >= 3 and len(en) >= 3:
+                    item: dict[str, Any] = {
                         "kind": "arc",
                         "layer": "Edge.Cuts",
                         "x1": _as_float(st[1]), "y1": _as_float(st[2]),
                         "x2": _as_float(en[1]), "y2": _as_float(en[2]),
-                        "width": _width_mm(gr, 0.1),
+                        "width": max(_width_mm(gr, 0.1), 0.15),
                     }
                     if mid and len(mid) >= 3:
                         item["mx"] = _as_float(mid[1])
