@@ -71,3 +71,49 @@ def test_native_polish_helper():
     polished = polish_native_with_python(board, cfg, raw, clearance_mm=0.2)
     assert polished.quality is not None
     assert polished.segments is not None
+
+
+def test_native_atomic_net_does_not_commit_partial_copper():
+    """A blocked anchor must roll the whole net back, including earlier edges."""
+    import pr_native
+
+    cfg = pr_native.RouteConfig()
+    cfg.x_min = -5.0
+    cfg.x_max = 5.0
+    cfg.y_min = -5.0
+    cfg.y_max = 5.0
+    cfg.grid_mm = 0.25
+    cfg.clearance_mm = 0.2
+    cfg.num_layers = 1
+    cfg.allow_vias = False
+    cfg.soft_fallback = False
+    cfg.atomic_nets = True
+
+    def point(x: float, y: float):
+        value = pr_native.Vec2()
+        value.x = x
+        value.y = y
+        return value
+
+    net = pr_native.NetSpec()
+    net.net_id = 7
+    net.name = "ATOMIC"
+    net.anchors = [point(-4.0, 0.0), point(-2.0, 0.0), point(3.0, 0.0)]
+    net.preferred_layers = [0]
+
+    # The first two anchors can connect, while the third is isolated by a
+    # board-spanning wall.  No fragment from the successful first edge may
+    # survive the failed full-net transaction.
+    wall = pr_native.RectObs()
+    wall.cx = 0.5
+    wall.cy = 0.0
+    wall.w = 0.8
+    wall.h = 10.0
+    wall.net_id = -1
+
+    result = pr_native.route_board([net], cfg, [wall])
+    assert result.segments == []
+    assert result.vias == []
+    assert result.unrouted == ["ATOMIC"]
+    assert result.net_reports[0].status == "unrouted"
+    assert result.net_reports[0].method == "atomic_unrouted"

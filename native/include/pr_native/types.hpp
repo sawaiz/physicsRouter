@@ -52,6 +52,7 @@ struct RouteConfig {
   bool isotropic = true;     // any-angle detours (TopoR-style)
   bool post_rubberband = true;
   bool via_minimize = false; // connectivity/clearance beat via count
+  bool atomic_nets = true;   // commit a net only when every anchor connects
   int threads = 0; // 0 = auto
 };
 
