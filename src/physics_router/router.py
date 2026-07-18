@@ -297,6 +297,7 @@ def _route_result_from_dict(raw: dict[str, Any]) -> RouteResult:
                 notes=list(nr.get("notes") or []),
             )
         )
+    q = dict(raw.get("quality") or {})
     out = RouteResult(
         segments=segs,
         vias=vias,
@@ -306,10 +307,13 @@ def _route_result_from_dict(raw: dict[str, Any]) -> RouteResult:
         clearance_violations=int(raw.get("clearance_violations") or 0),
         notes=list(raw.get("notes") or []),
         net_reports=reports,
-        quality=dict(raw.get("quality") or {}),
+        quality=q,
     )
-    if not out.quality:
-        out.compute_quality()
+    out.compute_quality()
+    # keep explanations / backend fields after recompute
+    for k in ("explanations", "pipeline", "backend", "si_mfg"):
+        if k in q:
+            out.quality[k] = q[k]
     return out
 
 
@@ -813,12 +817,17 @@ def clearance_aware_route(
     if soft_fallback is None:
         soft_fallback = bool(guide_only)
 
-    # Native C++ path is faster but lacks continuous segment–segment clearance
-    # and angular fanout; keep Python as the clearance authority for legal copper.
-    # Set prefer_native=True only when speed > legality (batch experiments).
-    if prefer_native and not guide_only and progress_cb is None and soft_fallback:
+    # Native C++ isotropic core (v1.1): free-angle detours, multi-site vias,
+    # post-rubberband, via minimize. Use when prefer_native and no live progress.
+    # Soft-fallback native is OK for guide-like speed; for legal clearance routes
+    # native now keeps soft_fallback=False by default.
+    if prefer_native and not guide_only and progress_cb is None:
         try:
-            from physics_router.native_bridge import available, route_board_native
+            from physics_router.native_bridge import (
+                available,
+                polish_native_with_python,
+                route_board_native,
+            )
 
             if available():
                 raw = route_board_native(
@@ -829,9 +838,19 @@ def clearance_aware_route(
                     soft_fallback=bool(soft_fallback),
                     allow_vias=bool(allow_vias),
                     use_gpu=True,
+                    isotropic=True,
+                    net_order=net_order,
                 )
                 if raw is not None:
-                    return _route_result_from_dict(raw)
+                    if soft_fallback:
+                        return _route_result_from_dict(raw)
+                    # Legal path: light Python polish (elastic + SI/MFG)
+                    try:
+                        return polish_native_with_python(
+                            board, config, raw, clearance_mm=float(clearance_mm)
+                        )
+                    except Exception:
+                        return _route_result_from_dict(raw)
         except Exception:
             pass
 

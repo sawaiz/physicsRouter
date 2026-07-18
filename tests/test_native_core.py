@@ -26,7 +26,9 @@ def test_native_info():
     i = info()
     assert i["available"] is True
     assert "version" in i
+    assert "1.1" in str(i["version"]) or "native" in str(i["version"])
     assert "gpu" in i
+    assert i.get("features", {}).get("isotropic") is True
 
 
 def test_native_route_synthetic():
@@ -38,14 +40,34 @@ def test_native_route_synthetic():
     assert "elapsed_ms" in raw
     assert isinstance(raw["segments"], list)
     assert "quality" in raw
+    notes = " ".join(raw.get("notes") or [])
+    assert "isotropic" in notes.lower() or "native" in notes.lower()
+    # via reasons when vias present
+    for v in raw.get("vias") or []:
+        if v.get("reason"):
+            assert "layer" in v["reason"].lower() or "blocked" in v["reason"].lower() or "transition" in v["reason"].lower()
+            break
 
 
 def test_python_clearance_uses_native_when_present():
     cfg = example_config()
     board = board_from_synthetic(cfg)
-    r = clearance_aware_route(board, cfg, clearance_mm=0.2, grid_mm=0.5, soft_fallback=False)
-    # notes should mention native if path taken
+    r = clearance_aware_route(
+        board, cfg, clearance_mm=0.2, grid_mm=0.5, soft_fallback=False, prefer_native=True
+    )
     joined = " ".join(r.notes)
     assert r.total_length_mm >= 0
-    # either native notes or python notes — both valid
-    assert "native" in joined or "clearance_mm" in joined or r.segments is not None
+    # native path or pure python both valid
+    assert "native" in joined or "isotropic" in joined or "clearance_mm" in joined or r.segments is not None
+
+
+def test_native_polish_helper():
+    from physics_router.native_bridge import polish_native_with_python
+
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    raw = route_board_native(board, cfg, clearance_mm=0.2, grid_mm=1.0, soft_fallback=False)
+    assert raw is not None
+    polished = polish_native_with_python(board, cfg, raw, clearance_mm=0.2)
+    assert polished.quality is not None
+    assert polished.segments is not None

@@ -7,7 +7,9 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(pr_native, m) {
-  m.doc() = "physicsRouter native C++ core (OpenMP + optional OpenCL GPU)";
+  m.doc() = "physicsRouter native C++ core — isotropic free-angle (OpenMP + OpenCL)";
+
+  m.def("version", []() { return pr::native_version(); });
 
   py::class_<pr::Vec2>(m, "Vec2")
       .def(py::init<>())
@@ -45,6 +47,9 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("soft_fallback", &pr::RouteConfig::soft_fallback)
       .def_readwrite("allow_vias", &pr::RouteConfig::allow_vias)
       .def_readwrite("use_gpu", &pr::RouteConfig::use_gpu)
+      .def_readwrite("isotropic", &pr::RouteConfig::isotropic)
+      .def_readwrite("post_rubberband", &pr::RouteConfig::post_rubberband)
+      .def_readwrite("via_minimize", &pr::RouteConfig::via_minimize)
       .def_readwrite("threads", &pr::RouteConfig::threads);
 
   py::class_<pr::Segment>(m, "Segment")
@@ -62,7 +67,9 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readonly("net_id", &pr::Via::net_id)
       .def_readonly("size_mm", &pr::Via::size_mm)
       .def_readonly("layer_a", &pr::Via::layer_a)
-      .def_readonly("layer_b", &pr::Via::layer_b);
+      .def_readonly("layer_b", &pr::Via::layer_b)
+      .def_readonly("reason", &pr::Via::reason)
+      .def_readonly("alternatives_considered", &pr::Via::alternatives_considered);
 
   py::class_<pr::NetReport>(m, "NetReport")
       .def_readonly("net_id", &pr::NetReport::net_id)
@@ -133,6 +140,4 @@ PYBIND11_MODULE(pr_native, m) {
         }
         return out;
       });
-
-  m.def("version", []() { return "1.0.0-native"; });
 }

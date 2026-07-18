@@ -1,6 +1,10 @@
 """Optional C++ core (`pr_native`). Falls back silently if not built.
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
+
+Native v1.1: isotropic free-angle detours, multi-site vias with reasons,
+post-rubberband, via minimize. Python remains the full TopoR pipeline host
+(K-homotopy, CBS, elastic, SI/MFG); native accelerates the hot path.
 """
 
 from __future__ import annotations
@@ -33,10 +37,17 @@ def info() -> dict[str, Any]:
     m = _try_load()
     if m is None:
         return {"available": False, "error": _load_error}
+    ver = m.version() if hasattr(m, "version") else "unknown"
     return {
         "available": True,
-        "version": m.version(),
+        "version": ver,
         "gpu": dict(m.gpu_probe()),
+        "features": {
+            "isotropic": True,
+            "post_rubberband": True,
+            "via_minimize": True,
+            "via_reasons": True,
+        },
     }
 
 
@@ -49,13 +60,17 @@ def route_board_native(
     soft_fallback: bool = False,
     allow_vias: bool = True,
     use_gpu: bool = True,
+    isotropic: bool = True,
+    post_rubberband: bool = True,
+    via_minimize: bool = True,
+    net_order: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``."""
     m = _try_load()
     if m is None:
         return None
 
-    from physics_router.router import board_extent
+    from physics_router.router import board_extent, fanout_anchor
 
     x0, x1, y0, y1 = board_extent(board)
     layers = list(getattr(board, "copper_layers", None) or ["F.Cu", "B.Cu"])
@@ -69,23 +84,36 @@ def route_board_native(
     cfg.allow_vias = bool(allow_vias)
     cfg.use_gpu = bool(use_gpu)
     cfg.max_expansions = 4000
+    if hasattr(cfg, "isotropic"):
+        cfg.isotropic = bool(isotropic)
+    if hasattr(cfg, "post_rubberband"):
+        cfg.post_rubberband = bool(post_rubberband)
+    if hasattr(cfg, "via_minimize"):
+        cfg.via_minimize = bool(via_minimize)
 
-    net_names = list(board.nets.keys())
+    net_names = list(net_order) if net_order else list(board.nets.keys())
+    # append any missing nets
+    for n in board.nets:
+        if n not in net_names:
+            net_names.append(n)
     name_to_id = {n: i for i, n in enumerate(net_names)}
 
     nets = []
     for name in net_names:
+        if name not in board.nets:
+            continue
         anchors = []
         seen: set[tuple[float, float]] = set()
         for ref, _pad in board.nets[name]:
-            c = board.components.get(ref)
-            if c is None:
+            if ref not in board.components:
                 continue
-            key = (round(c.x_mm, 3), round(c.y_mm, 3))
+            # Angular fanout on multi-net footprints (matches Python path)
+            ax, ay = fanout_anchor(board, ref, name)
+            key = (round(ax, 3), round(ay, 3))
             if key in seen:
                 continue
             seen.add(key)
-            anchors.append(m.Vec2(c.x_mm, c.y_mm))
+            anchors.append(m.Vec2(ax, ay))
         ns = m.NetSpec()
         ns.net_id = name_to_id[name]
         ns.name = name
@@ -100,10 +128,15 @@ def route_board_native(
                 ns.width_mm = 0.2
             else:
                 ns.width_mm = 0.25
+            if lab.critical:
+                ns.priority *= 1.5
         else:
             ns.width_mm = 0.25
         ns.preferred_layers = list(range(cfg.num_layers))
         nets.append(ns)
+
+    # Sort nets for native by priority (already handled in C++ too)
+    nets.sort(key=lambda n: (-n.priority, len(n.anchors), n.name))
 
     obstacles = []
     for _ref, c in board.components.items():
@@ -133,20 +166,26 @@ def route_board_native(
         }
         for s in result.segments
     ]
-    vias = [
-        {
-            "net": id_to_name.get(v.net_id, str(v.net_id)),
-            "x": v.x,
-            "y": v.y,
-            "size_mm": v.size_mm,
-            "drill_mm": v.size_mm * 0.5,
-            "layers": [
-                layers[v.layer_a] if 0 <= v.layer_a < len(layers) else layers[0],
-                layers[v.layer_b] if 0 <= v.layer_b < len(layers) else layers[-1],
-            ],
-        }
-        for v in result.vias
-    ]
+    vias = []
+    for v in result.vias:
+        reason = getattr(v, "reason", "") or ""
+        alts = int(getattr(v, "alternatives_considered", 0) or 0)
+        vias.append(
+            {
+                "net": id_to_name.get(v.net_id, str(v.net_id)),
+                "x": v.x,
+                "y": v.y,
+                "size_mm": v.size_mm,
+                "drill_mm": v.size_mm * 0.5,
+                "layers": [
+                    layers[v.layer_a] if 0 <= v.layer_a < len(layers) else layers[0],
+                    layers[v.layer_b] if 0 <= v.layer_b < len(layers) else layers[-1],
+                ],
+                "reason": reason,
+                "alternatives_considered": alts,
+                "blocked_same_layer": [],
+            }
+        )
     net_reports = [
         {
             "net": nr.name,
@@ -166,7 +205,8 @@ def route_board_native(
         "via_count": result.via_count,
         "unrouted_nets": list(result.unrouted),
         "clearance_violations": result.clearance_violations,
-        "notes": list(result.notes) + [f"native={result.used_native}", f"gpu={result.used_gpu}"],
+        "notes": list(result.notes)
+        + [f"native={result.used_native}", f"gpu={result.used_gpu}"],
         "quality": {
             "score": result.quality_score,
             "grade": result.quality_grade,
@@ -174,6 +214,22 @@ def route_board_native(
                 f"grade {result.quality_grade} ({result.quality_score:.0f}/100) "
                 f"native {result.elapsed_ms:.1f}ms"
             ),
+            "pipeline": "native_isotropic",
+            "explanations": {
+                "vias": [
+                    {
+                        "net": v["net"],
+                        "x": v["x"],
+                        "y": v["y"],
+                        "layers": v["layers"],
+                        "reason": v.get("reason") or "",
+                        "alternatives_considered": v.get("alternatives_considered", 0),
+                    }
+                    for v in vias
+                    if v.get("reason")
+                ],
+                "summary": f"{len(vias)} via(s) from native isotropic router",
+            },
         },
         "net_reports": net_reports,
         "segments": segments,
@@ -181,3 +237,47 @@ def route_board_native(
         "elapsed_ms": result.elapsed_ms,
         "backend": "native",
     }
+
+
+def polish_native_with_python(
+    board: Any,
+    config: Any,
+    raw: dict[str, Any],
+    *,
+    clearance_mm: float = 0.2,
+) -> Any:
+    """Apply Python elastic + SI/MFG + via explain polish to a native route dict."""
+    from physics_router.router import _route_result_from_dict, rubberband_cleanup, remove_redundant_vias
+    from physics_router.elastic import elastic_optimize_route
+    from physics_router.si_mfg import evaluate_si_mfg
+
+    r = _route_result_from_dict(raw)
+    r = rubberband_cleanup(r, board, config, clearance_mm=clearance_mm)
+    r = remove_redundant_vias(r, board, config, clearance_mm=clearance_mm)
+    if len(board.nets) <= 40:
+        r = elastic_optimize_route(r, board, clearance_mm=clearance_mm, iterations=12)
+    si = evaluate_si_mfg(r, board, config, clearance_mm=clearance_mm)
+    r.quality = {
+        **(r.quality or {}),
+        "si_mfg": si.to_dict(),
+        "backend": "native+python_polish",
+        "explanations": (raw.get("quality") or {}).get("explanations")
+        or {
+            "vias": [
+                {
+                    "net": v.net,
+                    "x": v.x,
+                    "y": v.y,
+                    "layers": list(v.layers),
+                    "reason": v.reason,
+                    "alternatives_considered": v.alternatives_considered,
+                }
+                for v in r.vias
+            ],
+        },
+    }
+    for n in si.notes:
+        r.notes.append(n)
+    r.notes.append("polish: rubberband + via_minimize + elastic + SI/MFG")
+    r.compute_quality()
+    return r

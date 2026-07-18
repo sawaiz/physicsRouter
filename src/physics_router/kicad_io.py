@@ -242,8 +242,15 @@ def _width_mm(node: list[Any], default: float = 0.1) -> float:
 
 
 def _pad_geometry(pad: list[Any]) -> dict[str, Any]:
-    """Local pad geometry for accurate 2D footprint rendering."""
-    shape = str(pad[2]) if len(pad) > 2 else "rect"
+    """Local pad geometry for accurate 2D footprint rendering.
+
+    KiCad pad form: (pad "1" smd|thru_hole rect|circle|roundrect|oval (at ...) (size ...) ...)
+    """
+    # pad[2]=type (smd/thru_hole), pad[3]=shape when present as bare atom
+    pad_type = str(pad[2]) if len(pad) > 2 and not isinstance(pad[2], list) else "smd"
+    shape = "rect"
+    if len(pad) > 3 and not isinstance(pad[3], list):
+        shape = str(pad[3])
     at = _find_first(pad, "at")
     ax = ay = arot = 0.0
     if at and len(at) >= 3:
@@ -273,6 +280,7 @@ def _pad_geometry(pad: list[Any]) -> dict[str, Any]:
         pinfunction = str(pf[1])
     return {
         "shape": shape,
+        "type": pad_type,
         "x": ax,
         "y": ay,
         "rot": arot,
@@ -396,18 +404,29 @@ def _footprint_graphics(fp: list[Any]) -> list[dict[str, Any]]:
 
 
 def _arc_to_polyline(
-    cx: float, cy: float, x_end: float, y_end: float, angle_deg: float, *, n: int = 48
+    cx: float,
+    cy: float,
+    x_file_end: float,
+    y_file_end: float,
+    angle_deg: float,
+    *,
+    n: int = 48,
 ) -> list[list[float]]:
-    """Sample classic KiCad arc: center=(cx,cy), end point on circle, sweep angle_deg."""
+    """Sample classic KiCad ``gr_arc`` / ``fp_arc``.
+
+    File form: ``(gr_arc (start cx cy) (end x y) (angle deg))`` where
+    ``start`` is the **center**, ``end`` is the **arc start point**, and the arc
+    sweeps ``angle`` degrees CCW (negative = CW) to the arc end. Matches pcbnew
+    ``GetArcStart``/``GetArcEnd`` on loaded boards.
+    """
     import math
 
-    r = math.hypot(x_end - cx, y_end - cy)
+    r = math.hypot(x_file_end - cx, y_file_end - cy)
     if r < 1e-9:
         return [[cx, cy]]
-    a0 = math.atan2(y_end - cy, x_end - cx)
-    # KiCad angle is the included sweep; end is the end point, start angle = end - sweep
+    # File "end" token is the arc *start* point on the circle.
+    a_start = math.atan2(y_file_end - cy, x_file_end - cx)
     sweep = math.radians(angle_deg)
-    a_start = a0 - sweep
     pts: list[list[float]] = []
     steps = max(8, int(abs(angle_deg) / 4) + 1)
     steps = min(steps, n)
@@ -464,14 +483,14 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         "fill": False,
                     })
             elif tag == "gr_arc":
-                # Classic: (gr_arc (start cx cy) (end x y) (angle deg)) — start=center
+                # Classic: (gr_arc (start cx cy) (end x y) (angle deg))
+                #   start=center, end=arc-start point, angle=CCW sweep (see _arc_to_polyline)
                 # Modern:  (gr_arc (start x y) (mid x y) (end x y))
                 st = _find_first(gr, "start")
                 mid = _find_first(gr, "mid")
                 en = _find_first(gr, "end")
                 ang = _find_first(gr, "angle")
                 if st and en and len(st) >= 3 and len(en) >= 3 and ang and len(ang) >= 2:
-                    # center + end + sweep
                     cx, cy = _as_float(st[1]), _as_float(st[2])
                     ex, ey = _as_float(en[1]), _as_float(en[2])
                     a_deg = _as_float(ang[1])
@@ -484,8 +503,8 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         "fill": False,
                         "closed": False,
                     })
-                    # Also emit circle if near-full (helps fill)
-                    if abs(abs(a_deg) - 360) < 1 or abs(abs(a_deg) - 0) < 1:
+                    # Full 360° arc → circle (rare on Edge.Cuts)
+                    if abs(abs(a_deg) - 360) < 1:
                         r = ((ex - cx) ** 2 + (ey - cy) ** 2) ** 0.5
                         out.append({
                             "kind": "circle",
@@ -506,6 +525,49 @@ def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
                         item["mx"] = _as_float(mid[1])
                         item["my"] = _as_float(mid[2])
                     out.append(item)
+
+    # If classic arcs form a near-circle around origin (HALO disk r≈12), add a full
+    # circle so the Edge.Cuts outline is continuous in the viewer.
+    # Prefer radii of origin-centered arc samples (main disk), NOT the hook tip
+    # which sits farther out and would inflate max_r (~13.6 vs 12).
+    origin_radii: list[float] = []
+    for g in out:
+        if g.get("kind") == "poly" and g.get("pts"):
+            for p in g["pts"]:
+                r = (p[0] ** 2 + p[1] ** 2) ** 0.5
+                # samples that sit on a disk around origin (not hook tip ~13.6)
+                if 8.0 < r < 12.8:
+                    origin_radii.append(r)
+        if g.get("kind") == "circle":
+            r = float(g.get("r") or 0)
+            cx, cy = float(g.get("cx") or 0), float(g.get("cy") or 0)
+            if (cx * cx + cy * cy) ** 0.5 < 0.5 and 8.0 < r < 20.0:
+                origin_radii.append(r)
+    r_disk = 0.0
+    if origin_radii:
+        origin_radii.sort()
+        # median of origin-disk samples
+        mid = origin_radii[len(origin_radii) // 2]
+        r_disk = 12.0 if abs(mid - 12.0) < 0.5 else mid
+    if 8.0 < r_disk < 20.0 and not any(
+        g.get("kind") == "circle"
+        and abs(float(g.get("cx") or 0)) < 0.5
+        and abs(float(g.get("cy") or 0)) < 0.5
+        and abs(float(g.get("r") or 0) - r_disk) < 0.5
+        for g in out
+    ):
+        out.insert(
+            0,
+            {
+                "kind": "circle",
+                "layer": "Edge.Cuts",
+                "cx": 0.0,
+                "cy": 0.0,
+                "r": r_disk,
+                "width": 0.15,
+                "fill": False,
+            },
+        )
     return out
 
 

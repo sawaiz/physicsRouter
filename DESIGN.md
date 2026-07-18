@@ -62,7 +62,13 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Decision:** Board coordinates stay KiCad mm. GLB is scaled m→mm when needed; the **view** applies a **Y-only flip** `(x, y) → (x, −y)` so HALO shows the hook (H1 at y=−13) at the **top** and the switch (S1 at x=−4.25) on the **left**, matching the PCB file. Do **not** use a 180° view rotation — that mirrors left/right. Footprint poses always come from `.kicad_pcb`; YAML `fixed` only marks lock flags. The board is flattened so its thin axis is world **+Z** (parallel to the ground grid).
 
-**Why:** Re-centering the GLB without matching route space caused overlays to drift; edge-on GLB exports made the PCB look vertical; a full 180° view put S1 on the wrong side of U1.
+**Footprint graphics:** Pads use KiCad form `(pad "n" smd|thru_hole shape …)` — shape is token index 3, not the mount type. Front 2D view skips pure **B.Cu** pads and draws large pads outline-only so the battery 12 mm ground does not hide the design. Silk/fab/courtyard polylines come from the footprint body in the PCB file.
+
+**Edge.Cuts:** Classic arcs are `(gr_arc (start cx cy) (end x y) (angle deg))` where `start` is the **center**, `end` is the **arc start point**, and `angle` is the CCW sweep (verified against pcbnew `GetArcStart`/`GetArcEnd`). A synthetic origin-centered circle at the main disk radius (HALO ≈12 mm, not the hook tip ≈13.6 mm) is used only for substrate fill; stroke uses the arc polylines so the teardrop/hook stays open.
+
+**Parity tooling:** `scripts/render_viewer_2d.py` mirrors `viewer/index.html` transforms; `kicad-cli pcb export svg` references live in `docs/images/viewer_compare/`; `tests/test_viewer_kicad_parity.py` locks landmarks (H1 top, S1 left, LED +4° CW, outline chain).
+
+**Why:** Re-centering the GLB without matching route space caused overlays to drift; edge-on GLB exports made the PCB look vertical; a full 180° view put S1 on the wrong side of U1; wrong arc sweep produced floating “wing” outline segments.
 
 ### 3b. 2D for routing; 3D only after route for EMS
 
