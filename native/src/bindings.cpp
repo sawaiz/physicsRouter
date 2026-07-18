@@ -114,6 +114,18 @@ PYBIND11_MODULE(pr_native, m) {
            py::arg("h"), py::arg("layer"), py::arg("net"))
       .def("add_painted", &pr::ExactMap::add_painted, py::arg("x1"), py::arg("y1"),
            py::arg("x2"), py::arg("y2"), py::arg("layer"), py::arg("width"), py::arg("net"))
+      .def(
+          "set_outline",
+          [](pr::ExactMap &em, const std::vector<std::pair<double, double>> &pts) {
+            std::vector<pr::Vec2> poly;
+            poly.reserve(pts.size());
+            for (const auto &p : pts)
+              poly.push_back({p.first, p.second});
+            em.set_outline(poly);
+          },
+          py::arg("pts"))
+      .def("has_outline", &pr::ExactMap::has_outline)
+      .def("point_in_outline", &pr::ExactMap::point_in_outline, py::arg("x"), py::arg("y"))
       .def("in_bounds", &pr::ExactMap::in_bounds)
       .def("blocked", &pr::ExactMap::blocked, py::arg("x"), py::arg("y"), py::arg("layer"),
            py::arg("net"))
@@ -167,6 +179,44 @@ PYBIND11_MODULE(pr_native, m) {
       },
       py::arg("map"), py::arg("path"), py::arg("layer"), py::arg("net"),
       py::arg("width_mm") = 0.25);
+
+  m.def(
+      "drc_check",
+      [](const std::vector<std::tuple<double, double, double, double, double, int, int>> &segs,
+         const std::vector<std::tuple<double, double, double, int>> &vias, double clearance_mm,
+         int max_violations) {
+        std::vector<pr::DrcSeg> ds;
+        ds.reserve(segs.size());
+        for (const auto &t : segs) {
+          pr::DrcSeg s;
+          std::tie(s.x1, s.y1, s.x2, s.y2, s.width, s.layer, s.net) = t;
+          ds.push_back(s);
+        }
+        std::vector<pr::DrcVia> dv;
+        dv.reserve(vias.size());
+        for (const auto &t : vias) {
+          pr::DrcVia v;
+          std::tie(v.x, v.y, v.size, v.net) = t;
+          dv.push_back(v);
+        }
+        auto res = pr::drc_check(ds, dv, clearance_mm, max_violations);
+        py::list out;
+        for (const auto &v : res) {
+          py::dict d;
+          d["kind"] = v.kind == 1 ? "short" : "spacing";
+          d["net_a"] = v.net_a;
+          d["net_b"] = v.net_b;
+          d["layer"] = v.layer;
+          d["x"] = v.x;
+          d["y"] = v.y;
+          d["dist"] = v.dist;
+          d["need"] = v.need;
+          out.append(d);
+        }
+        return out;
+      },
+      py::arg("segments"), py::arg("vias") = std::vector<std::tuple<double, double, double, int>>{},
+      py::arg("clearance_mm") = 0.2, py::arg("max_violations") = 200);
 
   m.def("gpu_probe", []() {
     auto s = pr::gpu_probe();

@@ -174,8 +174,66 @@ void ExactMap::add_painted(double x1, double y1, double x2, double y2, int layer
       cm[key(i, j)].push_back(idx);
 }
 
+void ExactMap::set_outline(const std::vector<Vec2> &poly) {
+  outline_.clear();
+  if (poly.size() < 3)
+    return;
+  outline_ = poly;
+  // Ensure closed ring for edge iteration (duplicate first at end if needed)
+  if (dist(outline_.front(), outline_.back()) > 1e-9)
+    outline_.push_back(outline_.front());
+}
+
+bool ExactMap::point_in_outline(double x, double y) const {
+  if (outline_.size() < 4) // need closed ring ≥ 3 unique verts
+    return true;
+  // Even-odd ray cast (+x)
+  bool inside = false;
+  const size_t n = outline_.size();
+  for (size_t i = 0, j = n - 1; i < n; j = i++) {
+    const double xi = outline_[i].x, yi = outline_[i].y;
+    const double xj = outline_[j].x, yj = outline_[j].y;
+    const bool intersect =
+        ((yi > y) != (yj > y)) &&
+        (x < (xj - xi) * (y - yi) / ((yj - yi) + 1e-30) + xi);
+    if (intersect)
+      inside = !inside;
+  }
+  return inside;
+}
+
+bool ExactMap::segment_outside_outline(double x1, double y1, double x2, double y2) const {
+  if (outline_.size() < 4)
+    return false;
+  if (!point_in_outline(x1, y1) || !point_in_outline(x2, y2))
+    return true;
+  // Concave-safe: proper intersection with any outline edge ⇒ leaves interior
+  const size_t n = outline_.size();
+  for (size_t i = 0; i + 1 < n; ++i) {
+    const double ox1 = outline_[i].x, oy1 = outline_[i].y;
+    const double ox2 = outline_[i + 1].x, oy2 = outline_[i + 1].y;
+    // Skip if shares an endpoint with the query (touching boundary OK)
+    const bool share =
+        (dist(x1, y1, ox1, oy1) < 1e-9 || dist(x1, y1, ox2, oy2) < 1e-9 ||
+         dist(x2, y2, ox1, oy1) < 1e-9 || dist(x2, y2, ox2, oy2) < 1e-9);
+    if (share)
+      continue;
+    if (segs_intersect(x1, y1, x2, y2, ox1, oy1, ox2, oy2))
+      return true;
+  }
+  // Midpoint sample (cheap extra safety for grazing chords)
+  const double mx = 0.5 * (x1 + x2), my = 0.5 * (y1 + y2);
+  if (!point_in_outline(mx, my))
+    return true;
+  return false;
+}
+
 bool ExactMap::in_bounds(double x, double y) const {
-  return x_min_ <= x && x <= x_max_ && y_min_ <= y && y <= y_max_;
+  if (!(x_min_ <= x && x <= x_max_ && y_min_ <= y && y <= y_max_))
+    return false;
+  if (has_outline() && !point_in_outline(x, y))
+    return false;
+  return true;
 }
 
 const std::vector<ExRect> &ExactMap::rects(int layer) const {
@@ -225,6 +283,8 @@ bool ExactMap::blocked(double x, double y, int layer, int net) const {
 bool ExactMap::segment_blocked(double x1, double y1, double x2, double y2, int layer, int net,
                                double width_mm) const {
   if (!(in_bounds(x1, y1) && in_bounds(x2, y2)))
+    return true;
+  if (segment_outside_outline(x1, y1, x2, y2))
     return true;
   if (layer < 0 || static_cast<size_t>(layer) >= rects_.size())
     return false;
@@ -325,6 +385,134 @@ bool ExactMap::segment_blocked(double x1, double y1, double x2, double y2, int l
     }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in DRC (always-on: the router validates its own copper)
+// ---------------------------------------------------------------------------
+
+std::vector<DrcViolation> drc_check(const std::vector<DrcSeg> &segs,
+                                    const std::vector<DrcVia> &vias, double clearance_mm,
+                                    int max_violations) {
+  std::vector<DrcViolation> out;
+  if (max_violations <= 0)
+    max_violations = 200;
+  constexpr double kCell = 2.0;
+  auto cell_key = [](int i, int j, int layer) {
+    return (static_cast<int64_t>(layer) << 52) ^ (static_cast<int64_t>(i & 0x3ffffff) << 26) ^
+           static_cast<int64_t>(j & 0x3ffffff);
+  };
+
+  // Hash segments by inflated bbox cells per layer
+  std::unordered_map<int64_t, std::vector<int32_t>> shash;
+  for (size_t si = 0; si < segs.size(); ++si) {
+    const DrcSeg &s = segs[si];
+    const double pad = clearance_mm + s.width + 1.0;
+    const int i0 = static_cast<int>(std::floor((std::min(s.x1, s.x2) - pad) / kCell));
+    const int i1 = static_cast<int>(std::floor((std::max(s.x1, s.x2) + pad) / kCell));
+    const int j0 = static_cast<int>(std::floor((std::min(s.y1, s.y2) - pad) / kCell));
+    const int j1 = static_cast<int>(std::floor((std::max(s.y1, s.y2) + pad) / kCell));
+    for (int i = i0; i <= i1; ++i)
+      for (int j = j0; j <= j1; ++j)
+        shash[cell_key(i, j, s.layer)].push_back(static_cast<int32_t>(si));
+  }
+
+  // Seg vs seg: same layer, foreign nets (each unordered pair once)
+  std::unordered_set<int64_t> pair_seen;
+  for (size_t ai = 0; ai < segs.size() && out.size() < static_cast<size_t>(max_violations);
+       ++ai) {
+    const DrcSeg &a = segs[ai];
+    const int ci0 = static_cast<int>(std::floor(std::min(a.x1, a.x2) / kCell));
+    const int ci1 = static_cast<int>(std::floor(std::max(a.x1, a.x2) / kCell));
+    const int cj0 = static_cast<int>(std::floor(std::min(a.y1, a.y2) / kCell));
+    const int cj1 = static_cast<int>(std::floor(std::max(a.y1, a.y2) / kCell));
+    for (int i = ci0; i <= ci1; ++i) {
+      for (int j = cj0; j <= cj1; ++j) {
+        const auto it = shash.find(cell_key(i, j, a.layer));
+        if (it == shash.end())
+          continue;
+        for (int32_t bi : it->second) {
+          if (static_cast<size_t>(bi) <= ai)
+            continue;
+          const DrcSeg &b = segs[bi];
+          if (a.net == b.net)
+            continue;
+          const int64_t pk = (static_cast<int64_t>(ai) << 32) ^ bi;
+          if (!pair_seen.insert(pk).second)
+            continue;
+          const double d =
+              seg_seg_min_dist(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1, b.x2, b.y2);
+          const double copper = 0.5 * (a.width + b.width);
+          const double need = clearance_mm + copper;
+          if (d < need) {
+            DrcViolation v;
+            v.kind = d < copper ? 1 : 0;
+            v.net_a = a.net;
+            v.net_b = b.net;
+            v.layer = a.layer;
+            v.x = (a.x1 + a.x2) * 0.5;
+            v.y = (a.y1 + a.y2) * 0.5;
+            v.dist = d;
+            v.need = need;
+            out.push_back(v);
+            if (out.size() >= static_cast<size_t>(max_violations))
+              return out;
+          }
+        }
+      }
+    }
+  }
+
+  // Via vs seg (through vias: every layer) and via vs via
+  for (size_t vi = 0; vi < vias.size() && out.size() < static_cast<size_t>(max_violations);
+       ++vi) {
+    const DrcVia &v = vias[vi];
+    for (size_t si = 0; si < segs.size(); ++si) {
+      const DrcSeg &s = segs[si];
+      if (s.net == v.net)
+        continue;
+      const double d = point_seg_dist(v.x, v.y, s.x1, s.y1, s.x2, s.y2);
+      const double copper = 0.5 * (v.size + s.width);
+      const double need = clearance_mm + copper;
+      if (d < need) {
+        DrcViolation viol;
+        viol.kind = d < copper ? 1 : 0;
+        viol.net_a = v.net;
+        viol.net_b = s.net;
+        viol.layer = s.layer;
+        viol.x = v.x;
+        viol.y = v.y;
+        viol.dist = d;
+        viol.need = need;
+        out.push_back(viol);
+        if (out.size() >= static_cast<size_t>(max_violations))
+          return out;
+      }
+    }
+    for (size_t wi = vi + 1; wi < vias.size(); ++wi) {
+      const DrcVia &w = vias[wi];
+      if (w.net == v.net)
+        continue;
+      const double d = dist(v.x, v.y, w.x, w.y);
+      const double copper = 0.5 * (v.size + w.size);
+      const double need = clearance_mm + copper;
+      if (d < need) {
+        DrcViolation viol;
+        viol.kind = d < copper ? 1 : 0;
+        viol.net_a = v.net;
+        viol.net_b = w.net;
+        viol.layer = -1;
+        viol.x = (v.x + w.x) * 0.5;
+        viol.y = (v.y + w.y) * 0.5;
+        viol.dist = d;
+        viol.need = need;
+        out.push_back(viol);
+        if (out.size() >= static_cast<size_t>(max_violations))
+          return out;
+      }
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
