@@ -292,6 +292,9 @@ def hybrid_route(
     plan = plan or classify_board(board, config, rules)
     result = RouteResult()
     result.notes.append("pipeline: hybrid multi-strategy (topological free-angle)")
+    result.notes.append(
+        "policy: sequential zero-violation per phase (priority/weight, rip-up, open>short)"
+    )
     result.notes.extend(plan.notes)
 
     phases = [s for s in _STRATEGY_ORDER if plan.nets_for(s)]
@@ -322,7 +325,7 @@ def hybrid_route(
     cl_floor = rules.constraints.min_clearance_mm
     layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
     if result.segments:
-        # Lighter repair: fewer rounds for speed; still DRC-guarded
+        # Residual safety only — phases already gate at zero violations
         result = repair_drc_conflicts(
             result,
             board,
@@ -331,11 +334,19 @@ def hybrid_route(
             grid_mm=0.2,
             layers=layers,
             allow_vias=True,
-            max_rounds=2,
+            max_rounds=3,
         )
+        # Last resort: drop shorting copper (open > short); never leave shorts
         result = purge_shorting_copper(result, board, config, clearance_mm=cl_floor)
 
     attach_router_drc(result, clearance_mm=cl_floor, board=board)
+    # Honesty: if any short remains, purge harder until clean
+    drc = (result.quality or {}).get("drc") or {}
+    if int(drc.get("shorts") or 0) > 0:
+        result = purge_shorting_copper(
+            result, board, config, clearance_mm=cl_floor, max_passes=200
+        )
+        attach_router_drc(result, clearance_mm=cl_floor, board=board)
     result.compute_quality()
     q = result.quality or {}
     q["pipeline"] = "hybrid"

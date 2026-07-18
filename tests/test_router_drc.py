@@ -128,6 +128,68 @@ def test_clearance_route_always_runs_drc():
     assert r.quality["drc"]["violations"] == r.clearance_violations
 
 
+def test_sequential_zero_violation_no_shorts_python():
+    """Legal route commits only clean copper; shorts stay 0 end-to-end."""
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    r = clearance_aware_route(
+        board,
+        cfg,
+        clearance_mm=0.2,
+        grid_mm=0.5,
+        soft_fallback=False,
+        prefer_native=False,
+        allow_vias=True,
+    )
+    assert any("zero-violation" in n for n in r.notes)
+    assert r.clearance_violations == 0
+    rep = native_drc_check(r, clearance_mm=0.2, board=board)
+    assert rep["shorts"] == 0
+    assert rep["violations"] == 0
+    # soft_fallback must never appear on legal path
+    for nr in r.net_reports:
+        assert "straight_fallback" not in (nr.method or "")
+
+
+def test_sequential_zero_violation_native():
+    """Native sequential path: one net at a time, zero DRC violations."""
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    r = clearance_aware_route(
+        board,
+        cfg,
+        clearance_mm=0.2,
+        grid_mm=0.5,
+        soft_fallback=False,
+        prefer_native=True,
+        allow_vias=True,
+    )
+    assert any("sequential zero-violation" in n for n in r.notes)
+    assert r.clearance_violations == 0
+    rep = native_drc_check(r, clearance_mm=0.2, board=board)
+    assert rep["shorts"] == 0
+    assert rep["violations"] == 0
+
+
+def test_soft_fallback_forced_off_for_legal_route():
+    """Passing soft_fallback=True must not create illegal copper when not guide."""
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    r = clearance_aware_route(
+        board,
+        cfg,
+        clearance_mm=0.2,
+        grid_mm=0.5,
+        soft_fallback=True,  # ignored for legal clearance routes
+        prefer_native=False,
+        allow_vias=True,
+    )
+    rep = native_drc_check(r, clearance_mm=0.2, board=board)
+    assert rep["shorts"] == 0
+    for nr in r.net_reports:
+        assert "straight_fallback" not in (nr.method or "")
+
+
 def test_drc_guard_reverts_worse_regeometry():
     """Polish must not increase violation count (guard path)."""
     from physics_router.design_rules import default_design_rules
