@@ -40,6 +40,21 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 **C++ owns** (when built) occupancy grids, A\*, multi-net MST routing, batch wirelength.  
 **KiCad owns** DRC, ERC, STEP/GLB geometry, official plots.
 
+### Graph topology plane
+
+Before geometric search, `graph_theory.py` builds a board hypergraph with one
+vertex per unique pad anchor and one hyperedge per multi-pin net. Deterministic
+Kruskal trees minimize length plus projected crossings, while a weighted net
+conflict graph is colored over the available copper layers with DSATUR. The
+same indexed tree drives the abstract guide and the native C++ Prim frontier.
+It is a preference, not a hard geometric constraint: native A\* may select a
+different frontier edge if the planned one is blocked or layer-inaccessible.
+
+After routing, copper is rebuilt as an embedded multilayer graph and audited
+for components, cycle rank, geometric crossings, articulation points, bridges,
+degree, layer usage, and per-net topology. This separates topological intent
+from geometric legality while making both inspectable in route quality data.
+
 ---
 
 ## Design decisions

@@ -9,6 +9,7 @@ and machine-readable render_meta.json / drc_report.json.
 Usage (repo root, venv active, native built):
   python scripts/render_routing_process.py
   python scripts/render_routing_process.py --halo   # also try HALO-90 if present
+  python scripts/render_routing_process.py --halo-only --pcb board.kicad_pcb
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules, load_design_rules
+from physics_router.graph_theory import plan_graph_topology
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
 from physics_router.native_bridge import info as native_info
 from physics_router.regeometry import (
@@ -244,11 +246,12 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     t0 = time.perf_counter()
     guide = topological_guide_route(board, cfg)
     meta["timings_s"]["guide"] = round(time.perf_counter() - t0, 3)
+    graph_plan = plan_graph_topology(board, cfg).to_dict()
     fig, ax = plt.subplots(figsize=(7.2, 7.2), dpi=140)
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
     _draw_route(ax, guide, cfg, alpha=0.85)
     ax.set_title(
-        f"2 · Guide / topology sketch — free-angle MST (no clearance)\n"
+        f"2 · Hypergraph guide — crossing-aware MST + DSATUR layers\n"
         f"{len(guide.segments)} segs · {guide.total_length_mm:.1f} mm",
         fontsize=10,
     )
@@ -282,6 +285,7 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
         design_rules=rules,
     )
     meta["timings_s"]["clearance_raw"] = round(time.perf_counter() - t0, 3)
+    route_graph = (raw.quality or {}).get("graph_topology", {})
     m_raw = compute_topor_geometry_metrics(raw)
     fig, ax = plt.subplots(figsize=(7.2, 7.2), dpi=140)
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
@@ -475,6 +479,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     (OUT / f"{tag}_drc_map.png").write_bytes(p7.read_bytes())
 
     meta["metrics"] = {
+        "graph_plan": graph_plan,
+        "route_graph": route_graph,
         "raw": m_raw.to_dict(),
         "regeometry": tg if isinstance(tg, dict) else m_pol.to_dict(),
         "guide_segs": len(guide.segments),
@@ -517,6 +523,8 @@ def main() -> None:
         "--halo", action="store_true", help="Also render HALO-90 if PCB is present"
     )
     ap.add_argument("--halo-only", action="store_true", help="Only HALO-90")
+    ap.add_argument("--pcb", type=Path, default=PCB, help="KiCad PCB for HALO render")
+    ap.add_argument("--config", type=Path, default=CFG, help="Placement config")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -547,13 +555,13 @@ def main() -> None:
         print("  timings", meta["timings_s"])
 
     if args.halo or args.halo_only:
-        if not PCB.exists():
+        if not args.pcb.exists():
             print("HALO-90 PCB not found; skip --halo")
         else:
             print("Rendering HALO-90 (faster grid; may take a minute)…")
-            cfg = load_config(CFG)
-            board = load_board_from_kicad_pcb(PCB, cfg)
-            rules = load_design_rules(PCB)
+            cfg = load_config(args.config)
+            board = load_board_from_kicad_pcb(args.pcb, cfg)
+            rules = load_design_rules(args.pcb)
             # Faster path for docs: clearance route only (full topor is slow)
             meta = render_suite(board, cfg, rules, "halo90")
             all_meta["halo90"] = meta

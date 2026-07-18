@@ -147,6 +147,10 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | SMD anchor layer reachability + two-via escape | **Done** |
 | Native organic power/ground areas | **Done** (refillable KiCad zones) |
 | Bounded bucket rebuild | **Done** (parallel power/critical/matrix variants) |
+| Multi-pin net hypergraph | **Done** (`graph_theory.py`; one hyperedge per net) |
+| Crossing-aware spanning topology | **Done** (weighted Kruskal tree, native advisory edge order) |
+| Net conflict graph + layer coloring | **Done** (weighted deterministic DSATUR) |
+| Embedded route graph audit | **Done** (components, cycles, crossings, articulation points, bridges) |
 | Concurrent dense CPX bundle solver | Roadmap — main HALO-90 completion blocker |
 | Incremental invalidation on component move | Roadmap |
 | End-to-end RL manager / PCBWorld | Roadmap |
@@ -163,9 +167,11 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 - Compare length / vias / unrouted / grade vs guide and FreeRouting SES when available
 - Optional: reproduce Eremex sample boards from [TopoR 6.0 examples](https://www.eremex.com/support/tutorials/topor6_0_examples/) as behavioral tests (completion, vias, topology)
 
-The checked-in v1.7 HALO-90 snapshot commits 9/23 nets (including two CPX
+The checked-in v1.8 HALO-90 snapshot commits 9/23 nets (including two CPX
 nets, 21 explicit vias, and one GND area), leaves 14 nets explicitly open,
 and reports zero native track/via shorts, spacing hits, or Edge.Cuts escapes.
+Its topology plan contains 240 vertices, 23 hyperedges, 217 tree edges, and
+77 net-conflict edges; the emitted route has zero same-layer crossings.
 This replaces the invalid 17/23 result that treated inner-layer copper as
 connected directly to front-only SMD pads. Native area DRC covers the zone
 boundary; KiCad refill and DRC remain the fabrication authority for the
@@ -178,9 +184,10 @@ filled polygon and thermals. See
 
 | Path | Role |
 |------|------|
+| `src/physics_router/graph_theory.py` | Board hypergraph, crossing-aware Kruskal, DSATUR layer coloring, route graph audits |
 | `src/physics_router/topology.py` | Signatures, radar, congestion, Pareto scores |
-| `src/physics_router/router.py` | Free-angle search, rubberband, vias, apply-to-KiCad |
-| `native/router.cpp` | Atomic GridMap batch router and native copper-area generation |
+| `src/physics_router/router.py` | Graph guide, free-angle policy, rubberband, vias, apply-to-KiCad |
+| `native/router.cpp` | Advisory tree geometrization, atomic GridMap batch router, native copper areas |
 | `src/physics_router/regeometry.py` | Post-connect free-angle reshape + TopoR geometry metrics |
 | `scripts/render_routing_process.py` | Doc renders: placement → guide → clearance → re-geometry strip |
 | `src/physics_router/routing_strategies.py` | `topor_style_route` orchestration |
