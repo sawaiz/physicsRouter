@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "control-plane",
+      "runtimeExecutable": ".venv/bin/physics-router",
+      "runtimeArgs": ["serve", "--host", "127.0.0.1", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

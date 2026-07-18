@@ -1,0 +1,316 @@
+{
+  "mode": "native_sequential_zero_violation",
+  "time_s": 1.97,
+  "segments": 34,
+  "vias": 1,
+  "length_mm": 83.97,
+  "unrouted": [
+    "CPX-1",
+    "CPX-3",
+    "CPX-5",
+    "CPX-8",
+    "CPX-9",
+    "MIC",
+    "Net-(R3-Pad2)",
+    "SCL",
+    "SDA",
+    "Net-(TP2-Pad1)",
+    "SW-A",
+    "SW-B",
+    "XL-INT1",
+    "XL-INT2",
+    "RX",
+    "TX"
+  ],
+  "statuses": {
+    "partial": 7,
+    "unrouted": 16
+  },
+  "drc": {
+    "violations": 0,
+    "shorts": 0,
+    "spacing": 0,
+    "outline_outside": 0
+  },
+  "clearance_violations": 0,
+  "score": 0.0,
+  "grade": "F",
+  "summary": "grade F (0/100) \u00b7 0 soft viol \u00b7 1 vias \u00b7 16 unrouted \u00b7 84.0 mm",
+  "notes": [
+    "backend: native_cpp sequential zero-violation",
+    "policy: one net at a time by priority/weight; rip-up; open > short",
+    "unrouted CPX-1: native zero-violation gate",
+    "unrouted CPX-3: native zero-violation gate",
+    "unrouted CPX-5: native zero-violation gate",
+    "unrouted CPX-8: native zero-violation gate",
+    "unrouted CPX-9: native zero-violation gate",
+    "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.15mm",
+    "grade F (0/100) \u00b7 0 soft viol \u00b7 1 vias \u00b7 16 unrouted \u00b7 84.0 mm"
+  ],
+  "net_reports": [
+    {
+      "net": "GND",
+      "pins": 8,
+      "length_mm": 4.2993,
+      "segments": 3,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "isotropic+native_seq",
+      "notes": []
+    },
+    {
+      "net": "+3V",
+      "pins": 15,
+      "length_mm": 7.1117,
+      "segments": 5,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-0",
+      "pins": 19,
+      "length_mm": 27.9811,
+      "segments": 8,
+      "vias": 1,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-1",
+      "pins": 19,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "native_drc_reject",
+      "notes": [
+        "rejected: hits=1 shorts=0; open > short"
+      ]
+    },
+    {
+      "net": "CPX-2",
+      "pins": 19,
+      "length_mm": 20.9197,
+      "segments": 7,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-3",
+      "pins": 19,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "native_drc_reject",
+      "notes": [
+        "rejected: hits=1 shorts=0; open > short"
+      ]
+    },
+    {
+      "net": "CPX-4",
+      "pins": 19,
+      "length_mm": 8.1113,
+      "segments": 4,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-5",
+      "pins": 19,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "native_drc_reject",
+      "notes": [
+        "rejected: hits=3 shorts=0; open > short"
+      ]
+    },
+    {
+      "net": "CPX-6",
+      "pins": 19,
+      "length_mm": 1.6089,
+      "segments": 2,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-7",
+      "pins": 19,
+      "length_mm": 13.9333,
+      "segments": 5,
+      "vias": 0,
+      "layers": [],
+      "status": "partial",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "CPX-8",
+      "pins": 19,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "native_drc_reject",
+      "notes": [
+        "rejected: hits=6 shorts=0; open > short"
+      ]
+    },
+    {
+      "net": "CPX-9",
+      "pins": 19,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "native_drc_reject",
+      "notes": [
+        "rejected: hits=6 shorts=0; open > short"
+      ]
+    },
+    {
+      "net": "MIC",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "Net-(R3-Pad2)",
+      "pins": 3,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "SCL",
+      "pins": 3,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "SDA",
+      "pins": 3,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "Net-(TP2-Pad1)",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "SW-A",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "SW-B",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "XL-INT1",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "XL-INT2",
+      "pins": 2,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "RX",
+      "pins": 3,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    },
+    {
+      "net": "TX",
+      "pins": 3,
+      "length_mm": 0.0,
+      "segments": 0,
+      "vias": 0,
+      "layers": [],
+      "status": "unrouted",
+      "method": "unrouted_edge+native_seq",
+      "notes": []
+    }
+  ],
+  "drc_samples": []
+}

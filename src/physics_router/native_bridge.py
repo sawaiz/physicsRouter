@@ -66,6 +66,7 @@ def route_board_native(
     net_order: list[str] | None = None,
     exclusive_nets: bool = False,
     seed_segments: list[Any] | None = None,
+    max_expansions: int | None = None,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``.
 
@@ -93,7 +94,18 @@ def route_board_native(
     n_nets = max(1, len(board.nets))
     base_exp = 5000 * max(1.0, 0.35 / max(float(grid_mm), 0.05))
     # Cap for speed on large multipin boards (e.g. HALO 23 nets × 90 LEDs)
-    cfg.max_expansions = int(min(12000 if n_nets > 16 else 20000, max(3000, base_exp)))
+    if max_expansions is not None:
+        cfg.max_expansions = int(max(1000, max_expansions))
+    else:
+        cfg.max_expansions = int(
+            min(12000 if n_nets > 16 else 20000, max(3000, base_exp))
+        )
+    # Exclusive multipin (1 net): allow higher budget for full connectivity
+    if exclusive_nets and net_order and len(net_order) == 1 and max_expansions is None:
+        name0 = net_order[0]
+        n_pins = len(board.nets.get(name0) or [])
+        if n_pins >= 8:
+            cfg.max_expansions = int(max(cfg.max_expansions, min(32000, 4000 * n_pins)))
     if hasattr(cfg, "isotropic"):
         cfg.isotropic = bool(isotropic)
     if hasattr(cfg, "post_rubberband"):

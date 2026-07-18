@@ -33,7 +33,8 @@ from physics_router.router import (
 ProgressCallback = Callable[[int, int, str, str, dict], None]
 
 # Matrix (dense multipin) first so later power/critical see painted copper
-_STRATEGY_ORDER = ("matrix", "power", "critical", "general")
+# Priority/weight first: power & critical before dense multipin matrix
+_STRATEGY_ORDER = ("power", "critical", "matrix", "general")
 
 
 @dataclass

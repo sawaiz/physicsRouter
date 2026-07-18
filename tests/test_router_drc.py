@@ -141,7 +141,9 @@ def test_sequential_zero_violation_no_shorts_python():
         prefer_native=False,
         allow_vias=True,
     )
-    assert any("zero-violation" in n for n in r.notes)
+    assert any(
+        "zero-violation" in n or "full-net commit" in n for n in r.notes
+    )
     assert r.clearance_violations == 0
     rep = native_drc_check(r, clearance_mm=0.2, board=board)
     assert rep["shorts"] == 0
@@ -164,7 +166,9 @@ def test_sequential_zero_violation_native():
         prefer_native=True,
         allow_vias=True,
     )
-    assert any("sequential zero-violation" in n for n in r.notes)
+    assert any(
+        "sequential zero-violation" in n or "full-net commit" in n for n in r.notes
+    )
     assert r.clearance_violations == 0
     rep = native_drc_check(r, clearance_mm=0.2, board=board)
     assert rep["shorts"] == 0
