@@ -14,19 +14,22 @@ from physics_router.router import RouteResult
 def board_to_viewer_dict(board: BoardModel, config: PlacementConfig | None = None) -> dict[str, Any]:
     comps = []
     for ref, c in board.components.items():
-        comps.append(
-            {
-                "ref": ref,
-                "x": c.x_mm,
-                "y": c.y_mm,
-                "rot": c.rotation_deg,
-                "w": c.width_mm,
-                "h": c.height_mm,
-                "layer": c.layer,
-                "footprint": c.footprint,
-                "locked": c.locked,
-            }
-        )
+        item: dict[str, Any] = {
+            "ref": ref,
+            "x": c.x_mm,
+            "y": c.y_mm,
+            "rot": c.rotation_deg,
+            "w": c.width_mm,
+            "h": c.height_mm,
+            "layer": c.layer,
+            "footprint": c.footprint,
+            "locked": c.locked,
+            "pads": list(c.pads or []),
+        }
+        # Real footprint graphics from .kicad_pcb (local coords)
+        if c.graphics:
+            item["graphics"] = list(c.graphics)
+        comps.append(item)
     nets = {n: [{"ref": r, "pad": p} for r, p in pins] for n, pins in board.nets.items()}
     net_meta = {}
     if config:
@@ -48,6 +51,7 @@ def board_to_viewer_dict(board: BoardModel, config: PlacementConfig | None = Non
         "nets": nets,
         "net_meta": net_meta,
         "source_path": board.source_path,
+        "outline": list(getattr(board, "outline", None) or []),
     }
 
 

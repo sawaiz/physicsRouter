@@ -162,6 +162,8 @@ class Component(BaseModel):
     locked: bool = False
     power_dissipation_w: float = 0.0
     pads: list[dict[str, Any]] = Field(default_factory=list)
+    # Local-coordinate graphics from .kicad_pcb (fp_line / pad / etc.) for accurate 2D view
+    graphics: list[dict[str, Any]] = Field(default_factory=list)
     notes: str = ""
 
     @property
@@ -178,6 +180,8 @@ class BoardModel(BaseModel):
     # net_name -> list of (ref, pad)
     nets: dict[str, list[tuple[str, str]]] = Field(default_factory=dict)
     source_path: str | None = None
+    # Edge.Cuts / outline primitives for viewer (board coordinates)
+    outline: list[dict[str, Any]] = Field(default_factory=list)
     # Populated from KiCad stackup / DRC when available (dict for JSON friendliness)
     design_rules: dict | None = None
     copper_layers: list[str] = Field(default_factory=lambda: ["F.Cu", "B.Cu"])
