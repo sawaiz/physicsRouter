@@ -236,3 +236,84 @@ def test_native_obstacle_is_layer_aware():
     assert result.net_reports[0].status == "ok"
     assert result.segments
     assert {segment.layer for segment in result.segments} == {1}
+
+
+def test_native_rubberband_preserves_multipin_tree_anchors():
+    """Post-polish must not collapse branches from a completed multipin tree."""
+    import math
+
+    import pr_native
+
+    cfg = pr_native.RouteConfig()
+    cfg.x_min = -6
+    cfg.x_max = 6
+    cfg.y_min = -6
+    cfg.y_max = 6
+    cfg.num_layers = 1
+    cfg.grid_mm = 0.25
+    cfg.allow_vias = False
+    cfg.post_rubberband = True
+    cfg.atomic_nets = True
+
+    def point(x: float, y: float):
+        value = pr_native.Vec2()
+        value.x = x
+        value.y = y
+        return value
+
+    anchors = [(-4.0, 0.0), (0.0, 4.0), (4.0, 0.0), (0.0, -4.0)]
+    net = pr_native.NetSpec()
+    net.net_id = 8
+    net.name = "TREE"
+    net.anchors = [point(x, y) for x, y in anchors]
+    net.preferred_layers = [0]
+
+    result = pr_native.route_board([net], cfg, [])
+    assert result.net_reports[0].status == "ok"
+    assert len(result.segments) >= len(anchors) - 1
+    endpoints = [
+        (x, y)
+        for segment in result.segments
+        for x, y in ((segment.x1, segment.y1), (segment.x2, segment.y2))
+    ]
+    for ax, ay in anchors:
+        assert min(math.hypot(x - ax, y - ay) for x, y in endpoints) < 0.05
+    assert any("preserved" in note for note in result.notes)
+
+
+def test_native_equal_priority_order_is_stable_for_bundle_variants():
+    """Reversing equal peers must change which net claims a single corridor."""
+    import pr_native
+
+    cfg = pr_native.RouteConfig()
+    cfg.x_min = -5
+    cfg.x_max = 5
+    cfg.y_min = -0.3
+    cfg.y_max = 0.3
+    cfg.num_layers = 1
+    cfg.grid_mm = 0.1
+    cfg.clearance_mm = 0.2
+    cfg.allow_vias = False
+    cfg.atomic_nets = True
+    cfg.post_rubberband = False
+
+    def point(x: float, y: float):
+        value = pr_native.Vec2()
+        value.x = x
+        value.y = y
+        return value
+
+    def net(net_id: int, name: str):
+        value = pr_native.NetSpec()
+        value.net_id = net_id
+        value.name = name
+        value.priority = 1.0
+        value.anchors = [point(-4, 0), point(4, 0)]
+        value.preferred_layers = [0]
+        return value
+
+    a, b = net(1, "A"), net(2, "B")
+    forward = pr_native.route_board([a, b], cfg, [])
+    reverse = pr_native.route_board([b, a], cfg, [])
+    assert {segment.net_id for segment in forward.segments} == {1}
+    assert {segment.net_id for segment in reverse.segments} == {2}

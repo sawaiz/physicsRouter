@@ -92,6 +92,36 @@ def _matrix_name(net: str) -> bool:
     return bool(re.match(r"^CPX[-_]?\d+$", u)) or u.startswith("MATRIX")
 
 
+def _matrix_order_variants(order: list[str], limit: int = 4) -> list[list[str]]:
+    """Deterministic whole-bucket rebuild orders for equal-priority matrix nets.
+
+    Each variant is routed atomically by the C++ core from the same non-matrix
+    seed. This captures the useful peer-rip/matrix-rebuild behavior without
+    growing a slow Python geometry fallback or accumulating partial stubs.
+    """
+    if not order:
+        return [[]]
+    candidates = [
+        list(order),
+        list(reversed(order)),
+        list(order[::2]) + list(order[1::2]),
+        list(order[1::2]) + list(order[::2]),
+    ]
+    for shift in (1, max(1, len(order) // 3)):
+        candidates.append(list(order[shift:]) + list(order[:shift]))
+    unique: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for candidate in candidates:
+        key = tuple(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+        if len(unique) >= max(1, limit):
+            break
+    return unique
+
+
 def classify_board(
     board: BoardModel,
     config: PlacementConfig | None = None,
@@ -268,23 +298,67 @@ def _route_bucket(
         ),
     )
 
-    r = clearance_aware_route(
-        board,
-        config,
-        clearance_mm=cl,
-        grid_mm=grid,
-        soft_fallback=False,
-        prefer_native=prefer_native,
-        allow_vias=True,
-        net_order=order,
-        nets_filter=nets,
-        seed_result=seed,
-        style="isotropic",
-        design_rules=rules,
-        # No per-net progress_cb so native C++ early path is not disabled
-        progress_cb=None,
-        skip_hybrid=True,
-    )
+    orders = _matrix_order_variants(order) if strategy == "matrix" else [order]
+
+    def route_variant(variant_order: list[str]) -> RouteResult:
+        return clearance_aware_route(
+            board,
+            config,
+            clearance_mm=cl,
+            grid_mm=grid,
+            soft_fallback=False,
+            prefer_native=prefer_native,
+            allow_vias=True,
+            net_order=variant_order,
+            nets_filter=nets,
+            seed_result=seed,
+            style="isotropic",
+            design_rules=rules,
+            # No per-net progress_cb so native C++ early path is not disabled
+            progress_cb=None,
+            skip_hybrid=True,
+        )
+
+    if len(orders) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # route_board releases the GIL while its independent C++ GridMap runs.
+        # Four workers avoids oversubscription once native OpenMP is available.
+        with ThreadPoolExecutor(max_workers=min(4, len(orders))) as executor:
+            candidates = list(executor.map(route_variant, orders))
+    else:
+        candidates = [route_variant(orders[0])]
+
+    def candidate_key(candidate: RouteResult) -> tuple:
+        reports = {report.net: report for report in candidate.net_reports}
+        completed = sum(
+            1
+            for net in nets
+            if reports.get(net) is not None and reports[net].status == "ok"
+        )
+        drc = (candidate.quality or {}).get("drc") or {}
+        violations = int(drc.get("violations") or 0)
+        opens = len(set(candidate.unrouted_nets) & set(nets))
+        return (
+            violations == 0,
+            completed,
+            -violations,
+            -opens,
+            -candidate.via_count,
+            -candidate.total_length_mm,
+        )
+
+    best_index, r = max(enumerate(candidates), key=lambda item: candidate_key(item[1]))
+    if len(candidates) > 1:
+        completed = sum(
+            1
+            for report in r.net_reports
+            if report.net in nets and report.status == "ok"
+        )
+        r.notes.append(
+            f"matrix_bundle: selected order {best_index + 1}/{len(candidates)} "
+            f"with {completed}/{len(nets)} complete nets"
+        )
     r.notes.append(f"hybrid: {strategy} phase nets={len(nets)} cl={cl:.3f} grid={grid}")
     return r
 

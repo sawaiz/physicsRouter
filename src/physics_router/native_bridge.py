@@ -2,8 +2,8 @@
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 
-Native v1.5: atomic layer/pad-aware routing, clearance-correct occupancy,
-and organic refillable copper areas.
+Native v1.6: atomic layer/pad-aware routing, topology-safe multipin polish,
+organic copper areas, and bounded parallel matrix-bundle variants.
 Python remains the TopoR policy/file-format host; C++ owns geometry.
 """
 
@@ -49,6 +49,8 @@ def info() -> dict[str, Any]:
             "via_reasons": True,
             "atomic_nets": True,
             "copper_areas": True,
+            "topology_safe_rubberband": True,
+            "matrix_bundle": True,
         },
     }
 
@@ -210,8 +212,10 @@ def route_board_native(
             ns.area_priority = 10 if nc == "ground" else 20
         nets.append(ns)
 
-    # Sort nets for native by priority (already handled in C++ too)
-    nets.sort(key=lambda n: (-n.priority, len(n.anchors), n.name))
+    # Stable priority/pin sorting retains the caller's order for equal-weight
+    # matrix peers. The C++ core uses the same stable keys, which makes bounded
+    # bucket order variants meaningful and reproducible.
+    nets.sort(key=lambda n: (-n.priority, len(n.anchors)))
 
     from physics_router.kicad_io import local_to_board
 
@@ -237,9 +241,7 @@ def route_board_native(
                 copper_layer_ids = list(range(cfg.num_layers))
             else:
                 copper_layer_ids = [
-                    layer_to_id[layer]
-                    for layer in pad_layers
-                    if layer in layer_to_id
+                    layer_to_id[layer] for layer in pad_layers if layer in layer_to_id
                 ]
             if not copper_layer_ids:
                 continue

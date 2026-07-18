@@ -8,7 +8,11 @@ import pytest
 
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules
-from physics_router.hybrid_route import classify_board, hybrid_route
+from physics_router.hybrid_route import (
+    _matrix_order_variants,
+    classify_board,
+    hybrid_route,
+)
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
 from physics_router.router import RouteResult, RouteSegment, clearance_aware_route
 
@@ -27,7 +31,22 @@ def test_classify_synthetic_has_strategies():
     assert sum(d["counts"].values()) == len(board.nets)
 
 
-@pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing")
+def test_matrix_order_variants_are_deterministic_and_complete():
+    order = [f"CPX-{index}" for index in range(6)]
+    variants = _matrix_order_variants(order)
+    assert variants[0] == order
+    assert variants[1] == list(reversed(order))
+    assert 2 < len(variants) <= 4
+    assert len({tuple(variant) for variant in variants}) == len(variants)
+    assert all(
+        set(variant) == set(order) and len(variant) == len(order)
+        for variant in variants
+    )
+
+
+@pytest.mark.skipif(
+    not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing"
+)
 def test_classify_halo_matrix_cpx():
     cfg = load_config(HALO_CFG)
     board = load_board_from_kicad_pcb(HALO_PCB, cfg)
@@ -61,7 +80,9 @@ def test_seed_result_and_nets_filter():
     assert isinstance(r, RouteResult)
 
 
-@pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing")
+@pytest.mark.skipif(
+    not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing"
+)
 def test_hybrid_route_halo_runs_fast():
     cfg = load_config(HALO_CFG)
     board = load_board_from_kicad_pcb(HALO_PCB, cfg)
