@@ -872,8 +872,8 @@
       const zMid = 0.4 + t / 2;
       const [vx, vy] = viewXY(c.x, c.y);
       mesh.position.set(vx, vy, zMid);
-      // Same convention as 2D: viewRotDeg (Y-flip) then -θ for Z-up scene
-      mesh.rotation.z = -((viewRotDeg(c.rot) * Math.PI) / 180);
+      // Match 2D canvas sense (viewRotCanvasDeg already includes flip signs)
+      mesh.rotation.z = (viewRotCanvasDeg(c.rot) * Math.PI) / 180;
       mesh.userData = { ref: c.ref, locked: c.locked, led };
       three.gComps.add(mesh);
 
@@ -1422,23 +1422,38 @@
     'B.Fab': '#606080',
   };
 
-  // HALO-90 view: match KiCad file so switch (S1, x<0) is on the LEFT and
-  // hook (H1, y=-13) is at the TOP. File coords stay unchanged for routing.
-  // Transform is Y-flip only — NOT 180° (which mirrored left/right).
-  //   view: (x, y) → (x, -y)  then canvas maps +Y-up via py = oy - scale*vy
+  // HALO-90 view: switch (S1, x<0) LEFT, hook (H1, y=-13) TOP.
+  // Y-flip only (not 180°) so left/right matches the PCB file.
+  // V key toggles board flip (show back / mirror X) like KiCad.
   const VIEW_FLIP_Y = true;
+  let viewFlipBoard = false; // V: mirror X, prefer B.Cu silk
 
   /** Map KiCad board XY (mm) into view XY before screen projection. */
   function viewXY(x, y) {
-    if (VIEW_FLIP_Y) return [x, -y];
-    return [x, y];
+    let vx = x, vy = y;
+    if (VIEW_FLIP_Y) vy = -y;
+    if (viewFlipBoard) vx = -vx;
+    return [vx, vy];
   }
 
-  /** Footprint rotation (deg, KiCad CCW) in the view frame.
-   *  A pure Y-flip reverses orientation sense → negate θ. */
-  function viewRotDeg(deg) {
+  /**
+   * Canvas rotation (degrees) for a KiCad footprint angle θ (CCW in board XY).
+   * With VIEW_FLIP_Y, successive +4° steps on the LED ring must appear clockwise
+   * on screen (D45=86° → D46=90° is +4° CW around the ring).
+   * HTML canvas: positive angle = clockwise (Y-down).
+   */
+  function viewRotCanvasDeg(deg) {
     const r = Number(deg) || 0;
-    return VIEW_FLIP_Y ? -r : r;
+    // Y-flip of positions: board CCW appears CW on screen → use +θ on canvas
+    // Board flip (V): extra X-mirror reverses again
+    if (VIEW_FLIP_Y && !viewFlipBoard) return r;
+    if (VIEW_FLIP_Y && viewFlipBoard) return -r;
+    return -r; // no Y-flip: standard canvas Y-down needs -θ
+  }
+
+  /** @deprecated name kept for 3D path — returns canvas Z rotation degrees */
+  function viewRotDeg(deg) {
+    return viewRotCanvasDeg(deg);
   }
 
   function ensureKicadLayerToggles() {
@@ -1464,25 +1479,51 @@
     return new Set(boxes.filter(b => b.checked).map(b => b.dataset.kly));
   }
 
+  /** Layer alpha like KiCad stacked copper (semi-transparent). */
+  function layerColor(ly, alpha = 1) {
+    const hex = KICAD_LAYER[ly] || KICAD_LAYER['F.Cu'] || '#C83434';
+    const a = Math.max(0, Math.min(1, alpha));
+    if (a >= 0.999) return hex;
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(full, 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function layerVisible(ly, layersOn) {
+    if (!layersOn) return true;
+    if (layersOn.has(ly)) return true;
+    if (ly === 'F.Cu' && (layersOn.has('Front') || layersOn.has('F.Cu'))) return true;
+    if (ly === 'B.Cu' && (layersOn.has('Back') || layersOn.has('B.Cu'))) return true;
+    if (/Silk/i.test(ly) && (layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen'))) return true;
+    if (/Edge/i.test(ly) && layersOn.has('Edge.Cuts')) return true;
+    return false;
+  }
+
   /** Draw footprint primitives in local mm (caller has set scale + Y flip). */
-  function drawFootprintGraphics(ctx, gfx, { showSilk = true, showCu = true } = {}) {
-    const silkOk = (ly) => !ly || /Silk|Fab|CrtYd/i.test(ly);
-    const cuOk = (ly) => !ly || /\.Cu|Front|Back/i.test(ly);
-    // Pads first (under silk)
+  function drawFootprintGraphics(ctx, gfx, { showSilk = true, showCu = true, layersOn = null } = {}) {
+    const copperAlpha = 0.72;
+    // Pads first (under silk) — respect copper layer visibility + transparency
     for (const g of gfx) {
       if (g.kind !== 'pad') continue;
-      if (!showCu && !cuOk(g.layer)) continue;
-      if (showCu === false) continue;
-      const col = (g.layer && g.layer.startsWith('B')) ? KICAD_LAYER['B.Cu'] : KICAD_LAYER['F.Cu'];
+      const ly = g.layer || 'F.Cu';
+      if (layersOn && !layerVisible(ly, layersOn) && !layerVisible('F.Cu', layersOn)) continue;
+      if (!showCu) continue;
+      const isBack = /^B\.|Back/i.test(ly);
+      if (viewFlipBoard && !isBack && !/\*/.test(ly)) {
+        // when flipped, prefer back pads
+      }
+      const col = layerColor(isBack ? 'B.Cu' : 'F.Cu', copperAlpha);
       ctx.save();
       ctx.translate(g.x || 0, g.y || 0);
       ctx.rotate(((g.rot || 0) * Math.PI) / 180);
       const w = g.w || 0.5, h = g.h || 0.5;
       const shape = (g.shape || 'rect').toLowerCase();
       ctx.fillStyle = col;
-      ctx.strokeStyle = '#5a2020';
+      ctx.strokeStyle = layerColor(isBack ? 'B.Cu' : 'F.Cu', Math.min(1, copperAlpha + 0.15));
       ctx.lineWidth = 0.04;
-      if (shape.includes('circle') || shape === 'oval' && Math.abs(w - h) < 0.05) {
+      if (shape.includes('circle') || (shape === 'oval' && Math.abs(w - h) < 0.05)) {
         ctx.beginPath();
         ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -1493,34 +1534,41 @@
       } else {
         ctx.fillRect(-w / 2, -h / 2, w, h);
       }
-      // Drill hole
       if (g.drill > 0.05) {
         ctx.fillStyle = '#0a1020';
         ctx.beginPath();
         ctx.arc(0, 0, g.drill / 2, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Cathode / pinfunction K mark
       if (/^k$/i.test(g.pinfunction || '')) {
-        ctx.fillStyle = '#f0e080';
+        ctx.fillStyle = 'rgba(240,224,128,0.95)';
         ctx.fillRect(w / 2 - w * 0.2, -h / 2, w * 0.2, h);
       }
       ctx.restore();
     }
-    // Silk / fab lines & shapes
+    // Silk / fab — slightly transparent so copper shows through
     for (const g of gfx) {
       if (g.kind === 'pad') continue;
       const ly = g.layer || '';
       if (/Silk|Fab|CrtYd/i.test(ly)) {
         if (!showSilk) continue;
+        if (layersOn && /Silk/i.test(ly) && !layerVisible('F.SilkS', layersOn) && !layerVisible(ly, layersOn))
+          continue;
       } else if (/\.Cu/i.test(ly)) {
         if (!showCu) continue;
+        if (layersOn && !layerVisible(ly, layersOn)) continue;
       } else if (!showSilk) continue;
 
       const isCrt = /CrtYd/i.test(ly);
       const isFab = /Fab/i.test(ly);
-      ctx.strokeStyle = isCrt ? '#d040d088' : (isFab ? '#a0a0a0' : KICAD_LAYER['F.SilkS']);
-      ctx.fillStyle = ctx.strokeStyle;
+      const isCu = /\.Cu/i.test(ly);
+      if (isCu) {
+        ctx.strokeStyle = layerColor(ly.startsWith('B') ? 'B.Cu' : 'F.Cu', copperAlpha);
+        ctx.fillStyle = ctx.strokeStyle;
+      } else {
+        ctx.strokeStyle = isCrt ? 'rgba(208,64,208,0.45)' : (isFab ? 'rgba(160,160,160,0.7)' : 'rgba(232,208,96,0.85)');
+        ctx.fillStyle = ctx.strokeStyle;
+      }
       ctx.lineWidth = Math.max(0.05, g.width || 0.1);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -1544,7 +1592,7 @@
         ctx.beginPath();
         ctx.moveTo(g.pts[0][0], g.pts[0][1]);
         for (let i = 1; i < g.pts.length; i++) ctx.lineTo(g.pts[i][0], g.pts[i][1]);
-        ctx.closePath();
+        if (g.closed !== false) ctx.closePath();
         if (g.fill) ctx.fill();
         else ctx.stroke();
       }
@@ -1632,50 +1680,60 @@
       }
     }
 
-    // Board substrate fill (from Edge.Cuts circle if present, else LED ring fit)
+    // Board substrate fill from Edge.Cuts (circle or max arc radius) else LED ring
     const showEdge = !layersOn || layersOn.has('Edge.Cuts');
     const outlineEarly = board?.outline || [];
     if (showEdge) {
       let cxB = 0, cyB = 0, rBoard = Math.max(bw, bh) / 2 - pad;
-      const circ = outlineEarly.find(g => g.kind === 'circle');
+      const circ = outlineEarly.find(g => g.kind === 'circle' && (g.r || 0) > 5);
       if (circ) {
-        cxB = circ.cx; cyB = circ.cy; rBoard = circ.r || rBoard;
+        cxB = circ.cx; cyB = circ.cy; rBoard = circ.r;
       } else {
-        const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
-        if (leds.length > 10) rBoard = Math.max(...leds.map(c => Math.hypot(c.x, c.y))) + 1.2;
-        if (comps.length) {
-          cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
-          cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
+        // Classic HALO arcs are centered near origin with r≈12
+        for (const g of outlineEarly) {
+          if (g.kind === 'poly' && g.pts?.length > 8) {
+            let sx = 0, sy = 0;
+            for (const p of g.pts) { sx += p[0]; sy += p[1]; }
+            const n = g.pts.length;
+            const mx = sx / n, my = sy / n;
+            let rr = 0;
+            for (const p of g.pts) rr = Math.max(rr, Math.hypot(p[0] - mx, p[1] - my));
+            if (rr > rBoard) { rBoard = rr; cxB = mx; cyB = my; }
+          }
+        }
+        if (rBoard < 8) {
+          const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
+          if (leds.length > 10) rBoard = Math.max(...leds.map(c => Math.hypot(c.x, c.y))) + 1.2;
+          if (comps.length) {
+            cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
+            cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
+          }
         }
       }
       const [bcx, bcy] = tx(cxB, cyB);
-      if (!layersOn || layersOn.has('F.Mask') || layersOn.has('F.Cu')) {
-        ctx.beginPath();
-        ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(20, 55, 40, 0.85)';
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(20, 55, 40, 0.88)';
+      ctx.fill();
+      // Always stroke outline circle as fallback so Edge.Cuts is visible
+      ctx.strokeStyle = 'rgba(208, 216, 224, 0.9)';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
     }
 
-    // Copper: back under front (pcbnew draw order)
+    // Route copper: back under front, semi-transparent like KiCad
     const copperOrder = ['B.Cu', 'In2.Cu', 'In1.Cu', 'F.Cu'];
     const segs = route?.segments || [];
-    const layerVisible = (ly) => {
-      if (!layersOn) return true;
-      if (layersOn.has(ly)) return true;
-      if (ly === 'F.Cu' && layersOn.has('Front')) return true;
-      if (ly === 'B.Cu' && layersOn.has('Back')) return true;
-      return false;
-    };
     for (const ly of copperOrder) {
-      if (!layerVisible(ly)) continue;
-      const col = KICAD_LAYER[ly] || '#C83434';
+      if (!layerVisible(ly, layersOn)) continue;
+      // Inner layers more transparent so stack is readable
+      const alpha = ly.startsWith('In') ? 0.55 : 0.78;
+      ctx.strokeStyle = layerColor(ly, alpha);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       for (const s of segs) {
         if ((s.layer || 'F.Cu') !== ly) continue;
-        ctx.strokeStyle = col;
         ctx.lineWidth = Math.max(1.5, (s.width_mm || 0.25) * scale * 1.6);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
         const a = tx(s.x1, s.y1), b = tx(s.x2, s.y2);
         ctx.beginPath();
         ctx.moveTo(a[0], a[1]);
@@ -1700,10 +1758,12 @@
       }
     }
 
-      // Edge.Cuts stroke from PCB file
+      // Edge.Cuts stroke from PCB file (lines, arcs as polylines, circles)
     if (outlineEarly.length && showEdge) {
-      ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(208, 216, 224, 0.95)';
+      ctx.lineWidth = 2.0;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       for (const g of outlineEarly) {
         if (g.kind === 'line') {
           const a = tx(g.x1, g.y1), b = tx(g.x2, g.y2);
@@ -1715,6 +1775,16 @@
           const a = tx(g.x1, g.y1), b = tx(g.x2, g.y2);
           ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]),
             Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+        } else if (g.kind === 'poly' && g.pts?.length) {
+          ctx.beginPath();
+          const p0 = tx(g.pts[0][0], g.pts[0][1]);
+          ctx.moveTo(p0[0], p0[1]);
+          for (let i = 1; i < g.pts.length; i++) {
+            const p = tx(g.pts[i][0], g.pts[i][1]);
+            ctx.lineTo(p[0], p[1]);
+          }
+          if (g.closed) ctx.closePath();
+          ctx.stroke();
         } else if (g.kind === 'arc' && g.mx != null) {
           const a = tx(g.x1, g.y1), m = tx(g.mx, g.my), b = tx(g.x2, g.y2);
           ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(m[0], m[1], b[0], b[1]); ctx.stroke();
@@ -1722,23 +1792,26 @@
       }
     }
 
-    // Footprints from .kicad_pcb (pads + silk/fab graphics)
+    // Footprints from .kicad_pcb (pads + silk/fab) with layer transparency
     const showSilk = !layersOn || layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen');
-    const showCu = !layersOn || layersOn.has('F.Cu') || layersOn.has('Front');
+    const showCu = !layersOn || layersOn.has('F.Cu') || layersOn.has('Front')
+      || layersOn.has('B.Cu') || layersOn.has('Back')
+      || [...(layersOn || [])].some(l => /\.Cu$/i.test(l));
     for (const c of comps) {
       const [x, y] = tx(c.x, c.y);
-      const rot = (viewRotDeg(c.rot) * Math.PI) / 180;
+      // Canvas rotation: positive = CW (matches ring +4° steps after Y-flip)
+      const rot = (viewRotCanvasDeg(c.rot) * Math.PI) / 180;
       const gfx = c.graphics;
       const hasGfx = Array.isArray(gfx) && gfx.length > 0;
 
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(-rot);
-      // Local footprint: KiCad +Y up; after view Y-flip + canvas Y-down, flip local Y
+      ctx.rotate(rot);
+      // Local footprint: KiCad +Y up → flip local Y into canvas after placement
       ctx.scale(scale, -scale);
 
       if (hasGfx) {
-        drawFootprintGraphics(ctx, gfx, { showSilk, showCu });
+        drawFootprintGraphics(ctx, gfx, { showSilk, showCu, layersOn });
       } else {
         const w = Math.max(0.4, c.w || 0.8);
         const h = Math.max(0.3, c.h || 0.5);
@@ -1751,7 +1824,7 @@
       ctx.restore();
 
       if (showSilk) {
-        ctx.fillStyle = KICAD_LAYER['F.SilkS'];
+        ctx.fillStyle = 'rgba(232,208,96,0.9)';
         ctx.font = `${Math.max(7, Math.min(11, 0.5 * scale))}px "IBM Plex Sans", system-ui`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
@@ -1761,22 +1834,22 @@
     }
 
     // Legend / HUD
-    ctx.fillStyle = 'rgba(10,16,32,0.75)';
-    ctx.fillRect(4, 4, 210, 36);
+    ctx.fillStyle = 'rgba(10,16,32,0.8)';
+    ctx.fillRect(4, 4, 280, 40);
     ctx.fillStyle = '#c8d0dc';
     ctx.font = '11px system-ui';
     ctx.textAlign = 'left';
-    ctx.fillText(`${name || 'no route'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias`, 10, 18);
-    // mini layer swatches
+    const flipTag = viewFlipBoard ? ' · FLIPPED (V)' : '';
+    ctx.fillText(`${name || 'no route'} · ${(route?.segments || []).length} segs · ${route?.via_count ?? 0} vias${flipTag}`, 10, 18);
     let lx = 10;
     for (const ly of ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']) {
-      ctx.fillStyle = KICAD_LAYER[ly];
+      ctx.fillStyle = layerColor(ly, 0.85);
       ctx.fillRect(lx, 24, 10, 10);
       lx += 12;
     }
     ctx.fillStyle = '#8b9bb4';
     ctx.font = '9px system-ui';
-    ctx.fillText('F  In1 In2 B  (KiCad layers)', 58, 33);
+    ctx.fillText('F  In1 In2 B · V=flip board', 58, 33);
 
     // Footer stats for 2D mode (routing UX — not 3D)
     if (state.vizMode === '2d') {
@@ -2133,6 +2206,36 @@
     $('#btnExport3d')?.addEventListener('click', () => {
       startJob('export_board_3d').catch(e => alert(e.message));
     });
+    // Focusable viz: V flips board (KiCad-style), like pressing V with canvas focused
+    const vizHost = $('#c2dHost') || $('#viz');
+    if (vizHost) {
+      vizHost.tabIndex = 0;
+      vizHost.style.outline = 'none';
+      vizHost.addEventListener('pointerdown', () => vizHost.focus());
+      vizHost.addEventListener('keydown', (ev) => {
+        if (ev.key === 'v' || ev.key === 'V') {
+          ev.preventDefault();
+          viewFlipBoard = !viewFlipBoard;
+          // Prefer B.Cu / front swap in layer toggles when flipped
+          const boxes = $$('#kicadLayerToggles input[data-kly]');
+          if (viewFlipBoard) {
+            boxes.forEach(b => {
+              if (b.dataset.kly === 'F.Cu') b.checked = false;
+              if (b.dataset.kly === 'B.Cu') b.checked = true;
+            });
+          } else {
+            boxes.forEach(b => {
+              if (b.dataset.kly === 'F.Cu') b.checked = true;
+              if (b.dataset.kly === 'B.Cu') b.checked = true;
+            });
+          }
+          drawRoute2d();
+          const st = $('#boardStats');
+          if (st) st.textContent = (st.textContent || '').replace(/\s*·\s*FLIPPED/, '')
+            + (viewFlipBoard ? ' · FLIPPED' : '');
+        }
+      });
+    }
     window.addEventListener('resize', () => {
       if (state.vizMode === '3d') resizeThree();
       else drawRoute2d();
