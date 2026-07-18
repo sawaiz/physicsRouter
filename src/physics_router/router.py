@@ -1493,9 +1493,9 @@ def _native_sequential_zero_violation(
             f"seed: {len(seed_result.segments)} segs + {len(seed_result.vias)} vias"
         )
 
-    # More attempts for multipin boards
+    # Cap attempts to avoid matrix thrashing; recovery pass handles leftovers
     multi_count = sum(1 for n in net_names if _is_multipin_net(board, n))
-    max_attempts = 14 if multi_count >= 4 else 8
+    max_attempts = 6 if multi_count >= 4 else 5
     queue: deque[str] = deque(net_names)
     attempts: dict[str, int] = {n: 0 for n in net_names}
     finished: set[str] = set()
@@ -1515,9 +1515,9 @@ def _native_sequential_zero_violation(
         nonlocal result
         if not rippable or attempts.get(net_name, 0) >= max_attempts:
             return False
-        # Rip one strongest blocker first (last in sort = most pins among lowest prio)
-        # Rip up to 3 peers per attempt to free corridors without thrashing
-        batch = rippable[: max(1, min(3, len(rippable)))]
+        # Rip one peer per attempt (matrix thrashing if we mass-rip)
+        n_rip = 1 if _is_matrix_net(net_name, config) else min(2, len(rippable))
+        batch = rippable[: max(1, n_rip)]
         result = _strip_nets_from_result(result, set(batch))
         for p in batch:
             finished.discard(p)
@@ -1570,6 +1570,51 @@ def _native_sequential_zero_violation(
         # post_rubberband collapses multipin spanning trees on exclusive one-net
         # runs — keep MST geometry until commit (connectivity verified after).
         use_rb = len(board.nets.get(net_name) or []) <= 2
+        is_multi = _is_multipin_net(board, net_name) or _is_matrix_net(
+            net_name, config
+        )
+
+        fully = False
+        hard_ok = False
+        involving: list[dict[str, Any]] = []
+        shorts = 0
+        p_segs: list[RouteSegment] = []
+        p_vias: list[Via] = []
+        trial: RouteResult | None = None
+
+        # Multipin/matrix: prefer Python edge-by-edge MST (full tree).
+        # 2-pin nets: prefer native (fast LOS/detour).
+        prefer_python_first = is_multi
+
+        if prefer_python_first:
+            result = _strip_nets_from_result(result, {net_name})
+            if net_name in result.unrouted_nets:
+                result.unrouted_nets = [
+                    u for u in result.unrouted_nets if u != net_name
+                ]
+            if _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=g_net,
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=att,
+            ):
+                finished.add(net_name)
+                done += 1
+                if progress_cb:
+                    try:
+                        progress_cb(
+                            done, total, net_name, "ok", {"method": "python_full"}
+                        )
+                    except Exception:
+                        pass
+                continue
 
         raw = route_board_native(
             board,
@@ -1587,88 +1632,80 @@ def _native_sequential_zero_violation(
             via_minimize=False,
             max_expansions=exp,
         )
-        if raw is None:
+        if raw is None and not prefer_python_first:
             return None  # fall back to Python sequential
 
-        trial = _route_result_from_dict(raw)
-        p_segs = [s for s in trial.segments if s.net == net_name]
-        p_vias = [v for v in trial.vias if v.net == net_name]
+        if raw is not None:
+            trial = _route_result_from_dict(raw)
+            p_segs = [s for s in trial.segments if s.net == net_name]
+            p_vias = [v for v in trial.vias if v.net == net_name]
 
-        # Never leave prior stubs: strip then trial-insert
-        result = _strip_nets_from_result(result, {net_name})
-        if net_name in result.unrouted_nets:
-            result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
-
-        # Empty result → incomplete
-        if not p_segs:
-            attempts[net_name] = att + 1
-            peers = _space_rip_candidates(result, net_name, config, board)
-            if _do_rip(net_name, peers, "empty"):
-                continue
-            result.net_reports = [r for r in result.net_reports if r.net != net_name]
-            result.net_reports.append(
-                NetRouteReport(
-                    net=net_name,
-                    pins=len(board.nets.get(net_name, [])),
-                    status="unrouted",
-                    method="native_empty",
-                    notes=["no legal copper from search"],
-                )
-            )
-            if net_name not in result.unrouted_nets:
-                result.unrouted_nets.append(net_name)
-            finished.add(net_name)
-            done += 1
-            continue
-
-        # Temporarily attach for connectivity + DRC checks
-        result.segments.extend(p_segs)
-        result.vias.extend(p_vias)
-        _rebuild_totals(result)
-
-        fully = _net_fully_connected(board, net_name, result.segments, result.vias)
-        rep = native_drc_check(_trial_drc_result(), clearance_mm=clearance_mm, board=board)
-        involving = _drc_items_involving(rep, net_name)
-        shorts = int(rep.get("shorts") or 0)
-        hard_ok = not involving and shorts == 0
-
-        if fully and hard_ok:
-            # Full-net commit
-            p_rep = next((r for r in trial.net_reports if r.net == net_name), None)
-            if p_rep is None:
-                p_rep = NetRouteReport(
-                    net=net_name,
-                    pins=len(board.nets.get(net_name, [])),
-                    segments=len(p_segs),
-                    vias=len(p_vias),
-                    length_mm=sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs),
-                    status="ok",
-                    method="native_seq_full",
-                )
-            else:
-                p_rep.status = "ok"
-                p_rep.method = (p_rep.method or "") + "+native_seq_full"
-                p_rep.notes = list(p_rep.notes or []) + [
-                    f"grid={g_net:.3f} exp={exp} attempt={att}"
+            # Never leave prior stubs: strip then trial-insert
+            result = _strip_nets_from_result(result, {net_name})
+            if net_name in result.unrouted_nets:
+                result.unrouted_nets = [
+                    u for u in result.unrouted_nets if u != net_name
                 ]
-            result.net_reports = [r for r in result.net_reports if r.net != net_name]
-            result.net_reports.append(p_rep)
-            finished.add(net_name)
-            done += 1
-            if progress_cb:
-                try:
-                    progress_cb(done, total, net_name, "ok", p_rep.to_dict())
-                except Exception:
-                    pass
-            continue
 
-        # Drop partial / illegal stubs entirely
-        result = _strip_nets_from_result(result, {net_name})
+            if p_segs:
+                result.segments.extend(p_segs)
+                result.vias.extend(p_vias)
+                _rebuild_totals(result)
+                fully = _net_fully_connected(
+                    board, net_name, result.segments, result.vias
+                )
+                rep = native_drc_check(
+                    _trial_drc_result(), clearance_mm=clearance_mm, board=board
+                )
+                involving = _drc_items_involving(rep, net_name)
+                shorts = int(rep.get("shorts") or 0)
+                hard_ok = not involving and shorts == 0
+
+                if fully and hard_ok:
+                    p_rep = next(
+                        (r for r in trial.net_reports if r.net == net_name), None
+                    )
+                    if p_rep is None:
+                        p_rep = NetRouteReport(
+                            net=net_name,
+                            pins=len(board.nets.get(net_name, [])),
+                            segments=len(p_segs),
+                            vias=len(p_vias),
+                            length_mm=sum(
+                                _dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs
+                            ),
+                            status="ok",
+                            method="native_seq_full",
+                        )
+                    else:
+                        p_rep.status = "ok"
+                        p_rep.method = (p_rep.method or "") + "+native_seq_full"
+                        p_rep.notes = list(p_rep.notes or []) + [
+                            f"grid={g_net:.3f} exp={exp} attempt={att}"
+                        ]
+                    result.net_reports = [
+                        r for r in result.net_reports if r.net != net_name
+                    ]
+                    result.net_reports.append(p_rep)
+                    finished.add(net_name)
+                    done += 1
+                    if progress_cb:
+                        try:
+                            progress_cb(
+                                done, total, net_name, "ok", p_rep.to_dict()
+                            )
+                        except Exception:
+                            pass
+                    continue
+
+                # Drop partial / illegal stubs
+                result = _strip_nets_from_result(result, {net_name})
+
         attempts[net_name] = att + 1
 
-        # Python free-angle MST fallback (edge-by-edge) before ripping peers
-        if not fully or not hard_ok:
-            py_ok = _python_try_full_net(
+        # Python fallback if native-first path failed
+        if not prefer_python_first:
+            if _python_try_full_net(
                 board,
                 config,
                 result,
@@ -1680,13 +1717,14 @@ def _native_sequential_zero_violation(
                 design_rules=design_rules,
                 seed_result=seed_result,
                 attempt=att,
-            )
-            if py_ok:
+            ):
                 finished.add(net_name)
                 done += 1
                 if progress_cb:
                     try:
-                        progress_cb(done, total, net_name, "ok", {"method": "python_full"})
+                        progress_cb(
+                            done, total, net_name, "ok", {"method": "python_full"}
+                        )
                     except Exception:
                         pass
                 continue
@@ -1694,19 +1732,24 @@ def _native_sequential_zero_violation(
         partners: set[str] = set()
         if involving:
             partners |= _conflict_partners(involving, net_name)
-        if shorts > 0:
-            for it in rep.get("items") or []:
-                if it.get("kind") == "short":
-                    partners |= _conflict_partners([it], net_name)
         committed_partners = {
             p for p in partners if any(s.net == p for s in result.segments)
         }
         rippable = _rippable_partners(
             committed_partners, net_name, config, board, allow_equal_matrix=True
         )
-        # Space starvation: incomplete but DRC-clean partial was dropped — rip peers
+        # Space starvation — only rip among matrix peers for matrix nets;
+        # non-matrix must not destroy completed matrix copper
         if not fully:
             space_peers = _space_rip_candidates(result, net_name, config, board)
+            if _is_matrix_net(net_name, config):
+                space_peers = [
+                    p for p in space_peers if _is_matrix_net(p, config)
+                ]
+            else:
+                space_peers = [
+                    p for p in space_peers if not _is_matrix_net(p, config)
+                ]
             for p in space_peers:
                 if p not in rippable:
                     rippable.append(p)
@@ -1722,7 +1765,7 @@ def _native_sequential_zero_violation(
                 net=net_name,
                 pins=len(board.nets.get(net_name, [])),
                 status="unrouted",
-                method="native_reject",
+                method="full_net_reject",
                 notes=[
                     f"reject: full={fully} hard_ok={hard_ok} shorts={shorts} "
                     f"hits={len(involving)} att={attempts[net_name]}",
@@ -1737,36 +1780,67 @@ def _native_sequential_zero_violation(
             f"unrouted {net_name}: full-net gate (partial/illegal dropped)"
         )
 
-    # ---- Dense multipin recovery pass: re-try unrouted multipin/matrix ----
-    unrouted_multi = [
+    # ---- Gentle recovery: denser python/native for unrouted only (no mass rip) ----
+    still_open = [
         n
         for n in net_names
         if n in result.unrouted_nets
-        and (_is_multipin_net(board, n) or _is_matrix_net(n, config))
+        or not any(s.net == n for s in result.segments)
     ]
-    if unrouted_multi:
-        result.notes.append(
-            f"dense_multipin_pass: retry {len(unrouted_multi)} unrouted multipin/matrix"
+    # Only nets that are not already fully committed
+    still_open = [
+        n
+        for n in still_open
+        if not (
+            any(s.net == n for s in result.segments)
+            and _net_fully_connected(board, n, result.segments, result.vias)
         )
-        # Prefer fewer pins first within recovery so some complete
-        unrouted_multi.sort(key=lambda n: (len(board.nets.get(n, [])), n))
-        for net_name in unrouted_multi:
-            # Rip equal-weight matrix peers to give a clear board, then re-route denser
+    ]
+    if still_open:
+        result.notes.append(f"recovery_pass: {len(still_open)} open net(s)")
+        # Prefer high priority, then fewer pins
+        still_open.sort(
+            key=lambda n: (-_net_priority(config, n), len(board.nets.get(n, [])), n)
+        )
+        for net_name in still_open:
+            # Optionally rip a single lowest-priority equal-weight peer (not all)
             peers = _space_rip_candidates(result, net_name, config, board)
-            # For recovery, rip ALL equal matrix peers so multipin can complete
-            matrix_peers = [p for p in peers if _is_matrix_net(p, config)]
-            if matrix_peers:
-                result = _strip_nets_from_result(result, set(matrix_peers))
-                for p in matrix_peers:
-                    finished.discard(p)
-                    result.net_reports = [r for r in result.net_reports if r.net != p]
-                    if p not in result.unrouted_nets:
-                        result.unrouted_nets.append(p)
-                    if p not in queue:
-                        queue.append(p)
-                result.notes.append(
-                    f"dense_pass rip matrix peers for {net_name}: {','.join(matrix_peers)}"
-                )
+            if peers and _is_matrix_net(net_name, config):
+                # Matrix: rip at most 1 equal matrix peer
+                one = next((p for p in peers if _is_matrix_net(p, config)), None)
+                if one:
+                    result = _strip_nets_from_result(result, {one})
+                    result.net_reports = [r for r in result.net_reports if r.net != one]
+                    if one not in result.unrouted_nets:
+                        result.unrouted_nets.append(one)
+                    result.notes.append(f"recovery rip 1 peer {one} for {net_name}")
+            elif peers and not _is_matrix_net(net_name, config):
+                # Non-matrix: rip one lower/equal peer if blocked
+                one = peers[0]
+                if _net_priority(config, one) <= _net_priority(config, net_name):
+                    result = _strip_nets_from_result(result, {one})
+                    result.net_reports = [r for r in result.net_reports if r.net != one]
+                    if one not in result.unrouted_nets:
+                        result.unrouted_nets.append(one)
+
+            # Prefer python MST (better multipin connectivity on this board)
+            py_ok = _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=min(0.15, float(grid_mm)),
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=4,
+            )
+            if py_ok:
+                result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+                finished.add(net_name)
+                continue
 
             g_net = min(0.12, _dense_grid_for_net(board, net_name, grid_mm, attempt=5))
             exp = _native_expansions_for_net(board, net_name, attempt=5)
@@ -1793,91 +1867,7 @@ def _native_sequential_zero_violation(
             trial = _route_result_from_dict(raw)
             p_segs = [s for s in trial.segments if s.net == net_name]
             p_vias = [v for v in trial.vias if v.net == net_name]
-            result = _strip_nets_from_result(result, {net_name})
             if not p_segs:
-                continue
-            result.segments.extend(p_segs)
-            result.vias.extend(p_vias)
-            _rebuild_totals(result)
-            fully = _net_fully_connected(board, net_name, result.segments, result.vias)
-            rep = native_drc_check(
-                _trial_drc_result(), clearance_mm=clearance_mm, board=board
-            )
-            involving = _drc_items_involving(rep, net_name)
-            shorts = int(rep.get("shorts") or 0)
-            if fully and not involving and shorts == 0:
-                result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
-                result.net_reports = [r for r in result.net_reports if r.net != net_name]
-                result.net_reports.append(
-                    NetRouteReport(
-                        net=net_name,
-                        pins=len(board.nets.get(net_name, [])),
-                        segments=len(p_segs),
-                        vias=len(p_vias),
-                        length_mm=sum(
-                            _dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs
-                        ),
-                        status="ok",
-                        method="native_dense_multipin",
-                        notes=[f"recovery grid={g_net:.3f}"],
-                    )
-                )
-                finished.add(net_name)
-                result.notes.append(f"dense_pass committed {net_name}")
-            else:
-                # Drop incomplete recovery copper
-                result = _strip_nets_from_result(result, {net_name})
-                if net_name not in result.unrouted_nets:
-                    result.unrouted_nets.append(net_name)
-
-        # Re-run queue for any matrix peers we ripped during dense pass
-        recovery_round = 0
-        while queue and recovery_round < len(net_names) * max_attempts:
-            recovery_round += 1
-            net_name = queue.popleft()
-            if any(s.net == net_name for s in result.segments):
-                # already has copper — verify full+legal
-                fully = _net_fully_connected(
-                    board, net_name, result.segments, result.vias
-                )
-                rep = native_drc_check(
-                    _trial_drc_result(), clearance_mm=clearance_mm, board=board
-                )
-                if fully and not _drc_items_involving(rep, net_name) and not rep.get(
-                    "shorts"
-                ):
-                    continue
-                result = _strip_nets_from_result(result, {net_name})
-            att = attempts.get(net_name, 0) + 1
-            attempts[net_name] = att
-            g_net = _dense_grid_for_net(board, net_name, grid_mm, attempt=att)
-            exp = _native_expansions_for_net(board, net_name, attempt=att)
-            seed_segs = _seed_segs_with_vias(result, seed_result, layers)
-            use_rb = len(board.nets.get(net_name) or []) <= 2
-            raw = route_board_native(
-                board,
-                config,
-                clearance_mm=float(clearance_mm),
-                grid_mm=float(g_net),
-                soft_fallback=False,
-                allow_vias=bool(allow_vias),
-                use_gpu=True,
-                isotropic=True,
-                net_order=[net_name],
-                exclusive_nets=True,
-                seed_segments=seed_segs or None,
-                post_rubberband=use_rb,
-                via_minimize=False,
-                max_expansions=exp,
-            )
-            if raw is None:
-                continue
-            trial = _route_result_from_dict(raw)
-            p_segs = [s for s in trial.segments if s.net == net_name]
-            p_vias = [v for v in trial.vias if v.net == net_name]
-            if not p_segs:
-                if net_name not in result.unrouted_nets:
-                    result.unrouted_nets.append(net_name)
                 continue
             result = _strip_nets_from_result(result, {net_name})
             result.segments.extend(p_segs)
@@ -1887,9 +1877,9 @@ def _native_sequential_zero_violation(
             rep = native_drc_check(
                 _trial_drc_result(), clearance_mm=clearance_mm, board=board
             )
-            involving = _drc_items_involving(rep, net_name)
-            shorts = int(rep.get("shorts") or 0)
-            if fully and not involving and shorts == 0:
+            if fully and not _drc_items_involving(rep, net_name) and not rep.get(
+                "shorts"
+            ):
                 result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
                 result.net_reports = [r for r in result.net_reports if r.net != net_name]
                 result.net_reports.append(
@@ -1910,16 +1900,144 @@ def _native_sequential_zero_violation(
                 result = _strip_nets_from_result(result, {net_name})
                 if net_name not in result.unrouted_nets:
                     result.unrouted_nets.append(net_name)
-                # Try one more peer rip
-                peers = _space_rip_candidates(result, net_name, config, board)
-                if peers and att < max_attempts:
-                    batch = peers[:2]
-                    result = _strip_nets_from_result(result, set(batch))
-                    for p in batch:
-                        finished.discard(p)
-                        if p not in queue:
-                            queue.append(p)
-                    queue.appendleft(net_name)
+
+        # Re-try nets that were single-peer-ripped during recovery (one pass only)
+        ripped_open = [
+            n
+            for n in net_names
+            if n in result.unrouted_nets
+            or (
+                not any(s.net == n for s in result.segments)
+                and n not in finished
+            )
+        ]
+        for net_name in ripped_open:
+            if any(s.net == net_name for s in result.segments):
+                continue
+            py_ok = _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=min(0.15, float(grid_mm)),
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=5,
+            )
+            if py_ok:
+                result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+                finished.add(net_name)
+
+    # ---- Matrix rebuild: if any CPX incomplete, re-route entire matrix cleanly ----
+    matrix_nets = [n for n in net_names if _is_matrix_net(n, config)]
+    open_matrix = [
+        n
+        for n in matrix_nets
+        if n in result.unrouted_nets
+        or not any(s.net == n for s in result.segments)
+        or not _net_fully_connected(board, n, result.segments, result.vias)
+    ]
+    if open_matrix and matrix_nets:
+        result.notes.append(
+            f"matrix_rebuild: re-route all {len(matrix_nets)} matrix nets "
+            f"({len(open_matrix)} were open/incomplete)"
+        )
+        # Keep non-matrix copper (power, critical); clear only matrix
+        result = _strip_nets_from_result(result, set(matrix_nets))
+        for n in matrix_nets:
+            if n not in result.unrouted_nets:
+                result.unrouted_nets.append(n)
+        result.net_reports = [r for r in result.net_reports if r.net not in set(matrix_nets)]
+        # Route matrix few-pins-first within name order for stability
+        order = sorted(matrix_nets, key=lambda n: (len(board.nets.get(n, [])), n))
+        for net_name in order:
+            ok = _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=0.15,
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=3,
+            )
+            if not ok:
+                # Rip earlier matrix peers one-by-one and retry
+                peers = [
+                    p
+                    for p in order
+                    if p != net_name and any(s.net == p for s in result.segments)
+                ]
+                # Prefer ripping later (higher name / more length)
+                peers.sort(
+                    key=lambda p: -sum(
+                        _dist((s.x1, s.y1), (s.x2, s.y2))
+                        for s in result.segments
+                        if s.net == p
+                    )
+                )
+                for victim in peers[:4]:
+                    result = _strip_nets_from_result(result, {victim})
+                    result.net_reports = [
+                        r for r in result.net_reports if r.net != victim
+                    ]
+                    if victim not in result.unrouted_nets:
+                        result.unrouted_nets.append(victim)
+                    if _python_try_full_net(
+                        board,
+                        config,
+                        result,
+                        net_name,
+                        layers=layers,
+                        clearance_mm=clearance_mm,
+                        grid_mm=0.12,
+                        allow_vias=allow_vias,
+                        design_rules=design_rules,
+                        seed_result=seed_result,
+                        attempt=4,
+                    ):
+                        ok = True
+                        result.notes.append(
+                            f"matrix_rebuild {net_name} after rip {victim}"
+                        )
+                        break
+            if ok:
+                result.unrouted_nets = [
+                    u for u in result.unrouted_nets if u != net_name
+                ]
+                finished.add(net_name)
+            else:
+                result.notes.append(f"matrix_rebuild failed {net_name}")
+        # Re-try any matrix still open once more (peers may have moved)
+        for net_name in matrix_nets:
+            if any(s.net == net_name for s in result.segments) and _net_fully_connected(
+                board, net_name, result.segments, result.vias
+            ):
+                continue
+            if _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=0.12,
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=5,
+            ):
+                result.unrouted_nets = [
+                    u for u in result.unrouted_nets if u != net_name
+                ]
+                finished.add(net_name)
+                result.notes.append(f"matrix_rebuild late commit {net_name}")
 
     for n in net_names:
         if not any(r.net == n for r in result.net_reports):

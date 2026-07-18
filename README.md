@@ -67,9 +67,9 @@ python scripts/render_routing_process.py --halo
 
 ![TopoR-style routing process](docs/images/routing_process/6_process_strip.png)
 
-#### Latest HALO-90 route evaluation (always-on DRC)
+#### HALO-90 route evaluation (historical batch run · pre zero-violation gate)
 
-Snapshot from a full `topor_style_route` on `third_party/halo-90` (planner + 2 variants, grid 0.5 mm, clearance 0.15 mm KiCad floor, re-geometry + elastic, native ExactMap). Source: [`docs/images/routing_process/drc_report.json`](docs/images/routing_process/drc_report.json).
+Snapshot from an earlier full `topor_style_route` on `third_party/halo-90` (planner + 2 variants, grid 0.5 mm, clearance 0.15 mm, re-geometry + elastic). Useful as a **connectivity ceiling** reference; it still carried shorts. For the **zero-violation sequential policy** and lessons, see **Policies that matter** and **Lessons learned** below. Source: [`docs/images/routing_process/drc_report.json`](docs/images/routing_process/drc_report.json).
 
 | Metric | HALO-90 | Synthetic demo |
 |--------|---------|----------------|
@@ -89,8 +89,8 @@ Snapshot from a full `topor_style_route` on `third_party/halo-90` (planner + 2 v
 
 1. **Outline keepout works** — DRC reports **0 outline escapes**; copper stays inside the teardrop (hook/H1 included). The earlier AABB-only bug (45 endpoints past 12 mm) is fixed.
 2. **Routing is free-angle and multi-layer** — CPX nets form ring/spoke geometry; F.Cu / In\* / B.Cu color in the DRC map; vias (gold) at layer transitions.
-3. **Not DRC-clean yet on dense charlieplex** — most violations are **CPX-n × CPX-m** crossings or near-misses near the LED ring and U1 fanout (`dist=0` shorts). Synthetic boards pass DRC fully (grade A).
-4. **Grade D is intentional honesty** — score is driven by `clearance_violations` from the built-in DRC, not a fake “100% routed = pass.” KiCad Validate would also flag the CPX spacing/shorts.
+3. **This snapshot is not DRC-clean** — most violations are **CPX-n × CPX-m** crossings near the LED ring and U1 fanout. The current router **refuses to commit that copper** (open > short); see lessons learned.
+4. **Grade D was intentional honesty** for that run — score tracks real violations. Prefer 0 shorts with some unrouted nets over a high completion score with shorts.
 5. **SI/MFG** (same run): ~11 mm parallel-run proxy, 14 acute angles, 22 via-near-pad hits — further polish targets, not outline leaks.
 
 **DRC samples (HALO)** — foreign-net contact on F.Cu / In2.Cu:
@@ -177,11 +177,40 @@ YAML / KiCad labels  →  multi-objective place (SA, unlocked parts)
 **Policies that matter**
 
 1. Clearance routes do **not** paint illegal straight “soft” copper; open edges beat overlaps.
-2. Official **KiCad DRC** is the legality oracle after apply/autoroute.
-3. **Routing UX is 2D** (KiCad-style layers). **3D is post-route** on the Simulate step for EMS/OpenEMS.
-4. Routing is **isotropic free-angle** (TopoR-style), not Specctra preferred H/V.
-5. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may Y-flip for display: hook top, switch left).
-6. The C++ `pr_native` core is the **only** geometric router and the clearance authority (`ExactMap`: spatial hash + exact Liang–Barsky + painted-copper distance). Python orchestrates: net order, via planning, K-homotopy/CBS/planner policy, polish, reporting.
+2. Legal routes commit **one net at a time** by weight/priority with **exact DRC after each edge/net**. Shorts and spacing hits are never kept.
+3. **Full-net commit only** — partial MST stubs are dropped (open > incomplete copper that blocks later nets).
+4. **Rip-up** of lower-priority conflict nets, plus **equal-weight matrix/CPX peers** when space-starved.
+5. Official **KiCad DRC** remains the post-apply legality oracle; built-in `native_drc_check` is the in-loop gate.
+6. **Routing UX is 2D** (KiCad-style layers). **3D is post-route** on the Simulate step for EMS/OpenEMS.
+7. Routing is **isotropic free-angle** (TopoR-style), not Specctra preferred H/V.
+8. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may Y-flip for display: hook top, switch left).
+9. The C++ `pr_native` core is the geometric search engine and clearance authority (`ExactMap`). Python owns net order, full-net DRC gates, rip-up, multipin MST fallback, polish, reporting.
+
+### Lessons learned (zero-violation sequential · HALO-90)
+
+These came out of enforcing “no shorts even early” on the dense charlieplex earring board (`examples/halo-90/`, `third_party/halo-90`).
+
+| Lesson | Detail |
+|--------|--------|
+| **Open > short is correct but changes the scoreboard** | Prior batch routes could show ~23/23 nets and ~747 mm copper with **~25 shorts**. Sequential zero-violation keeps **0 shorts** but may leave nets unrouted; grade/score will drop until multipin search catches up. Do not reintroduce soft fill to “look complete.” |
+| **Partial stubs poison the board** | Committing a few legal MST edges of a 19-pin CPX net without finishing the tree paints keepouts that block peers and critical nets. **Only commit fully connected nets** (union-find over pin anchors + copper). |
+| **Native post-rubberband can destroy multipin trees** | Exclusive one-net native calls with `post_rubberband=True` sometimes collapsed a valid multi-edge MST to a single segment while still reporting `ok`. Disable rubberband for multipin exclusive runs; verify connectivity in Python. |
+| **Grid legality ≠ exact DRC** | Obstacle-map search can accept geometry that exact `drc_check` later rejects. Gate **every edge and every net** with `native_drc_check`; never trust paint-time grid alone. |
+| **Equal-weight CPX needs peer rip-up** | Same weight (4.0) matrix lines cannot rip each other under “lower priority only.” Allow **equal-weight matrix/multipin peer rip** or they deadlock after the first few CPX commits. |
+| **Do not mass-rip matrix for lower nets** | Aggressive recovery that strips all CPX to free space for MIC/I2C thrashing destroys good matrix copper. Non-matrix nets must not rip matrix; matrix rebuild should re-route the matrix class as a block. |
+| **Multipin prefers Python edge-by-edge MST** | For 3+ pin / CPX nets, free-angle Prim MST in Python (with per-edge DRC) completes trees more reliably than a single exclusive native batch. Use native first for 2-pin nets; python-first for multipin. |
+| **Hybrid phase order should follow weight** | Route **power → critical → matrix → general**, not matrix first. High-weight rails and short signals should claim corridors before dense multipin. |
+| **Dense multipin recovery is necessary but slow** | Finer grid (≤0.15 mm), higher A* expansions, and limited peer rip improve CPX completion; full HALO zero-violation passes can take minutes. Snapshot metrics: `examples/halo-90/zero_violation_run.json`. |
+| **Synthetic boards are the regression floor** | Example config board should stay **0 shorts, all nets fully connected**. HALO is the stress case (90 LEDs, 10× ~19-pin CPX). |
+
+**Rough HALO comparison (same board, different policy)**
+
+| Policy | Shorts | Full nets (approx) | Length | Notes |
+|--------|--------|--------------------|--------|-------|
+| Older batch + soft/near-miss copper | ~25 | 23/23 | ~747 mm | Looks complete; illegal |
+| Sequential zero-violation + full-net commit | **0** | often ~19–23/23 | ~500–600 mm+ | Legal copper only; incomplete nets left open |
+
+Goal: **every committed net fully matches its pin set, with zero shorts/spacing**, then raise multipin completion without relaxing the gate.
 
 ---
 
