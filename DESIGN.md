@@ -68,6 +68,14 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Pad shape orientation:** Pad *centers* use `local_to_board`; pad *rectangles* are rotated in **board** space by **−pad_rot** (`pad_corners_board`). Applying pad rot in footprint-local space *before* place double-counts the footprint angle and leaves pads 90° off (S1 bars vertical, LED aspect swapped).
 
+### 3c. Post-connect free-angle re-geometry (TopoR metrics)
+
+**Decision:** After connectivity (MST + free-angle + vias), run `post_connect_regeometry`: subdivide long edges, repel vertices from foreign copper (spacing field), optionally replace sharp corners with arc chord samples. Default search grid **0.1 mm**; vias kept unless `via_minimize`/`aggressive` is explicitly on.
+
+**Why:** Pure LOS completion produces “thick straight sticks.” Eremex-style quality is topology first, then continuous re-geometry for bends, packing, and equal spacing — electrical rules over via count.
+
+**Metrics** (`quality.topor_geometry`): `bend_count`, `multi_bend_nets`, `arc_corners`, `min_spacing_mm`, `total_length_mm`, `via_count`. Tests: `tests/test_regeometry.py`, `tests/test_routing_quality.py`.
+
 **Edge.Cuts:** Classic arcs are `(gr_arc (start cx cy) (end x y) (angle deg))` where `start` is the **center**, `end` is the **arc start point**, and `angle` is the CCW sweep (verified against pcbnew `GetArcStart`/`GetArcEnd`). A synthetic origin-centered circle at the main disk radius (HALO ≈12 mm, not the hook tip ≈13.6 mm) is used only for substrate fill; stroke uses the arc polylines so the teardrop/hook stays open.
 
 **Parity tooling:** `scripts/render_viewer_2d.py` mirrors `viewer/index.html` transforms; `kicad-cli pcb export svg` references live in `docs/images/viewer_compare/`; `tests/test_viewer_kicad_parity.py` locks landmarks (H1 top, S1 left, LED +4° CW, outline chain).

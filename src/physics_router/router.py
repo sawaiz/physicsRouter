@@ -185,14 +185,37 @@ def fanout_anchor(
     net_name: str,
     *,
     radius_mm: float | None = None,
+    pad_num: str | None = None,
 ) -> tuple[float, float]:
-    """Escape point around a multi-net footprint so nets do not share one origin.
+    """Escape / pin point for a net on a footprint.
 
-    Charlieplex / MCU pins all map to the component center in our simplified
-    model; without angular fanout every CPX line leaves U1 along the same spoke
-    and stacks copper through the board center.
+    Prefer real pad coordinates from the PCB (local pad offset + footprint pose).
+    Fall back to angular fanout around multi-net ICs so nets do not share one origin.
     """
     c = board.components[ref]
+    # Prefer real pad XY when graphics/pads carry local coordinates
+    pads = list(c.pads or [])
+    pad_match = None
+    if pad_num is not None:
+        for p in pads:
+            if str(p.get("num")) == str(pad_num):
+                pad_match = p
+                break
+    if pad_match is None:
+        for p in pads:
+            if str(p.get("net") or "") == net_name:
+                pad_match = p
+                break
+    if pad_match is not None and ("x" in pad_match or "y" in pad_match):
+        try:
+            from physics_router.kicad_io import local_to_board
+
+            lx = float(pad_match.get("x") or 0.0)
+            ly = float(pad_match.get("y") or 0.0)
+            return local_to_board(c.x_mm, c.y_mm, c.rotation_deg, lx, ly)
+        except Exception:
+            pass
+
     nets = _nets_at_ref(board, ref)
     if len(nets) <= 1:
         return (c.x_mm, c.y_mm)
@@ -513,6 +536,7 @@ def build_obstacle_map(
     return om
 
 
+# 8-neighbour + 16-way (knight-ish) for freer-angle A* polylines
 _DIRS8 = [
     (1, 0),
     (-1, 0),
@@ -522,6 +546,16 @@ _DIRS8 = [
     (1, -1),
     (-1, 1),
     (-1, -1),
+]
+_DIRS16 = _DIRS8 + [
+    (2, 1),
+    (2, -1),
+    (-2, 1),
+    (-2, -1),
+    (1, 2),
+    (1, -2),
+    (-1, 2),
+    (-1, -2),
 ]
 
 
@@ -535,19 +569,26 @@ def free_angle_route(
     layer: str,
     net: str,
     om: ObstacleMap,
-    grid_mm: float = 0.5,
-    max_expansions: int = 2500,
+    grid_mm: float = 0.1,
+    max_expansions: int = 8000,
     *,
     width_mm: float = 0.25,
     method_out: list[str] | None = None,
     congestion: Any | None = None,
 ) -> list[tuple[float, float]] | None:
-    """Direct LOS, isotropic detours / radar portals, then congestion-aware A*.
+    """Direct LOS, multi-bend isotropic detours / radar, then fine-grid A*.
 
     Topology-first style: explore free-space boundaries before freezing geometry.
     Every candidate edge is checked for clearance vs painted copper and keepouts.
-    If ``method_out`` is provided, appends one of: los | detour | detour2 | radar | astar.
+    Paths may bend (1–3+ corners); A* uses a fine grid (default 0.1 mm).
+    If ``method_out`` is provided, appends one of: los | detour | detour2 | detour3 | astar.
     """
+    grid_mm = max(0.05, float(grid_mm or 0.1))
+    # Scale A* budget with resolution; keep interactive latency bounded
+    if max_expansions <= 8000:
+        scale = max(1.0, 0.35 / grid_mm)
+        max_expansions = int(min(20000, max(2500, max_expansions * scale)))
+
     def _set_method(m: str) -> None:
         if method_out is not None:
             method_out.append(m)
@@ -563,28 +604,28 @@ def free_angle_route(
         except Exception:
             return base
 
-    # 1) straight free-angle
+    def _valid_mid(p: tuple[float, float]) -> bool:
+        return om.in_bounds(p[0], p[1]) and not om.blocked(p[0], p[1], layer, net)
+
+    # 1) straight free-angle when fully clear
     if not _blocked(start[0], start[1], goal[0], goal[1]):
         _set_method("los")
         return [start, goal]
 
     # 2) Isotropic free-angle detours (TopoR-style: not limited to 90°/45°)
-    #    Obstacle corners + perpendicular bulges + arc-approximating mids + radar.
-    reach = max(40.0, _dist(start, goal) * 1.5)
+    reach = max(40.0, _dist(start, goal) * 1.8)
     detour_pts: list[tuple[float, float]] = []
     for ob in om.obstacles.get(layer, []):
         if ob.net == net:
             continue
         if _dist((ob.cx, ob.cy), start) > reach and _dist((ob.cx, ob.cy), goal) > reach:
             continue
-        detour_pts.extend(ob.corners(pad=grid_mm * 1.5))
+        detour_pts.extend(ob.corners(pad=max(grid_mm * 2.0, 0.2)))
     mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
     dx, dy = goal[0] - start[0], goal[1] - start[1]
     length = math.hypot(dx, dy) or 1.0
-    # Unit along-path and perpendicular (isotropic, any angle)
     ux, uy = dx / length, dy / length
     px, py = -uy, ux
-    # Classic L-bends still useful in sparse regions
     detour_pts.extend(
         [
             (start[0], goal[1]),
@@ -592,34 +633,31 @@ def free_angle_route(
             (mx, my),
         ]
     )
-    # Perpendicular bulges at 0.25 / 0.5 / 0.75 along the chord (any-angle arcs proxy)
-    for t in (0.25, 0.5, 0.75):
+    # Perpendicular bulges for free-angle flow around blocks
+    for t in (0.2, 0.4, 0.5, 0.6, 0.8):
         bx = start[0] + dx * t
         by = start[1] + dy * t
         for sign in (1.0, -1.0):
-            for k in (2.0, 4.0, 7.0, 11.0):
+            for k in (2.0, 4.0, 7.0, 12.0, 18.0):
                 detour_pts.append((bx + sign * px * grid_mm * k, by + sign * py * grid_mm * k))
-    # Diagonal offsets at 30°/60° relative to the chord (not locked to H/V)
-    for ang_off in (math.pi / 6, math.pi / 3, -math.pi / 6, -math.pi / 3):
+    for ang_off in (math.pi / 6, math.pi / 4, math.pi / 3, -math.pi / 6, -math.pi / 4, -math.pi / 3):
         ca, sa = math.cos(ang_off), math.sin(ang_off)
         rx = ux * ca - uy * sa
         ry = ux * sa + uy * ca
         for k in (3.0, 6.0, 10.0):
             detour_pts.append((mx + rx * grid_mm * k, my + ry * grid_mm * k))
 
-    # Sparse free-space waypoints (LineExplore-like continuous exploration)
     try:
         from physics_router.topology import radar_scan_points
 
         detour_pts.extend(
             radar_scan_points(
-                start, goal, om, layer, net, rays=12, grid_mm=grid_mm
+                start, goal, om, layer, net, rays=12, grid_mm=max(grid_mm, 0.15)
             )
         )
     except Exception:
         pass
 
-    # Prefer lower (length + congestion) detours first
     def _detour_cost(mid: tuple[float, float]) -> float:
         return _edge_cost(start[0], start[1], mid[0], mid[1], _dist(start, mid)) + _edge_cost(
             mid[0], mid[1], goal[0], goal[1], _dist(mid, goal)
@@ -630,9 +668,7 @@ def free_angle_route(
     )
 
     for mid in detour_pts:
-        if not om.in_bounds(mid[0], mid[1]):
-            continue
-        if om.blocked(mid[0], mid[1], layer, net):
+        if not _valid_mid(mid):
             continue
         if _blocked(start[0], start[1], mid[0], mid[1]):
             continue
@@ -641,17 +677,13 @@ def free_angle_route(
         _set_method("detour")
         return [start, mid, goal]
 
-    # two-corner chain (cap candidates — O(n²) segment checks)
-    cand = detour_pts[:24]
+    # two-corner chain (capped — clearance checks are the cost)
+    cand = detour_pts[:28]
     for a in cand:
-        if om.blocked(a[0], a[1], layer, net) or not om.in_bounds(a[0], a[1]):
-            continue
-        if _blocked(start[0], start[1], a[0], a[1]):
+        if not _valid_mid(a) or _blocked(start[0], start[1], a[0], a[1]):
             continue
         for b in cand:
-            if a == b:
-                continue
-            if om.blocked(b[0], b[1], layer, net) or not om.in_bounds(b[0], b[1]):
+            if a == b or not _valid_mid(b):
                 continue
             if _blocked(a[0], a[1], b[0], b[1]):
                 continue
@@ -660,53 +692,84 @@ def free_angle_route(
             _set_method("detour2")
             return [start, a, b, goal]
 
-    # 3) bounded A* with optional negotiated-congestion edge costs
-    sx, sy = _snap(start[0], grid_mm), _snap(start[1], grid_mm)
-    gx, gy = _snap(goal[0], grid_mm), _snap(goal[1], grid_mm)
-    start_key = (int(round(sx / grid_mm)), int(round(sy / grid_mm)))
-    goal_key = (int(round(gx / grid_mm)), int(round(gy / grid_mm)))
-
-    open_heap: list[tuple[float, float, tuple[int, int]]] = []
-    heapq.heappush(open_heap, (_dist((sx, sy), (gx, gy)), 0.0, start_key))
-    came: dict[tuple[int, int], tuple[int, int] | None] = {start_key: None}
-    gscore: dict[tuple[int, int], float] = {start_key: 0.0}
-    pos_of = {start_key: (sx, sy)}
-    expansions = 0
-
-    while open_heap and expansions < max_expansions:
-        _f, g, key = heapq.heappop(open_heap)
-        expansions += 1
-        x, y = pos_of[key]
-        if key == goal_key or _dist((x, y), (gx, gy)) <= grid_mm * 1.5:
-            path_keys = [key]
-            cur = key
-            while came[cur] is not None:
-                cur = came[cur]  # type: ignore[assignment]
-                path_keys.append(cur)
-            path_keys.reverse()
-            path = [pos_of[k] for k in path_keys]
-            path[0] = start
-            path[-1] = goal
-            _set_method("astar")
-            return _rubberband(path, layer, net, om, width_mm=width_mm)
-
-        for dx, dy in _DIRS8:
-            step = grid_mm * (1.414 if dx and dy else 1.0)
-            nx = _snap(x + dx * grid_mm, grid_mm)
-            ny = _snap(y + dy * grid_mm, grid_mm)
-            if not om.in_bounds(nx, ny):
+    # three-corner chain — small fan only (A* handles dense blocks)
+    cand3 = detour_pts[:12]
+    for ai, a in enumerate(cand3):
+        if not _valid_mid(a) or _blocked(start[0], start[1], a[0], a[1]):
+            continue
+        for b in cand3[ai + 1 : ai + 6]:
+            if not _valid_mid(b) or _blocked(a[0], a[1], b[0], b[1]):
                 continue
-            nkey = (int(round(nx / grid_mm)), int(round(ny / grid_mm)))
-            if nkey in gscore and gscore[nkey] <= g:
-                continue
-            if _blocked(x, y, nx, ny):
-                continue
-            ng = g + _edge_cost(x, y, nx, ny, step)
-            if ng + 1e-9 < gscore.get(nkey, float("inf")):
-                gscore[nkey] = ng
-                came[nkey] = key
-                pos_of[nkey] = (nx, ny)
-                heapq.heappush(open_heap, (ng + _dist((nx, ny), (gx, gy)), ng, nkey))
+            for c in cand3[:8]:
+                if c in (a, b) or not _valid_mid(c):
+                    continue
+                if _blocked(b[0], b[1], c[0], c[1]):
+                    continue
+                if _blocked(c[0], c[1], goal[0], goal[1]):
+                    continue
+                _set_method("detour3")
+                return [start, a, b, c, goal]
+
+    # 3) Hierarchical A*: try requested grid, then coarser (still multi-bend free-angle)
+    span = max(_dist(start, goal), 1.0)
+    grids_try: list[float] = []
+    for g in (grid_mm, 0.25, 0.5, 1.0):
+        g = max(0.05, float(g))
+        if not grids_try or g > grids_try[-1] + 1e-9:
+            grids_try.append(g)
+
+    for gcell in grids_try:
+        budget = int(min(60000, max(4000, (span / gcell) * 40 * max(1.0, 0.25 / gcell))))
+        budget = min(budget, max_expansions)
+        dirs = _DIRS16 if gcell <= 0.3 else _DIRS8
+        sx, sy = _snap(start[0], gcell), _snap(start[1], gcell)
+        gx, gy = _snap(goal[0], gcell), _snap(goal[1], gcell)
+        start_key = (int(round(sx / gcell)), int(round(sy / gcell)))
+        goal_key = (int(round(gx / gcell)), int(round(gy / gcell)))
+
+        open_heap: list[tuple[float, float, tuple[int, int]]] = []
+        heapq.heappush(open_heap, (_dist((sx, sy), (gx, gy)), 0.0, start_key))
+        came: dict[tuple[int, int], tuple[int, int] | None] = {start_key: None}
+        gscore: dict[tuple[int, int], float] = {start_key: 0.0}
+        pos_of = {start_key: (sx, sy)}
+        expansions = 0
+
+        while open_heap and expansions < budget:
+            _f, gcost, key = heapq.heappop(open_heap)
+            expansions += 1
+            x, y = pos_of[key]
+            if key == goal_key or _dist((x, y), (gx, gy)) <= gcell * 1.6:
+                path_keys = [key]
+                cur = key
+                while came[cur] is not None:
+                    cur = came[cur]  # type: ignore[assignment]
+                    path_keys.append(cur)
+                path_keys.reverse()
+                path = [pos_of[k] for k in path_keys]
+                path[0] = start
+                path[-1] = goal
+                _set_method("astar")
+                return _rubberband(path, layer, net, om, width_mm=width_mm)
+
+            for ddx, ddy in dirs:
+                step = gcell * math.hypot(ddx, ddy)
+                nx = _snap(x + ddx * gcell, gcell)
+                ny = _snap(y + ddy * gcell, gcell)
+                if not om.in_bounds(nx, ny):
+                    continue
+                nkey = (int(round(nx / gcell)), int(round(ny / gcell)))
+                if nkey in gscore and gscore[nkey] <= gcost:
+                    continue
+                if _blocked(x, y, nx, ny):
+                    continue
+                ng = gcost + _edge_cost(x, y, nx, ny, step)
+                if ng + 1e-9 < gscore.get(nkey, float("inf")):
+                    gscore[nkey] = ng
+                    came[nkey] = key
+                    pos_of[nkey] = (nx, ny)
+                    heapq.heappush(
+                        open_heap, (ng + _dist((nx, ny), (gx, gy)), ng, nkey)
+                    )
 
     return None
 
@@ -902,9 +965,8 @@ def clearance_aware_route(
         anchors: list[tuple[float, float]] = []
         for ref, pad in pins:
             if ref in board.components:
-                # Angular fanout on multi-net parts (MCU/CPX) — prevents all
-                # nets sharing the component center and overlapping.
-                anchors.append(fanout_anchor(board, ref, net_name))
+                # Real pad XY when available; else angular fanout on multi-net ICs
+                anchors.append(fanout_anchor(board, ref, net_name, pad_num=str(pad)))
         uniq: list[tuple[float, float]] = []
         for a in anchors:
             if not any(_dist(a, u) < 0.05 for u in uniq):
@@ -1279,19 +1341,36 @@ def _route_point_to_point(
     if not allow_vias or len(layers) < 2:
         return None, []
 
+    # Prefer electrical connectivity: denser via sites than pure via-min
     mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
-    g = max(grid_mm, 0.3)
+    g = max(grid_mm, 0.15)
     sites: list[tuple[float, float]] = [
         (mx, my),
         (start[0], goal[1]),
         (goal[0], start[1]),
-        (mx + 3 * g, my),
-        (mx - 3 * g, my),
-        (mx, my + 3 * g),
-        (mx, my - 3 * g),
-        (mx + 5 * g, my + 5 * g),
-        (mx - 5 * g, my - 5 * g),
+        ((2 * start[0] + goal[0]) / 3, (2 * start[1] + goal[1]) / 3),
+        ((start[0] + 2 * goal[0]) / 3, (start[1] + 2 * goal[1]) / 3),
     ]
+    for k in (2.0, 4.0, 7.0, 11.0):
+        sites.extend(
+            [
+                (mx + k * g, my),
+                (mx - k * g, my),
+                (mx, my + k * g),
+                (mx, my - k * g),
+                (mx + k * g, my + k * g),
+                (mx - k * g, my - k * g),
+            ]
+        )
+    for k in (2.0, 5.0):
+        sites.extend(
+            [
+                (start[0] + k * g, start[1]),
+                (start[0], start[1] + k * g),
+                (goal[0] - k * g, goal[1]),
+                (goal[0], goal[1] - k * g),
+            ]
+        )
 
     pairs: list[tuple[str, str]] = []
     if len(layers) >= 2:
@@ -1458,13 +1537,19 @@ def remove_redundant_vias(
     config: PlacementConfig | None = None,
     *,
     clearance_mm: float = 0.2,
+    aggressive: bool = False,
 ) -> RouteResult:
-    """Drop vias when both attached stubs can legally merge onto one layer.
+    """Optionally drop vias when stubs can legally merge onto one layer.
 
-    TopoR-style via minimization: after connectivity exists, re-geometrize to
-    eliminate unnecessary layer hops.
+    Electrical connectivity and clearance take priority over via count.
+    When ``aggressive`` is False (default), keep vias unless the merge is
+    clearly free (short stubs, no extra length).
     """
     if not result.vias:
+        return result
+    if not aggressive:
+        # Connectivity-first policy: do not strip vias by default
+        result.notes.append("via_policy: keep vias (connectivity/clearance > via-min)")
         return result
     layers = sorted({s.layer for s in result.segments} | set(board.copper_layers or []))
     if len(layers) < 2:

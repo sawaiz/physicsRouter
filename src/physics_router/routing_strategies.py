@@ -46,6 +46,7 @@ from physics_router.topology import (
 from physics_router.planner import plan_route_order
 from physics_router.si_mfg import evaluate_si_mfg
 from physics_router.elastic import elastic_optimize_route
+from physics_router.regeometry import post_connect_regeometry
 from physics_router.conflict_cbs import repair_route_conflicts
 
 
@@ -59,7 +60,7 @@ class PreRouteReport:
     estimated_density: float = 0.0  # pins per cm^2
     congestion_warning: bool = False
     suggestions: list[str] = field(default_factory=list)
-    recommended_grid_mm: float = 0.5
+    recommended_grid_mm: float = 0.1
     recommended_clearance_mm: float = 0.2
 
     def to_dict(self) -> dict:
@@ -90,7 +91,7 @@ def pre_route_analysis(
         copper_layers=list(rules.copper_layers),
         estimated_density=density,
         recommended_clearance_mm=rules.constraints.min_clearance_mm,
-        recommended_grid_mm=max(0.1, min(0.5, rules.constraints.min_clearance_mm)),
+        recommended_grid_mm=0.1,
     )
 
     n_layers = len(rules.copper_layers)
@@ -223,13 +224,33 @@ def _apply_drc_geometry(
     config: PlacementConfig | None,
     rules: DesignRules,
     cl: float,
+    *,
+    via_minimize: bool = False,
+    regeometry: bool = True,
 ) -> RouteResult:
-    """Geometry polish: rubberband → via minimize → DRC widths."""
+    """Geometry polish: rubberband → post-connect re-geometry → optional via min → DRC.
+
+    Via minimize is off by default: electrical connectivity and clearance
+    matter more than via count (user/TopoR electrical-first policy).
+    """
     copper = list(rules.copper_layers) or ["F.Cu", "B.Cu"]
-    # Phase C: re-geometrize (Dayan/TopoR rubberband)
+    # Dayan/TopoR rubberband — keep bends needed for clearance
     result = rubberband_cleanup(result, board, config, clearance_mm=cl)
-    # Phase C: remove unnecessary vias when same-layer stubs are legal
-    result = remove_redundant_vias(result, board, config, clearance_mm=cl)
+    # Post-connect free-angle: multi-bend subdivision + spacing + optional arcs
+    if regeometry and result.segments:
+        try:
+            result = post_connect_regeometry(
+                result,
+                board,
+                clearance_mm=cl,
+                iterations=14,
+                use_arcs=True,
+            )
+        except Exception as exc:
+            result.notes.append(f"regeometry: skipped ({exc})")
+    result = remove_redundant_vias(
+        result, board, config, clearance_mm=cl, aggressive=via_minimize
+    )
 
     for seg in result.segments:
         w = rules.track_width_for_net(seg.net, config)
@@ -274,6 +295,7 @@ def topor_style_route(
     use_planner: bool = True,
     use_cbs: bool = True,
     use_elastic: bool = True,
+    use_regeometry: bool = True,
     progress_cb=None,
 ) -> RouteResult:
     """Full topology-first pipeline (docs/ARCHITECTURE_ROUTER.md).
@@ -284,7 +306,8 @@ def topor_style_route(
     A. Isotropic free-angle with K-homotopy alternatives per connection
     B. Multi-variant + negotiated congestion
     C. Conflict-cluster CBS (+ optional CP-SAT via polish)
-    D. Rubberband + elastic continuous forces + via minimize
+    D. Rubberband + **post-connect re-geometry** (spacing, multi-bend, arcs)
+       + elastic continuous forces; vias kept for connectivity by default
     E. SI/MFG score vector + topology signatures + via explanations
 
     Soft fallback stays off so open edges beat illegal copper.
@@ -297,11 +320,15 @@ def topor_style_route(
 
     min_cl = rules.constraints.min_clearance_mm
     cl = max(clearance_mm if clearance_mm is not None else min_cl, min_cl)
+    # Fine free-angle search: 0.1 mm default (TopoR-like continuous feel);
+    # an explicit config grid_mm wins, coarser or finer.
     grid = grid_mm
     if grid is None:
-        grid = max(0.1, min(0.5, cl))
-        if config and config.grid_mm and config.grid_mm >= 0.1:
-            grid = min(grid, config.grid_mm)
+        if config and config.grid_mm and config.grid_mm > 0:
+            grid = float(config.grid_mm)
+        else:
+            grid = 0.1
+    grid = max(0.05, float(grid))
 
     copper = list(rules.copper_layers) or list(board.copper_layers) or ["F.Cu", "B.Cu"]
     n_nets = len(board.nets)
@@ -437,7 +464,18 @@ def topor_style_route(
         )
         best = _apply_drc_geometry(best, board, config, rules, cl)
 
-    # --- Elastic continuous forces ---
+    # --- Post-connect free-angle re-geometry (spacing + multi-bend + arcs) ---
+    if use_regeometry and best.segments and n_nets <= 80:
+        if progress_cb:
+            try:
+                progress_cb(0, 1, "regeometry", "spacing+arcs", {})
+            except Exception:
+                pass
+        best = post_connect_regeometry(
+            best, board, clearance_mm=cl, iterations=16, use_arcs=True
+        )
+
+    # --- Elastic continuous forces (further continuous polish) ---
     if use_elastic and best.segments and n_nets <= 60:
         if progress_cb:
             try:
@@ -445,7 +483,9 @@ def topor_style_route(
             except Exception:
                 pass
         best = elastic_optimize_route(best, board, clearance_mm=cl, iterations=16)
-        best = _apply_drc_geometry(best, board, config, rules, cl)
+        best = _apply_drc_geometry(
+            best, board, config, rules, cl, regeometry=False
+        )
 
     # Final SI/MFG
     si_final = evaluate_si_mfg(best, board, config, clearance_mm=cl)
@@ -454,7 +494,7 @@ def topor_style_route(
 
     best.notes.insert(
         0,
-        f"topor_pipeline: K-homotopy+CBS+elastic+SI/MFG · "
+        f"topor_pipeline: K-homotopy+CBS+regeometry+elastic+SI/MFG · "
         f"{len(candidates)} candidate(s) · winner={best_name}",
     )
     if plan:

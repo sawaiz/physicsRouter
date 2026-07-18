@@ -107,8 +107,8 @@ def route_board_native(
         for ref, _pad in board.nets[name]:
             if ref not in board.components:
                 continue
-            # Angular fanout on multi-net footprints (matches Python path)
-            ax, ay = fanout_anchor(board, ref, name)
+            # Real pad XY when available (matches Python path)
+            ax, ay = fanout_anchor(board, ref, name, pad_num=str(_pad))
             key = (round(ax, 3), round(ay, 3))
             if key in seen:
                 continue

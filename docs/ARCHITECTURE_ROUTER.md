@@ -93,6 +93,7 @@ Pick winner · record topology_signatures · DRC widths
 | Negotiated congestion | `topology.CongestionMap` |
 | Multi-variant + Pareto | `routing_strategies.topor_style_route` |
 | Elastic geometry | `router.rubberband_cleanup` |
+| Post-connect re-geometry | `regeometry.post_connect_regeometry` (subdivide, spacing, arcs) |
 | Via minimize | `router.remove_redundant_vias` |
 | Topology explainability | `topology.signatures_from_route` |
 
@@ -129,6 +130,7 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | K distinct homotopy alternatives per net (dedup by signature) | **Done** (`homotopy.py`) |
 | Conflict-cluster CBS + optional CP-SAT vias | **Done** (`conflict_cbs.py`) |
 | Continuous elastic optimization (forces) | **Done** (`elastic.py`) |
+| Post-connect free-angle re-geometry (spacing + multi-bend + arcs) | **Done** (`regeometry.py`); metrics in `quality.topor_geometry` |
 | Learned-style high-level planner (feature linear policy) | **Done** (`planner.py`) |
 | SI + manufacturing score terms | **Done** (`si_mfg.py`) |
 | Explainable “why this via” UI | **Done** (via.reason + Route panel) |
@@ -155,6 +157,7 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 |------|------|
 | `src/physics_router/topology.py` | Signatures, radar, congestion, Pareto scores |
 | `src/physics_router/router.py` | Free-angle search, rubberband, vias, apply-to-KiCad |
+| `src/physics_router/regeometry.py` | Post-connect free-angle reshape + TopoR geometry metrics |
 | `src/physics_router/routing_strategies.py` | `topor_style_route` orchestration |
 | `src/physics_router/dsn_export.py` | Specctra DSN for external baselines |
 | `docs/TOPOR.md` | Commercial TopoR product reference + images |

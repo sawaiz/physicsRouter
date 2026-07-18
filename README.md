@@ -14,27 +14,43 @@ Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) / [Eremex TopoR](https:
 
 ### TopoR-style routing (what we implement)
 
-Matches the reasoning in [docs/TOPOR.md](docs/TOPOR.md) — **not** a reimplementation of commercial TopoR binaries:
+Matches the reasoning in [docs/TOPOR.md](docs/TOPOR.md) and [Eremex TopoR autorouting advantages](https://www.eremex.com/products/topor/competitiveadvantages/autorouting/) — **not** a reimplementation of commercial TopoR binaries:
 
 | Phase | Behavior |
 |-------|----------|
-| **Isotropic free-angle** | LOS → isotropic detours + radar scan → A\* |
+| **Isotropic free-angle** | LOS → multi-bend detours (1–3 corners) + radar → hierarchical A\* (default grid **0.1 mm**) |
 | **K-homotopy** | Up to K topologically distinct paths per connection (signature dedupe) |
 | **High-level planner** | Feature linear policy for net order + per-net K |
-| **CBS conflict clusters** | Conflict graph → small-component re-route; optional CP-SAT vias |
-| **Elastic geometry** | Continuous shortening + obstacle repulsion after topology fixed |
+| **CBS conflict clusters** | Conflict graph → small-component re-route; vias for connectivity |
+| **Post-connect re-geometry** | After nets connect: **subdivide → spacing repulsion → optional arc chords** (`regeometry.py`) |
+| **Elastic geometry** | Continuous shortening + obstacle repulsion (Dayan/TopoR elastic) |
 | **SI / MFG costs** | Crosstalk parallel-run, return path, acute angles, via-near-pad, … |
 | **Why this via** | Each via stores blocked layers + alternatives; UI explain panel |
 | **Honesty policy** | Soft illegal copper **off** — open edges beat overlaps |
+| **Via policy** | **Connectivity / clearance first**; via-minimize off by default |
 | **UX** | Live **2D** copper while routing; **3D EMS** only on Simulate |
 
-See [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) for the full three-representation design and literature map.
+#### Post-connect free-angle re-geometry (why traces should bend)
+
+Shape-based routers often leave **straight LOS sticks**. TopoR-style quality needs a second stage once topology is fixed:
+
+1. **Subdivide** long segments (multi-bend DOF)  
+2. **Spacing field** — push vertices away from foreign copper (equalize gaps; critical for pairs)  
+3. **Arc-approximate** sharp corners with free-angle chord samples (visual + packing)  
+4. Report **TopoR metrics**: bend count, multi-bend nets, min edge spacing, arc corners, length, vias  
+
+Implemented in `src/physics_router/regeometry.py`, wired into `topor_style_route` / `_apply_drc_geometry`.
 
 ```bash
 # CLI — isotropic TopoR pipeline (auto multi-variant by net count)
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
   --out route.json --out-pcb routed.kicad_pcb --variants 2
+
+# Quality tests (bends, clearance, re-geometry metrics)
+pytest tests/test_routing_quality.py tests/test_regeometry.py tests/test_topor_style.py -q
 ```
+
+See [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) for the full three-representation design and literature map.
 
 ---
 

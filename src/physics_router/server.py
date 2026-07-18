@@ -549,15 +549,16 @@ class AppState:
 
         p = job.params
         clearance = float(p.get("clearance_mm", 0.2))
-        grid = float(p.get("grid_mm", 0.5))
+        # Fine free-angle grid (0.1 mm); vias kept for connectivity over via-min
+        grid = float(p.get("grid_mm", 0.1))
         num_variants = p.get("num_variants")
         if num_variants is not None:
             num_variants = int(num_variants)
         self.set_progress(job, 3, "TopoR isotropic free-angle")
         self.log(
             job,
-            f"TopoR pipeline: isotropic free-angle · clearance={clearance} mm · "
-            f"grid={grid} mm · variants={num_variants or 'auto'} — live 2D preview",
+            f"TopoR pipeline: multi-bend free-angle · clearance={clearance} mm · "
+            f"grid={grid} mm · vias=connectivity-first · variants={num_variants or 'auto'}",
         )
         with self.lock:
             board = copy.deepcopy(self.board())
