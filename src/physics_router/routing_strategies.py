@@ -31,8 +31,10 @@ from physics_router.models import BoardModel, NetClass, PlacementConfig
 from physics_router.router import (
     RouteResult,
     Via,
+    attach_router_drc,
     build_obstacle_map,
     clearance_aware_route,
+    native_drc_check,
     remove_redundant_vias,
     rubberband_cleanup,
     topological_guide_route,
@@ -236,20 +238,30 @@ def _apply_drc_geometry(
     copper = list(rules.copper_layers) or ["F.Cu", "B.Cu"]
     # Dayan/TopoR rubberband — keep bends needed for clearance
     result = rubberband_cleanup(result, board, config, clearance_mm=cl)
-    # Post-connect free-angle: multi-bend subdivision + spacing + optional arcs
+    # Post-connect free-angle: multi-bend subdivision + spacing + optional arcs.
+    # DRC-guarded: a polish phase may never make the copper less legal.
     if regeometry and result.segments:
+        pre_drc = native_drc_check(result, clearance_mm=cl, board=board)["violations"]
         try:
-            result = post_connect_regeometry(
+            polished = post_connect_regeometry(
                 result,
                 board,
                 clearance_mm=cl,
                 iterations=14,
                 use_arcs=True,
             )
+            post_drc = native_drc_check(polished, clearance_mm=cl, board=board)["violations"]
+            if post_drc > pre_drc:
+                result.notes.append(
+                    f"regeometry: reverted (drc {pre_drc}→{post_drc} violations)"
+                )
+            else:
+                result = polished
         except Exception as exc:
             result.notes.append(f"regeometry: skipped ({exc})")
+    # Via minimize only when explicitly requested (connectivity-first default)
     result = remove_redundant_vias(
-        result, board, config, clearance_mm=cl, aggressive=via_minimize
+        result, board, config, clearance_mm=cl, aggressive=bool(via_minimize)
     )
 
     for seg in result.segments:
@@ -270,6 +282,8 @@ def _apply_drc_geometry(
         f"drc: clearance≥{cl}mm track_min={rules.constraints.min_track_width_mm}mm "
         f"layers={copper} vias_through={not rules.constraints.allow_blind_buried_vias}"
     )
+    # Always-on router DRC — authoritative count after final widths applied
+    attach_router_drc(result, clearance_mm=cl, board=board)
     if config:
         for lab in config.nets:
             if lab.pair_with and lab.name in board.nets and lab.pair_with in board.nets:
@@ -464,28 +478,36 @@ def topor_style_route(
         )
         best = _apply_drc_geometry(best, board, config, rules, cl)
 
-    # --- Post-connect free-angle re-geometry (spacing + multi-bend + arcs) ---
-    if use_regeometry and best.segments and n_nets <= 80:
+    # --- Final polish: re-geometry + elastic, each DRC-guarded (never worsen) ---
+    if (use_regeometry or use_elastic) and best.segments and n_nets <= 80:
         if progress_cb:
             try:
-                progress_cb(0, 1, "regeometry", "spacing+arcs", {})
+                progress_cb(0, 1, "polish", "drc-guarded", {})
             except Exception:
                 pass
-        best = post_connect_regeometry(
-            best, board, clearance_mm=cl, iterations=16, use_arcs=True
-        )
-
-    # --- Elastic continuous forces (further continuous polish) ---
-    if use_elastic and best.segments and n_nets <= 60:
-        if progress_cb:
-            try:
-                progress_cb(0, 1, "elastic", "geometry", {})
-            except Exception:
-                pass
-        best = elastic_optimize_route(best, board, clearance_mm=cl, iterations=16)
+        # Single _apply_drc_geometry: rubberband → regeometry (guarded) → via policy → DRC
         best = _apply_drc_geometry(
-            best, board, config, rules, cl, regeometry=False
+            best,
+            board,
+            config,
+            rules,
+            cl,
+            regeometry=use_regeometry and n_nets <= 80,
         )
+        if use_elastic and n_nets <= 60:
+            pre = native_drc_check(best, clearance_mm=cl, board=board)["violations"]
+            try:
+                elast = elastic_optimize_route(best, board, clearance_mm=cl, iterations=16)
+                post = native_drc_check(elast, clearance_mm=cl, board=board)["violations"]
+                if post > pre:
+                    best.notes.append(
+                        f"elastic: reverted (drc {pre}→{post} violations)"
+                    )
+                else:
+                    best = elast
+                    attach_router_drc(best, clearance_mm=cl, board=board)
+            except Exception as exc:
+                best.notes.append(f"elastic: skipped ({exc})")
 
     # Final SI/MFG
     si_final = evaluate_si_mfg(best, board, config, clearance_mm=cl)

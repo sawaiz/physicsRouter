@@ -1135,8 +1135,8 @@ def clearance_aware_route(
         )
 
     if not guide_only:
-        # Built-in router DRC (always on): exact shorts / spacing / via clearance
-        attach_router_drc(result, clearance_mm=clearance_mm)
+        # Built-in router DRC (always on): shorts / spacing / vias / outline
+        attach_router_drc(result, clearance_mm=clearance_mm, board=board)
 
     result.compute_quality()
     result.notes.append(result.quality.get("summary", ""))
@@ -1148,11 +1148,12 @@ def native_drc_check(
     *,
     clearance_mm: float = 0.2,
     max_violations: int = 200,
+    board: BoardModel | None = None,
 ) -> dict[str, Any]:
     """Exact copper DRC in the C++ core: foreign-net shorts, spacing, vias.
 
-    Returns {violations, shorts, spacing, items:[{kind, net_a, net_b, layer,
-    x, y, dist_mm, need_mm}, ...]}.
+    Optionally counts Edge.Cuts outline escapes when ``board`` has outline
+    graphics. Returns {violations, shorts, spacing, outline_outside, items:...}.
     """
     n = _native_core()
     net_ids: dict[str, int] = {}
@@ -1174,12 +1175,12 @@ def native_drc_check(
     )
     id2net = {v: k for k, v in net_ids.items()}
     id2layer = {v: k for k, v in layer_ids.items()}
-    items = [
+    items: list[dict[str, Any]] = [
         {
             "kind": str(v["kind"]),
             "net_a": id2net.get(v["net_a"], "?"),
             "net_b": id2net.get(v["net_b"], "?"),
-            "layer": id2layer.get(v["layer"], "via"),
+            "layer": id2layer.get(v["layer"], "via") if int(v["layer"]) >= 0 else "via",
             "x": round(float(v["x"]), 3),
             "y": round(float(v["y"]), 3),
             "dist_mm": round(float(v["dist"]), 4),
@@ -1188,35 +1189,103 @@ def native_drc_check(
         for v in raw
     ]
     shorts = sum(1 for v in items if v["kind"] == "short")
+    spacing = sum(1 for v in items if v["kind"] == "spacing")
+    outline_outside = 0
+    if board is not None:
+        poly = outline_polygon_from_board(board)
+        if poly and len(poly) >= 3:
+            seen: set[tuple[float, float]] = set()
+            for s in result.segments:
+                for pt in (
+                    (s.x1, s.y1),
+                    (s.x2, s.y2),
+                    (0.5 * (s.x1 + s.x2), 0.5 * (s.y1 + s.y2)),
+                ):
+                    key = (round(pt[0], 3), round(pt[1], 3))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if not point_in_polygon(pt[0], pt[1], poly):
+                        outline_outside += 1
+                        if len(items) < max_violations:
+                            items.append(
+                                {
+                                    "kind": "outline",
+                                    "net_a": s.net,
+                                    "net_b": "Edge.Cuts",
+                                    "layer": s.layer,
+                                    "x": round(pt[0], 3),
+                                    "y": round(pt[1], 3),
+                                    "dist_mm": 0.0,
+                                    "need_mm": 0.0,
+                                }
+                            )
+            for v in result.vias:
+                if not point_in_polygon(v.x, v.y, poly):
+                    outline_outside += 1
+                    if len(items) < max_violations:
+                        items.append(
+                            {
+                                "kind": "outline",
+                                "net_a": v.net,
+                                "net_b": "Edge.Cuts",
+                                "layer": "via",
+                                "x": round(v.x, 3),
+                                "y": round(v.y, 3),
+                                "dist_mm": 0.0,
+                                "need_mm": 0.0,
+                            }
+                        )
     return {
         "violations": len(items),
         "shorts": shorts,
-        "spacing": len(items) - shorts,
+        "spacing": spacing,
+        "outline_outside": outline_outside,
         "items": items,
     }
 
 
-def attach_router_drc(result: RouteResult, *, clearance_mm: float = 0.2) -> dict[str, Any]:
-    """Run the built-in DRC and record it on the result (authoritative count)."""
-    rep = native_drc_check(result, clearance_mm=clearance_mm)
+def attach_router_drc(
+    result: RouteResult,
+    *,
+    clearance_mm: float = 0.2,
+    board: BoardModel | None = None,
+) -> dict[str, Any]:
+    """Run the built-in DRC and record it on the result (authoritative count).
+
+    Always-on: shorts, spacing, via clearance (native), plus optional Edge.Cuts
+    outline escapes when ``board`` is provided. Sets ``clearance_violations``
+    so grades and UI reflect legality.
+    """
+    rep = native_drc_check(result, clearance_mm=clearance_mm, board=board)
     result.clearance_violations = int(rep["violations"])
-    samples = [
-        f"{v['layer']}: {v['net_a']}×{v['net_b']} {v['kind']} "
-        f"d={v['dist_mm']}<{v['need_mm']} @({v['x']},{v['y']})"
-        for v in rep["items"][:8]
-    ]
+    samples = []
+    for v in rep["items"][:10]:
+        if v["kind"] == "outline":
+            samples.append(
+                f"{v['layer']}: {v['net_a']} outside Edge.Cuts @({v['x']},{v['y']})"
+            )
+        else:
+            samples.append(
+                f"{v['layer']}: {v['net_a']}×{v['net_b']} {v['kind']} "
+                f"d={v['dist_mm']}<{v['need_mm']} @({v['x']},{v['y']})"
+            )
     result.quality = {
         **(result.quality or {}),
         "drc": {
             "violations": rep["violations"],
             "shorts": rep["shorts"],
             "spacing": rep["spacing"],
+            "outline_outside": rep.get("outline_outside", 0),
             "samples": samples,
         },
     }
+    oo = int(rep.get("outline_outside") or 0)
     result.notes.append(
         f"router_drc: {rep['violations']} violation(s) "
-        f"({rep['shorts']} short, {rep['spacing']} spacing) @ clearance {clearance_mm}mm"
+        f"({rep['shorts']} short, {rep['spacing']} spacing"
+        f"{f', {oo} outside outline' if oo else ''}) "
+        f"@ clearance {clearance_mm}mm"
     )
     return rep
 
