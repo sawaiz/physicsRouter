@@ -64,6 +64,8 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Footprint graphics:** Pads use KiCad form `(pad "n" smd|thru_hole shape …)` — shape is token index 3, not the mount type. Front 2D view skips pure **B.Cu** pads and draws large pads outline-only so the battery 12 mm ground does not hide the design. Silk/fab/courtyard polylines come from the footprint body in the PCB file.
 
+**Footprint rotation:** Local→board uses `local_to_board` with **−rot** in the standard CCW matrix (matches pcbnew pad `GetPosition`). Using +rot swaps pads on ±90° parts (LEDs, MK1, S1 look 180° out). The stored `rotation_deg` in the model remains the file angle; only the geometry map negates it.
+
 **Edge.Cuts:** Classic arcs are `(gr_arc (start cx cy) (end x y) (angle deg))` where `start` is the **center**, `end` is the **arc start point**, and `angle` is the CCW sweep (verified against pcbnew `GetArcStart`/`GetArcEnd`). A synthetic origin-centered circle at the main disk radius (HALO ≈12 mm, not the hook tip ≈13.6 mm) is used only for substrate fill; stroke uses the arc polylines so the teardrop/hook stays open.
 
 **Parity tooling:** `scripts/render_viewer_2d.py` mirrors `viewer/index.html` transforms; `kicad-cli pcb export svg` references live in `docs/images/viewer_compare/`; `tests/test_viewer_kicad_parity.py` locks landmarks (H1 top, S1 left, LED +4° CW, outline chain).

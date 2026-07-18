@@ -1437,18 +1437,33 @@
   }
 
   /**
-   * Canvas rotation (degrees) for a KiCad footprint angle θ (CCW in board XY).
-   * With VIEW_FLIP_Y, successive +4° steps on the LED ring must appear clockwise
-   * on screen (D45=86° → D46=90° is +4° CW around the ring).
-   * HTML canvas: positive angle = clockwise (Y-down).
+   * Footprint local mm → board mm (matches pcbnew pad GetPosition).
+   * KiCad (at x y rot) with Y-up math uses −rot in the standard CCW matrix;
+   * +rot swaps pads on ±90° parts (LEDs / MK1 / S1 look 180° out).
+   */
+  function localToBoard(fx, fy, frotDeg, lx, ly) {
+    const th = (-(Number(frotDeg) || 0) * Math.PI) / 180;
+    const c = Math.cos(th), s = Math.sin(th);
+    return [fx + lx * c - ly * s, fy + lx * s + ly * c];
+  }
+
+  /** Pad-local shape rotation (same −angle convention). */
+  function localPadCorner(px, py, prDeg, cx, cy) {
+    const th = (-(Number(prDeg) || 0) * Math.PI) / 180;
+    const c = Math.cos(th), s = Math.sin(th);
+    return [px + cx * c - cy * s, py + cx * s + cy * c];
+  }
+
+  /**
+   * Canvas Z rotation for simple boxes (3D path). Prefer localToBoard for 2D graphics.
+   * With VIEW_FLIP_Y, +4° board steps on the LED ring appear CW on screen.
    */
   function viewRotCanvasDeg(deg) {
-    const r = Number(deg) || 0;
-    // Y-flip of positions: board CCW appears CW on screen → use +θ on canvas
-    // Board flip (V): extra X-mirror reverses again
-    if (VIEW_FLIP_Y && !viewFlipBoard) return r;
+    // Effective board angle after KiCad −rot convention
+    const r = -(Number(deg) || 0);
+    if (VIEW_FLIP_Y && !viewFlipBoard) return r; // then Y-flip makes CCW→CW on canvas
     if (VIEW_FLIP_Y && viewFlipBoard) return -r;
-    return -r; // no Y-flip: standard canvas Y-down needs -θ
+    return -r;
   }
 
   /** @deprecated name kept for 3D path — returns canvas Z rotation degrees */
@@ -1501,9 +1516,17 @@
     return false;
   }
 
-  /** Draw footprint primitives in local mm (caller has set scale + Y flip). */
-  function drawFootprintGraphics(ctx, gfx, { showSilk = true, showCu = true, layersOn = null } = {}) {
+  /**
+   * Draw footprint primitives. Points are transformed local→board→screen via `toScreen`
+   * so pad polarity matches pcbnew (no canvas rotate/Y-scale foot-gun).
+   * toScreen(lx, ly) → [px, py] in canvas pixels.
+   */
+  function drawFootprintGraphics(ctx, gfx, toScreen, {
+    showSilk = true, showCu = true, layersOn = null, scaleMm = 1,
+  } = {}) {
     const copperAlpha = 0.70;
+    const lineW = (mm) => Math.max(0.7, (mm || 0.1) * scaleMm);
+
     // Pads — front view skips pure B.Cu (e.g. battery 12mm ground pad); V-flip shows B.
     for (const g of gfx) {
       if (g.kind !== 'pad') continue;
@@ -1511,51 +1534,66 @@
       const ly = g.layer || 'F.Cu';
       const isBack = /^B\.|Back/i.test(ly);
       const isFront = /^F\.|Front/i.test(ly) || ly === '*.Cu';
-      if (!viewFlipBoard && isBack && !isFront) continue; // don't paint B-only on front
+      if (!viewFlipBoard && isBack && !isFront) continue;
       if (viewFlipBoard && isFront && !isBack && ly !== '*.Cu') continue;
       if (layersOn) {
         if (isBack && !layerVisible('B.Cu', layersOn) && !layerVisible(ly, layersOn)) continue;
         if (isFront && !layerVisible('F.Cu', layersOn) && !layerVisible(ly, layersOn) && ly !== '*.Cu') continue;
       }
-      // Large copper pours/pads: outline-only at low alpha so they don't hide the design
       const w = g.w || 0.5, h = g.h || 0.5;
       const large = Math.max(w, h) > 4.0;
       const alpha = large ? 0.22 : copperAlpha;
       const col = layerColor(isBack ? 'B.Cu' : 'F.Cu', alpha);
-      ctx.save();
-      ctx.translate(g.x || 0, g.y || 0);
-      ctx.rotate(((g.rot || 0) * Math.PI) / 180);
       const shape = (g.shape || 'rect').toLowerCase();
+      const px = g.x || 0, py = g.y || 0, pr = g.rot || 0;
       ctx.fillStyle = col;
       ctx.strokeStyle = layerColor(isBack ? 'B.Cu' : 'F.Cu', Math.min(1, alpha + 0.25));
-      ctx.lineWidth = large ? 0.08 : 0.04;
-      const drawPad = () => {
-        if (shape.includes('circle') || (shape === 'oval' && Math.abs(w - h) < 0.05)) {
-          ctx.beginPath();
-          ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-          if (large) ctx.stroke(); else ctx.fill();
-        } else if (shape.includes('roundrect') || shape.includes('round')) {
-          const r = Math.min(w, h) * 0.2;
-          roundRectPath(ctx, -w / 2, -h / 2, w, h, r);
-          if (large) ctx.stroke(); else ctx.fill();
-        } else {
-          // rect / smd default
-          if (large) ctx.strokeRect(-w / 2, -h / 2, w, h);
-          else ctx.fillRect(-w / 2, -h / 2, w, h);
-        }
-      };
-      drawPad();
-      if (g.drill > 0.05) {
-        ctx.fillStyle = '#0a1020';
+      ctx.lineWidth = large ? 1.5 : 0.8;
+
+      if (shape.includes('circle') || (shape === 'oval' && Math.abs(w - h) < 0.05)) {
+        const [cx, cy] = toScreen(px, py);
+        const r = 0.5 * Math.max(w, h) * scaleMm;
         ctx.beginPath();
-        ctx.arc(0, 0, g.drill / 2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.ellipse(cx, cy, r, r, 0, 0, Math.PI * 2);
+        if (large) ctx.stroke(); else ctx.fill();
+        if (g.drill > 0.05) {
+          ctx.fillStyle = '#0a1020';
+          ctx.beginPath();
+          ctx.arc(cx, cy, (g.drill / 2) * scaleMm, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+        const pts = corners.map(([cx, cy]) => {
+          const [lx, ly] = localPadCorner(px, py, pr, cx, cy);
+          return toScreen(lx, ly);
+        });
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        if (large) ctx.stroke(); else ctx.fill();
+        if (g.drill > 0.05) {
+          const [cx, cy] = toScreen(px, py);
+          ctx.fillStyle = '#0a1020';
+          ctx.beginPath();
+          ctx.arc(cx, cy, (g.drill / 2) * scaleMm, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (!large && /^k$/i.test(g.pinfunction || '')) {
+          const strip = [[w / 2 - w * 0.2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [w / 2 - w * 0.2, h / 2]];
+          const sp = strip.map(([cx, cy]) => {
+            const [lx, ly] = localPadCorner(px, py, pr, cx, cy);
+            return toScreen(lx, ly);
+          });
+          ctx.fillStyle = 'rgba(240,224,128,0.95)';
+          ctx.beginPath();
+          ctx.moveTo(sp[0][0], sp[0][1]);
+          for (let i = 1; i < sp.length; i++) ctx.lineTo(sp[i][0], sp[i][1]);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
-      if (!large && /^k$/i.test(g.pinfunction || '')) {
-        ctx.fillStyle = 'rgba(240,224,128,0.95)';
-        ctx.fillRect(w / 2 - w * 0.2, -h / 2, w * 0.2, h);
-      }
-      ctx.restore();
     }
     // Silk / fab — prefer F.* on front, B.* when flipped
     for (const g of gfx) {
@@ -1577,7 +1615,6 @@
       const isCrt = /CrtYd/i.test(ly);
       const isFab = /Fab/i.test(ly);
       const isCu = /\.Cu/i.test(ly);
-      // Courtyard: always outline, never fill
       if (isCu) {
         ctx.strokeStyle = layerColor(ly.startsWith('B') ? 'B.Cu' : 'F.Cu', copperAlpha);
         ctx.fillStyle = ctx.strokeStyle;
@@ -1585,32 +1622,47 @@
         ctx.strokeStyle = isCrt ? 'rgba(208,64,208,0.4)' : (isFab ? 'rgba(160,160,160,0.65)' : 'rgba(232,208,96,0.9)');
         ctx.fillStyle = ctx.strokeStyle;
       }
-      ctx.lineWidth = Math.max(0.05, g.width || 0.1);
+      ctx.lineWidth = lineW(g.width || 0.1);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       if (g.kind === 'line') {
+        const a = toScreen(g.x1, g.y1), b = toScreen(g.x2, g.y2);
         ctx.beginPath();
-        ctx.moveTo(g.x1, g.y1);
-        ctx.lineTo(g.x2, g.y2);
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
         ctx.stroke();
       } else if (g.kind === 'rect') {
-        const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2);
-        const w = Math.abs(g.x2 - g.x1), h = Math.abs(g.y2 - g.y1);
-        if (g.fill && !isCrt) ctx.fillRect(x, y, w, h);
-        else ctx.strokeRect(x, y, w, h);
-      } else if (g.kind === 'circle') {
+        const corners = [[g.x1, g.y1], [g.x2, g.y1], [g.x2, g.y2], [g.x1, g.y2]];
+        const pts = corners.map(([lx, ly]) => toScreen(lx, ly));
         ctx.beginPath();
-        ctx.arc(g.cx, g.cy, g.r || 0.2, 0, Math.PI * 2);
-        if (g.fill && !isCrt) ctx.fill();
-        else ctx.stroke();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        ctx.stroke();
+      } else if (g.kind === 'circle') {
+        // Approximate: sample circle in local space
+        const n = 32;
+        ctx.beginPath();
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const [px, py] = toScreen(g.cx + g.r * Math.cos(a), g.cy + g.r * Math.sin(a));
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
       } else if (g.kind === 'poly' && g.pts?.length) {
         ctx.beginPath();
-        ctx.moveTo(g.pts[0][0], g.pts[0][1]);
-        for (let i = 1; i < g.pts.length; i++) ctx.lineTo(g.pts[i][0], g.pts[i][1]);
-        if (g.closed !== false) ctx.closePath();
-        if (g.fill && !isCrt) ctx.fill();
-        else ctx.stroke();
+        const p0 = toScreen(g.pts[0][0], g.pts[0][1]);
+        ctx.moveTo(p0[0], p0[1]);
+        for (let i = 1; i < g.pts.length; i++) {
+          const p = toScreen(g.pts[i][0], g.pts[i][1]);
+          ctx.lineTo(p[0], p[1]);
+        }
+        if (g.closed) ctx.closePath();
+        ctx.stroke();
+      } else if (g.kind === 'arc' && g.mx != null) {
+        const a = toScreen(g.x1, g.y1), m = toScreen(g.mx, g.my), b = toScreen(g.x2, g.y2);
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(m[0], m[1], b[0], b[1]); ctx.stroke();
       }
     }
   }
@@ -1814,36 +1866,37 @@
       }
     }
 
-    // Footprints from .kicad_pcb (pads + silk/fab) with layer transparency
+    // Footprints from .kicad_pcb (pads + silk/fab) — local→board→screen (pcbnew-accurate)
     const showSilk = !layersOn || layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen');
     const showCu = !layersOn || layersOn.has('F.Cu') || layersOn.has('Front')
       || layersOn.has('B.Cu') || layersOn.has('Back')
       || [...(layersOn || [])].some(l => /\.Cu$/i.test(l));
     for (const c of comps) {
       const [x, y] = tx(c.x, c.y);
-      // Canvas rotation: positive = CW (matches ring +4° steps after Y-flip)
-      const rot = (viewRotCanvasDeg(c.rot) * Math.PI) / 180;
       const gfx = c.graphics;
       const hasGfx = Array.isArray(gfx) && gfx.length > 0;
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot);
-      // Local footprint: KiCad +Y up → flip local Y into canvas after placement
-      ctx.scale(scale, -scale);
+      const toScreen = (lx, ly) => {
+        const [bx, by] = localToBoard(c.x, c.y, c.rot, lx, ly);
+        return tx(bx, by);
+      };
 
       if (hasGfx) {
-        drawFootprintGraphics(ctx, gfx, { showSilk, showCu, layersOn });
+        drawFootprintGraphics(ctx, gfx, toScreen, { showSilk, showCu, layersOn, scaleMm: scale });
       } else {
         const w = Math.max(0.4, c.w || 0.8);
         const h = Math.max(0.3, c.h || 0.5);
+        const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]
+          .map(([lx, ly]) => toScreen(lx, ly));
         ctx.fillStyle = '#3a3a44';
         ctx.strokeStyle = showSilk ? KICAD_LAYER['F.SilkS'] : '#666';
-        ctx.lineWidth = 0.08;
-        ctx.fillRect(-w / 2, -h / 2, w, h);
-        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(corners[0][0], corners[0][1]);
+        for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i][0], corners[i][1]);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
-      ctx.restore();
 
       if (showSilk) {
         ctx.fillStyle = 'rgba(232,208,96,0.9)';
