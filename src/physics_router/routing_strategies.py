@@ -332,19 +332,30 @@ def topor_style_route(
         r.notes.append("topor_pipeline: guide_only (topology sketch, no clearance)")
         return r
 
-    # HALO charlieplex ring: concentric tracks (docs/HALO_RING_ROUTING.md)
+    # Hybrid multi-strategy: ring CPX + power + critical + general (shared DRC paint)
     try:
-        from physics_router.halo_ring import detect_led_ring, halo_ring_route
+        from physics_router.hybrid_route import classify_board, hybrid_route
 
-        if detect_led_ring(board) is not None:
+        plan = classify_board(board, config, rules)
+        # Hybrid when LED ring present (charlieplex + power + core free-angle)
+        if plan.has_ring:
+            strats = sorted({a.strategy for a in plan.assignments})
             cl0 = clearance_mm if clearance_mm is not None else rules.constraints.min_clearance_mm
-            r = halo_ring_route(
+            r = hybrid_route(
                 board,
                 config,
+                rules,
                 clearance_mm=float(cl0),
                 progress_cb=progress_cb,
+                plan=plan,
             )
-            r.notes.append("topor_pipeline: halo_ring primary (LED ring detected)")
+            r.notes.append(f"topor_pipeline: hybrid primary strategies={strats}")
+            # Keep topor markers so UI/tests recognize a full pipeline result
+            r.quality = {
+                **(r.quality or {}),
+                "pipeline": "topor_style_hybrid",
+                "hybrid_plan": (r.quality or {}).get("hybrid_plan") or plan.to_dict(),
+            }
             return r
     except Exception:
         pass
@@ -454,6 +465,8 @@ def topor_style_route(
                 style="isotropic",
                 congestion=cong,
                 k_homotopy=spec.get("k_homotopy") or 1,
+                design_rules=rules,
+                skip_hybrid=True,
             )
             polished = _apply_drc_geometry(raw, board, config, rules, cl)
             polished.notes.append(f"topor_variant: {label}")

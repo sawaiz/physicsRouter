@@ -325,7 +325,9 @@ def _strategy_plan(cfg: ImproveConfig, board: BoardModel) -> list[dict[str, Any]
     """Ordered diversifying strategies cycled each round."""
     orders = _net_order_variants(board, None)
     plan: list[dict[str, Any]] = []
-    # HALO ring first when LED circle is present
+    # Hybrid multi-strategy first (auto ring/power/critical/general)
+    plan.append({"name": "hybrid", "kind": "hybrid", "grid_mm": cfg.grid_mm})
+    # Dedicated ring pass as diversifier when LED circle is present
     try:
         from physics_router.halo_ring import detect_led_ring
 
@@ -429,6 +431,16 @@ def _run_route(
             use_cbs=True,
             use_elastic=True,
             use_regeometry=True,
+        )
+
+    if strat.get("kind") == "hybrid":
+        from physics_router.hybrid_route import hybrid_route
+
+        return hybrid_route(
+            board,
+            config,
+            clearance_mm=cl,
+            progress_cb=_net_prog if progress_cb else None,
         )
 
     if strat.get("kind") == "halo_ring":
