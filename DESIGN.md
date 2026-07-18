@@ -10,7 +10,7 @@ This document records **why** the system is shaped the way it is, and what we de
 2. **Physics-informed placement** — multi-objective cost (wirelength, loop L, IR, return path, CPX match, EMI proxies) on **unlocked** parts only.
 3. **TopoR-style free-angle routing** — topology and clearance first; no forced 45°/90° preferred directions. Product model: [docs/TOPOR.md](docs/TOPOR.md). Architecture (topology + sparse graph + geometry, negotiated congestion): [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md).
 4. **Interactive engineering UI** — guided place → route (2D) → apply → DRC → Simulate (3D EMS), with variant compare.
-5. **Optional native speed** — C++ core for hot paths; Python remains the product shell (CLI, server, KiCad I/O).
+5. **Native-only routing core** — the C++ core (`pr_native`) is the sole geometric router and clearance authority; Python remains the product shell (CLI, server, KiCad I/O) and policy layer.
 
 Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on dense charlieplex without human cleanup, learned RL policies in production.
 
@@ -94,11 +94,11 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Why:** LED ring, battery, pogo, and hook are product constraints. Global free placement is unrealistic for wearables.
 
-### 5. Hybrid Python + optional native core
+### 5. C++-only geometric router (no Python fallback)
 
-**Decision:** Keep CLI/server/UI and the full topology-first pipeline in Python; accelerate geometric routing in C++ (`pr_native` v1.1: isotropic detours, multi-site vias + reasons, post-rubberband, via minimize) behind `native_bridge`, with optional Python polish (elastic + SI/MFG).
+**Decision:** All clearance queries and path search run in the C++ core. `ExactMap` (spatial hash + exact Liang–Barsky segment/rect + continuous painted seg–seg distance) is the clearance authority; `free_angle_route_exact` implements LOS → isotropic detours (obstacle corners, bulges, angled offsets, radar scan) → 1/2/3-corner chains → hierarchical multi-grid A\* (16-dir on fine grids) → rubberband, with negotiated-congestion edge costs marshalled from Python. The Python `ObstacleMap`/`free_angle_route` are thin wrappers; the pure-Python implementation was removed after test parity (same 107-test suite). `pr_native` is required — the router raises with build instructions if missing.
 
-**Why:** Full rewrite would delay product features. Hot path (A\* + grids) dominates wall time; KiCad I/O and explainable/CBS/planner logic stay in Python.
+**Why:** Two parallel router implementations drifted and the Python hot path dominated wall time (HALO-90 core route: ~200 s Python → ~34 s native, same segment/via counts). KiCad I/O, K-homotopy, CBS, planner, elastic/regeometry polish, and SI/MFG scoring stay in Python where iteration speed matters more than throughput.
 ### 6. Multi-net IC keepouts are not solid discs
 
 **Decision:** Only single-net footprints get a pad keepout disc. Multi-pin ICs do not place a net-agnostic block at the origin.

@@ -1,3 +1,4 @@
+#include "pr_native/exact.hpp"
 #include "pr_native/gpu.hpp"
 #include "pr_native/router.hpp"
 #include "pr_native/score.hpp"
@@ -103,6 +104,69 @@ PYBIND11_MODULE(pr_native, m) {
         return pr::route_board(nets, cfg, obs, nullptr);
       },
       py::arg("nets"), py::arg("cfg"), py::arg("obstacles") = std::vector<pr::RectObs>{});
+
+  // Exact-geometry clearance authority + free-angle search (the only router core)
+  py::class_<pr::ExactMap>(m, "ExactMap")
+      .def(py::init<double, double, double, double, double, int>(), py::arg("x_min"),
+           py::arg("x_max"), py::arg("y_min"), py::arg("y_max"), py::arg("clearance_mm"),
+           py::arg("num_layers"))
+      .def("add_rect", &pr::ExactMap::add_rect, py::arg("cx"), py::arg("cy"), py::arg("w"),
+           py::arg("h"), py::arg("layer"), py::arg("net"))
+      .def("add_painted", &pr::ExactMap::add_painted, py::arg("x1"), py::arg("y1"),
+           py::arg("x2"), py::arg("y2"), py::arg("layer"), py::arg("width"), py::arg("net"))
+      .def("in_bounds", &pr::ExactMap::in_bounds)
+      .def("blocked", &pr::ExactMap::blocked, py::arg("x"), py::arg("y"), py::arg("layer"),
+           py::arg("net"))
+      .def("segment_blocked", &pr::ExactMap::segment_blocked, py::arg("x1"), py::arg("y1"),
+           py::arg("x2"), py::arg("y2"), py::arg("layer"), py::arg("net"),
+           py::arg("width_mm") = 0.25);
+
+  m.def(
+      "free_angle_route_exact",
+      [](const pr::ExactMap &em, double sx, double sy, double gx, double gy, int layer, int net,
+         double grid_mm, int max_expansions, double width_mm, double cong_cell_mm,
+         const std::vector<int64_t> &cong_keys, const std::vector<double> &cong_costs)
+          -> py::object {
+        pr::CongestionView cong;
+        const pr::CongestionView *cptr = nullptr;
+        if (!cong_keys.empty() && cong_keys.size() == cong_costs.size()) {
+          cong.cell_mm = cong_cell_mm > 0 ? cong_cell_mm : 1.0;
+          for (size_t i = 0; i < cong_keys.size(); ++i)
+            cong.cells[cong_keys[i]] = cong_costs[i];
+          cptr = &cong;
+        }
+        std::string method;
+        auto path = pr::free_angle_route_exact(em, {sx, sy}, {gx, gy}, layer, net, grid_mm,
+                                               max_expansions, width_mm, cptr, &method);
+        if (path.empty())
+          return py::none();
+        py::list pts;
+        for (const auto &p : path)
+          pts.append(py::make_tuple(p.x, p.y));
+        return py::make_tuple(pts, method);
+      },
+      py::arg("map"), py::arg("sx"), py::arg("sy"), py::arg("gx"), py::arg("gy"),
+      py::arg("layer"), py::arg("net"), py::arg("grid_mm") = 0.1,
+      py::arg("max_expansions") = 8000, py::arg("width_mm") = 0.25,
+      py::arg("cong_cell_mm") = 1.0, py::arg("cong_keys") = std::vector<int64_t>{},
+      py::arg("cong_costs") = std::vector<double>{});
+
+  m.def(
+      "rubberband_exact",
+      [](const pr::ExactMap &em, const std::vector<std::pair<double, double>> &path, int layer,
+         int net, double width_mm) {
+        std::vector<pr::Vec2> in;
+        in.reserve(path.size());
+        for (const auto &p : path)
+          in.push_back({p.first, p.second});
+        auto out = pr::rubberband_exact(em, in, layer, net, width_mm);
+        py::list pts;
+        for (const auto &p : out)
+          pts.append(py::make_tuple(p.x, p.y));
+        return pts;
+      },
+      py::arg("map"), py::arg("path"), py::arg("layer"), py::arg("net"),
+      py::arg("width_mm") = 0.25);
 
   m.def("gpu_probe", []() {
     auto s = pr::gpu_probe();

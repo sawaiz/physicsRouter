@@ -1,6 +1,6 @@
 # physicsRouter
 
-Physics-aware **KiCad placement and TopoR-style free-angle routing** with closed-loop **DRC/ERC**, an interactive control plane, and an optional **C++/OpenCL** core for speed.
+Physics-aware **KiCad placement and TopoR-style free-angle routing** with closed-loop **DRC/ERC**, an interactive control plane, and a required **C++/OpenCL** router core (the only geometric router — no Python fallback).
 
 Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) / [Eremex TopoR](https://www.eremex.com/products/topor/) (gridless free-angle topology) and multi-objective placement research that scores **post-route and physical** quality, not HPWL alone.
 
@@ -60,9 +60,9 @@ See [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) for the full thre
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Optional: fast C++ router (OpenCL GPU when available)
+# Required: the C++ router core (OpenCL GPU when available).
+# Auto-discovered from native/build — no PYTHONPATH needed in a dev checkout.
 bash scripts/build_native.sh
-export PYTHONPATH=native/build${PYTHONPATH:+:$PYTHONPATH}
 
 # Control plane (default board: HALO-90 if cloned)
 physics-router serve --port 8765
@@ -115,7 +115,7 @@ YAML / KiCad labels  →  multi-objective place (SA, unlocked parts)
 3. **Routing UX is 2D** (KiCad-style layers). **3D is post-route** on the Simulate step for EMS/OpenEMS.
 4. Routing is **isotropic free-angle** (TopoR-style), not Specctra preferred H/V.
 5. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may Y-flip for display: hook top, switch left).
-6. Native `pr_native` accelerates hot paths when built; Python remains clearance authority for legal copper.
+6. The C++ `pr_native` core is the **only** geometric router and the clearance authority (`ExactMap`: spatial hash + exact Liang–Barsky + painted-copper distance). Python orchestrates: net order, via planning, K-homotopy/CBS/planner policy, polish, reporting.
 
 ---
 
@@ -168,11 +168,12 @@ Compare assets live under [`docs/images/viewer_compare/`](docs/images/viewer_com
 
 ---
 
-## Native C++ core (optional, v1.1 isotropic)
+## Native C++ core (required — the only router)
 
 | Path | Role |
 |------|------|
-| `native/` | Isotropic free-angle, multi-site vias + reasons, rubberband, via minimize, batch score |
+| `native/src/exact.cpp` | **ExactMap** clearance authority (spatial hash, Liang–Barsky, painted seg–seg distance) + free-angle search (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* 16-dir · rubberband) |
+| `native/src/router.cpp` | Whole-board batch route (GridMap fast path), multi-site vias + reasons, via minimize |
 | OpenCL | GPU batch clearance (e.g. Apple M3) |
 | OpenMP | Parallel score batches when available |
 | `scripts/build_native.sh` | CMake + pybind11 → `pr_native*.so` |
@@ -180,12 +181,11 @@ Compare assets live under [`docs/images/viewer_compare/`](docs/images/viewer_com
 
 ```bash
 bash scripts/build_native.sh
-export PYTHONPATH=native/build:src
 python -c "from physics_router.native_bridge import info; print(info())"
 # → 1.1.0-native-isotropic · GPU when OpenCL present
 ```
 
-Details: [native/README.md](native/README.md). Python still owns K-homotopy / CBS / planner / SI-MFG; native accelerates geometry and can be polished in Python.
+Details: [native/README.md](native/README.md). Python owns policy and polish only (K-homotopy / CBS / planner / elastic / regeometry / SI-MFG); every clearance query and path search runs in C++. Without `pr_native` the router raises with build instructions.
 ---
 
 ## Architecture (modules)

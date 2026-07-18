@@ -167,7 +167,8 @@ def test_remove_redundant_vias_merges_when_clear() -> None:
         total_length_mm=25.0,
         net_reports=[],
     )
-    out = remove_redundant_vias(result, board, None, clearance_mm=0.15)
+    # Default policy keeps vias (connectivity-first); aggressive opts into merging
+    out = remove_redundant_vias(result, board, None, clearance_mm=0.15, aggressive=True)
     # Same-net keepouts only → path legal on one layer → via removed
     assert out.via_count == 0
     assert out.segments

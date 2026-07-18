@@ -105,15 +105,15 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
   // 2) Isotropic detours: perpendicular bulges + angled offsets (TopoR-style)
   std::vector<Vec2> mids;
   if (isotropic) {
-    for (double t : {0.25, 0.5, 0.75}) {
+    for (double t : {0.2, 0.4, 0.5, 0.6, 0.8}) {
       double bx = start.x + dx * t, by = start.y + dy * t;
       for (double sign : {1.0, -1.0}) {
-        for (double k : {2.0, 4.0, 7.0, 11.0}) {
+        for (double k : {2.0, 4.0, 7.0, 12.0, 18.0}) {
           mids.push_back({bx + sign * px * gmm * k, by + sign * py * gmm * k});
         }
       }
     }
-    for (double ang : {M_PI / 6, M_PI / 3, -M_PI / 6, -M_PI / 3}) {
+    for (double ang : {M_PI / 6, M_PI / 4, M_PI / 3, -M_PI / 6, -M_PI / 4, -M_PI / 3}) {
       double ca = std::cos(ang), sa = std::sin(ang);
       double rx = ux * ca - uy * sa, ry = ux * sa + uy * ca;
       double mx = (start.x + goal.x) * 0.5, my = (start.y + goal.y) * 0.5;
@@ -139,8 +139,8 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
       return {start, m, goal};
   }
 
-  // Two-corner isotropic chain (limited)
-  size_t lim = std::min<size_t>(mids.size(), 18);
+  // Two-corner isotropic chain (limited; matches Python cand cap)
+  size_t lim = std::min<size_t>(mids.size(), 28);
   for (size_t i = 0; i < lim; ++i) {
     const auto &a = mids[i];
     if (!grid.in_bounds(a.x, a.y) || grid.point_blocked(a.x, a.y, layer, net_id))
@@ -260,20 +260,30 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
   if (!cfg.allow_vias || layers.size() < 2)
     return false;
 
-  // Multi-site via search (global via plan, not single midpoint)
-  double g = std::max(cfg.grid_mm, 0.3);
+  // Multi-site via search — dense sites: connectivity beats via-count purity
+  double g = std::max(cfg.grid_mm, 0.15);
   Vec2 mid{(a.x + b.x) * 0.5, (a.y + b.y) * 0.5};
   std::vector<Vec2> sites = {
       mid,
       {a.x, b.y},
       {b.x, a.y},
-      {mid.x + 3 * g, mid.y},
-      {mid.x - 3 * g, mid.y},
-      {mid.x, mid.y + 3 * g},
-      {mid.x, mid.y - 3 * g},
-      {mid.x + 5 * g, mid.y + 5 * g},
-      {mid.x - 5 * g, mid.y - 5 * g},
+      {(2 * a.x + b.x) / 3, (2 * a.y + b.y) / 3},
+      {(a.x + 2 * b.x) / 3, (a.y + 2 * b.y) / 3},
   };
+  for (double k : {2.0, 4.0, 7.0, 11.0}) {
+    sites.push_back({mid.x + k * g, mid.y});
+    sites.push_back({mid.x - k * g, mid.y});
+    sites.push_back({mid.x, mid.y + k * g});
+    sites.push_back({mid.x, mid.y - k * g});
+    sites.push_back({mid.x + k * g, mid.y + k * g});
+    sites.push_back({mid.x - k * g, mid.y - k * g});
+  }
+  for (double k : {2.0, 5.0}) {
+    sites.push_back({a.x + k * g, a.y});
+    sites.push_back({a.x, a.y + k * g});
+    sites.push_back({b.x - k * g, b.y});
+    sites.push_back({b.x, b.y - k * g});
+  }
 
   int l0 = layers.front(), l1 = layers.back();
   int sites_tried = 0;

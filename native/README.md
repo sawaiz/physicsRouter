@@ -1,6 +1,9 @@
 # Native core (`pr_native`)
 
-C++17 **isotropic free-angle** router (TopoR-style hot path): occupancy **grid**, any-angle detours, 8-dir **A\***, multi-net **MST**, post-**rubberband**, **via minimize**, multi-site vias with **explainable reasons**, batch **wirelength** score, optional **OpenCL** clearance.
+C++17 **isotropic free-angle** router — the **only** geometric router in physicsRouter (no Python fallback). Two engines:
+
+- **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
+- **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
 
 Version: **1.1.0-native-isotropic**
 
@@ -18,11 +21,11 @@ Optional: OpenMP, OpenCL (Apple M-series GPU works).
 ## Use from Python
 
 ```bash
-export PYTHONPATH=native/build:src
+# native/build is auto-discovered in a dev checkout; PYTHONPATH optional
 python -c "from physics_router.native_bridge import info; print(info())"
 ```
 
-`clearance_aware_route(prefer_native=True)` uses native isotropic route, then optional Python polish (elastic + SI/MFG).
+Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. `clearance_aware_route(prefer_native=True)` additionally uses the whole-board GridMap fast path, then Python polish (elastic + SI/MFG).
 
 ## Design
 

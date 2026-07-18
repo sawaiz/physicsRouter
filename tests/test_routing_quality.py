@@ -6,11 +6,6 @@ Default search grid is 0.1 mm (fine free-angle / near continuous).
 
 from __future__ import annotations
 
-import math
-from collections import defaultdict
-
-import pytest
-
 from physics_router.config_io import example_config
 from physics_router.design_rules import default_design_rules
 from physics_router.kicad_io import board_from_synthetic
@@ -29,19 +24,6 @@ from physics_router.router import (
 from physics_router.routing_strategies import topor_style_route
 
 
-def _polyline_for_net(result: RouteResult, net: str) -> list[tuple[float, float]]:
-    """Ordered points from MST edge segments (best-effort for bend checks)."""
-    segs = [s for s in result.segments if s.net == net]
-    if not segs:
-        return []
-    # Build undirected adjacency of endpoints
-    pts: list[tuple[float, float]] = []
-    for s in segs:
-        pts.append((s.x1, s.y1))
-        pts.append((s.x2, s.y2))
-    return pts
-
-
 def _count_bends_in_path(path: list[tuple[float, float]], *, min_cross: float = 1e-3) -> int:
     """Number of non-collinear triples (true corners) along a polyline."""
     if len(path) < 3:
@@ -55,43 +37,6 @@ def _count_bends_in_path(path: list[tuple[float, float]], *, min_cross: float = 
         if abs(ax * by - ay * bx) > min_cross:
             bends += 1
     return bends
-
-
-def _net_has_bend(result: RouteResult, net: str) -> bool:
-    segs = [s for s in result.segments if s.net == net]
-    if len(segs) >= 2:
-        # Multiple geometric edges almost always means at least one corner at a pin/via
-        # Prefer true polyline bend when chained
-        for s in segs:
-            if abs((s.x2 - s.x1) * 0 + (s.y2 - s.y1) * 0) >= 0:  # always
-                pass
-        # Check angles between consecutive segs sharing an endpoint
-        for i, a in enumerate(segs):
-            for b in segs[i + 1 :]:
-                shared = None
-                for pa in ((a.x1, a.y1), (a.x2, a.y2)):
-                    for pb in ((b.x1, b.y1), (b.x2, b.y2)):
-                        if math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < 0.05:
-                            shared = pa
-                            break
-                    if shared:
-                        break
-                if not shared:
-                    continue
-                # vectors from shared away
-                def other(s, sh):
-                    p1, p2 = (s.x1, s.y1), (s.x2, s.y2)
-                    return p2 if math.hypot(p1[0] - sh[0], p1[1] - sh[1]) < 0.05 else p1
-
-                o1, o2 = other(a, shared), other(b, shared)
-                v1 = (o1[0] - shared[0], o1[1] - shared[1])
-                v2 = (o2[0] - shared[0], o2[1] - shared[1])
-                cross = abs(v1[0] * v2[1] - v1[1] * v2[0])
-                if cross > 1e-3:
-                    return True
-    # Single multi-point free_angle path stored as multiple collinear segs is rare;
-    # also accept path from free_angle_route directly in other tests.
-    return False
 
 
 def test_free_angle_bends_around_block_at_fine_grid():
@@ -108,7 +53,7 @@ def test_free_angle_bends_around_block_at_fine_grid():
     )
     assert path is not None, "must find a path around the block"
     assert len(path) >= 3, f"path must bend, got {len(path)} points: {path}"
-    assert meth and meth[0] in ("detour", "detour2", "detour3", "astar", "radar")
+    assert meth and meth[0] in ("detour", "detour2", "detour3", "astar")
     assert _count_bends_in_path(path) >= 1
     # Path edges must clear the block
     for i in range(len(path) - 1):
@@ -232,12 +177,7 @@ def test_topor_default_fine_grid_and_bends_or_vias():
     assert r.clearance_violations == 0 or all(
         "straight_fallback" not in (rep.method or "") for rep in r.net_reports
     )
-    # At least some multi-segment or via structure (not only pure single LOS everywhere
-    # when board has obstacles)
-    multi = sum(1 for n in {s.net for s in r.segments}
-                if sum(1 for s in r.segments if s.net == n) > 1)
-    via_ok = r.via_count >= 0
-    assert via_ok
+    assert r.via_count >= 0
     # Quality reports winner pipeline
     q = r.quality or r.compute_quality()
     assert q.get("grade") or q.get("score") is not None
@@ -267,8 +207,8 @@ def test_grid_01_resolves_tighter_than_coarse():
     om.add_rect(20, 15, 30, 8, "F.Cu", net="HI", inflate=True)
     start, goal = (2.0, 10.0), (38.0, 10.0)
     fine = free_angle_route(start, goal, "F.Cu", "N", om, grid_mm=0.1, width_mm=0.15)
-    coarse = free_angle_route(start, goal, "F.Cu", "N", om, grid_mm=1.0, width_mm=0.15, max_expansions=500)
-    # Fine grid should succeed; coarse may fail or also succeed via detour
+    # Coarse grid may fail or succeed via detour — just must not crash
+    free_angle_route(start, goal, "F.Cu", "N", om, grid_mm=1.0, width_mm=0.15, max_expansions=500)
     assert fine is not None
     for i in range(len(fine) - 1):
         assert not om.segment_blocked(
