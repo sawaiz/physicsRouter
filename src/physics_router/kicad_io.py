@@ -130,6 +130,41 @@ def local_to_board(
     return (fx + lx * c - ly * s, fy + lx * s + ly * c)
 
 
+def pad_corners_board(
+    fx: float,
+    fy: float,
+    frot_deg: float,
+    px: float,
+    py: float,
+    pad_rot_deg: float,
+    w: float,
+    h: float,
+) -> list[tuple[float, float]]:
+    """Board-space corners of a rectangular pad (matches pcbnew pad outline).
+
+    Center is placed with :func:`local_to_board`. The pad rectangle is then
+    rotated in **board** space by **-pad_rot** (same sign convention as
+    footprint rot). Rotating the pad in footprint-local space *before*
+    ``local_to_board`` double-applies the footprint angle and leaves pads 90°
+    off (LEDs look radial/tangential swapped; S1 pads vertical instead of
+    horizontal).
+    """
+    import math
+
+    cx, cy = local_to_board(fx, fy, frot_deg, px, py)
+    th = math.radians(-float(pad_rot_deg or 0.0))
+    c, s = math.cos(th), math.sin(th)
+    corners: list[tuple[float, float]] = []
+    for lx, ly in (
+        (-w / 2, -h / 2),
+        (w / 2, -h / 2),
+        (w / 2, h / 2),
+        (-w / 2, h / 2),
+    ):
+        corners.append((cx + lx * c - ly * s, cy + lx * s + ly * c))
+    return corners
+
+
 def load_board_from_kicad_pcb(
     path: str | Path,
     config: PlacementConfig | None = None,

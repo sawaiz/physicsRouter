@@ -66,6 +66,8 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Footprint rotation:** Local→board uses `local_to_board` with **−rot** in the standard CCW matrix (matches pcbnew pad `GetPosition`). Using +rot swaps pads on ±90° parts (LEDs, MK1, S1 look 180° out). The stored `rotation_deg` in the model remains the file angle; only the geometry map negates it.
 
+**Pad shape orientation:** Pad *centers* use `local_to_board`; pad *rectangles* are rotated in **board** space by **−pad_rot** (`pad_corners_board`). Applying pad rot in footprint-local space *before* place double-counts the footprint angle and leaves pads 90° off (S1 bars vertical, LED aspect swapped).
+
 **Edge.Cuts:** Classic arcs are `(gr_arc (start cx cy) (end x y) (angle deg))` where `start` is the **center**, `end` is the **arc start point**, and `angle` is the CCW sweep (verified against pcbnew `GetArcStart`/`GetArcEnd`). A synthetic origin-centered circle at the main disk radius (HALO ≈12 mm, not the hook tip ≈13.6 mm) is used only for substrate fill; stroke uses the arc polylines so the teardrop/hook stays open.
 
 **Parity tooling:** `scripts/render_viewer_2d.py` mirrors `viewer/index.html` transforms; `kicad-cli pcb export svg` references live in `docs/images/viewer_compare/`; `tests/test_viewer_kicad_parity.py` locks landmarks (H1 top, S1 left, LED +4° CW, outline chain).
