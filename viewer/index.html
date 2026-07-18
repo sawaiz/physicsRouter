@@ -1044,6 +1044,19 @@
   function panelSetup() {
     const presets = state.snap?.presets || [{ id: 'halo-90', label: 'HALO-90' }];
     const sess = state.snap?.session || {};
+    const fabs = state.snap?.fab_profiles || [];
+    const fabId = state.snap?.fab_profile || '4layer_recommended';
+    const fab = fabs.find(f => f.id === fabId) || fabs[0];
+    const fabOpts = fabs.length
+      ? fabs.map(f => `<option value="${esc(f.id)}" ${f.id === fabId ? 'selected' : ''}>${esc(f.label)}</option>`).join('')
+      : [
+          ['2layer_recommended','2-layer recommended'],
+          ['4layer_recommended','4-layer recommended'],
+          ['6layer_recommended','6-layer recommended'],
+          ['2layer_capability','2-layer capability (min)'],
+          ['4layer_capability','4-layer capability (min)'],
+          ['6layer_capability','6-layer capability (min)'],
+        ].map(([id, lab]) => `<option value="${id}" ${id===fabId?'selected':''}>${lab}</option>`).join('');
     return `
       <label class="field">Preset</label>
       <select id="presetSel">
@@ -1052,6 +1065,15 @@
       <div class="actions">
         <button type="button" class="btn primary" id="btnLoadPreset">Load board</button>
         <button type="button" class="btn good" id="btnGoRoute">Route →</button>
+      </div>
+      <label class="field" style="margin-top:0.55rem">JLCPCB fab profile</label>
+      <select id="fabProfileSel">${fabOpts}</select>
+      <button type="button" class="btn" id="btnApplyFab" style="margin-top:0.35rem">Apply fab profile</button>
+      <div class="sim-chip" id="fabProfileInfo" style="margin-top:0.45rem;font-size:0.72rem">
+        ${fab ? `<strong>${esc(fab.label)}</strong><br/>${esc(fab.summary || '')}
+          ${(fab.suggestions||[]).length ? `<br/><span class="muted">Tips: ${esc((fab.suggestions||[]).slice(0,2).join(' · '))}</span>` : ''}
+          ${(fab.limitations||[]).length ? `<br/><span class="muted">Limits: ${esc((fab.limitations||[]).slice(0,2).join(' · '))}</span>` : ''}`
+          : 'Pick 2L / 4L / 6L recommended or capability floors.'}
       </div>
       <table class="compact">
         <tr><th>Parts</th><td>${sess.components ?? '—'} · <strong>${sess.movable ?? 0}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
@@ -1213,6 +1235,28 @@
     });
     $('#btnImprove')?.addEventListener('click', () => startJob('improve').catch(e => alert(e.message)));
     $('#btnGoRoute')?.addEventListener('click', () => setStep(2));
+    $('#btnApplyFab')?.addEventListener('click', async () => {
+      if (!state.live) return alert('physics-router serve required');
+      const profile = $('#fabProfileSel')?.value || '4layer_recommended';
+      try {
+        const res = await api('/api/fab-profile', { method: 'POST', body: JSON.stringify({ profile }) });
+        state.snap = { ...(state.snap || {}), fab_profile: res.fab_profile, fab_profiles: res.fab_profiles || state.snap?.fab_profiles };
+        // refresh panel text
+        renderStepPanel();
+      } catch (e) {
+        alert(e.message || String(e));
+      }
+    });
+    $('#fabProfileSel')?.addEventListener('change', () => {
+      const fabs = state.snap?.fab_profiles || [];
+      const fab = fabs.find(f => f.id === $('#fabProfileSel').value);
+      const box = $('#fabProfileInfo');
+      if (box && fab) {
+        box.innerHTML = `<strong>${esc(fab.label)}</strong><br/>${esc(fab.summary || '')}`
+          + ((fab.suggestions||[]).length ? `<br/><span class="muted">Tips: ${esc(fab.suggestions.slice(0,2).join(' · '))}</span>` : '')
+          + ((fab.limitations||[]).length ? `<br/><span class="muted">Limits: ${esc(fab.limitations.slice(0,2).join(' · '))}</span>` : '');
+      }
+    });
     $('#btnTestsK')?.addEventListener('click', () => startJob('tests', { k: $('#testK')?.value }).catch(e => alert(e.message)));
     const box = $('#weightBox');
     if (box) {
@@ -2204,9 +2248,10 @@
     }
     if (type === 'route_topor' || type === 'route_clearance' || type === 'route_guide') {
       type = 'route_topor';
-      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
-      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
+      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.15');
+      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.15');
       params.auto_apply = false;
+      params.fab_profile = state.snap?.fab_profile || $('#fabProfileSel')?.value || '4layer_recommended';
       const nv = $('#rtVariants')?.value;
       if (nv !== undefined && nv !== null && String(nv).trim() !== '') {
         params.num_variants = Math.max(1, Math.min(4, parseInt(nv, 10) || 1));
@@ -2219,8 +2264,9 @@
       params.do_place = !!$('#imPlace')?.checked;
       params.require_drc_clean = !!$('#imDrc')?.checked;
       params.require_complete = true;
-      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
-      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
+      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.15');
+      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.15');
+      params.fab_profile = state.snap?.fab_profile || $('#fabProfileSel')?.value || '4layer_recommended';
     }
     if (type === 'tests' && params.k) {
       params.patterns = [params.k];

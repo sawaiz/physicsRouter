@@ -141,6 +141,8 @@ class AppState:
         self.step_url: str | None = None
         self.selected_route: str | None = None  # guide | topor | …
         self.routed_pcb_path: str | None = None  # last applied copper PCB
+        # JLCPCB fab profile: 2layer_* / 4layer_* / 6layer_* (recommended|capability)
+        self.fab_profile: str = "4layer_recommended"
         # Prefer HALO-90 when the open test project is present
         if HALO_CFG.exists() and HALO_PCB.exists():
             self._load_preset("halo-90")
@@ -554,14 +556,24 @@ class AppState:
             board = copy.deepcopy(self.board())
             cfg = self.config
             pcb_path = self.pcb_path
-        from physics_router.design_rules import jlcpcb_4layer_design_rules
-
-        rules = (
-            load_design_rules(pcb_path, manufacturer="JLCPCB")
-            if pcb_path and Path(pcb_path).exists()
-            else jlcpcb_4layer_design_rules()
+        from physics_router.design_rules import (
+            jlcpcb_design_rules,
+            list_jlcpcb_profiles,
+            parse_jlc_profile,
         )
-        # Default clearance/grid from JLCPCB 4L floors unless caller overrides
+
+        with self.lock:
+            fab_profile = str(p.get("fab_profile") or self.fab_profile or "4layer_recommended")
+            self.fab_profile = fab_profile
+        n_layers, aggressive = parse_jlc_profile(fab_profile)
+        rules = (
+            load_design_rules(
+                pcb_path, manufacturer="JLCPCB", jlc_profile=fab_profile
+            )
+            if pcb_path and Path(pcb_path).exists()
+            else jlcpcb_design_rules(layers=n_layers, aggressive=aggressive)
+        )
+        # Default clearance/grid from selected JLC profile floors unless caller overrides
         clearance = float(p.get("clearance_mm", rules.constraints.min_clearance_mm))
         grid = float(p.get("grid_mm", max(0.15, rules.constraints.min_track_width_mm)))
         num_variants = p.get("num_variants")
@@ -580,13 +592,21 @@ class AppState:
         )
         self.log(
             job,
-            f"  DRC floors JLC4L: track≥{rules.constraints.min_track_width_mm}mm "
+            f"  DRC floors JLC{n_layers}L: track≥{rules.constraints.min_track_width_mm}mm "
             f"clear≥{rules.constraints.min_clearance_mm}mm "
             f"via≥{rules.constraints.min_via_diameter_mm}/"
             f"{rules.constraints.min_via_drill_mm}mm "
             f"edge≥{rules.constraints.min_copper_edge_clearance_mm}mm "
             f"blind/buried={'yes' if rules.constraints.allow_blind_buried_vias else 'no'}",
         )
+        # Log profile suggestions / limitations (first lines)
+        for prof in list_jlcpcb_profiles():
+            if prof["id"] == fab_profile:
+                for s in (prof.get("suggestions") or [])[:2]:
+                    self.log(job, f"  tip: {s}")
+                for lim in (prof.get("limitations") or [])[:2]:
+                    self.log(job, f"  limit: {lim}")
+                break
 
         last_pub = {"n": -1}
 
@@ -1501,7 +1521,15 @@ class AppState:
                 "jobs": jobs,
                 "job_types": JOB_CATALOG,
                 "presets": list_presets(),
+                "fab_profile": self.fab_profile,
+                "fab_profiles": _fab_profiles_payload(),
             }
+
+
+def _fab_profiles_payload() -> list[dict[str, Any]]:
+    from physics_router.design_rules import list_jlcpcb_profiles
+
+    return list_jlcpcb_profiles()
 
 
 def list_presets() -> list[dict[str, Any]]:
@@ -1857,6 +1885,34 @@ class Handler(SimpleHTTPRequestHandler):
                 with STATE.lock:
                     save_config(STATE.config, dest)
                 return self._json(200, {"saved": dest})
+            if path == "/api/fab-profile":
+                from physics_router.design_rules import JLCPCB_PROFILES, parse_jlc_profile
+
+                pid = str(body.get("profile") or body.get("id") or "").strip()
+                if not pid:
+                    return self._json(400, {"error": "profile required"})
+                # Normalize aliases
+                layers, agg = parse_jlc_profile(pid)
+                norm = f"{layers}layer_{'capability' if agg else 'recommended'}"
+                if norm not in JLCPCB_PROFILES and pid not in JLCPCB_PROFILES:
+                    return self._json(
+                        400,
+                        {
+                            "error": f"unknown profile {pid}",
+                            "known": list(JLCPCB_PROFILES.keys()),
+                        },
+                    )
+                with STATE.lock:
+                    STATE.fab_profile = pid if pid in JLCPCB_PROFILES else norm
+                    snap = STATE.snapshot()
+                return self._json(
+                    200,
+                    {
+                        "fab_profile": STATE.fab_profile,
+                        "session": snap.get("session"),
+                        "fab_profiles": snap.get("fab_profiles"),
+                    },
+                )
             return self._json(404, {"error": f"unknown api {path}"})
         except Exception as e:
             return self._json(500, {"error": str(e), "trace": traceback.format_exc()[-1500:]})
