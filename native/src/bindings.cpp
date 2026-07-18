@@ -117,6 +117,7 @@ PYBIND11_MODULE(pr_native, m) {
       "route_board",
       [](const std::vector<pr::NetSpec> &nets, const pr::RouteConfig &cfg,
          const std::vector<pr::RectObs> &obs) {
+        py::gil_scoped_release release;
         return pr::route_board(nets, cfg, obs, nullptr);
       },
       py::arg("nets"), py::arg("cfg"), py::arg("obstacles") = std::vector<pr::RectObs>{});

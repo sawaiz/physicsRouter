@@ -188,7 +188,7 @@ std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
 
 } // namespace
 
-const char *native_version() { return "1.5.0-native-clearance"; }
+const char *native_version() { return "1.6.0-native-bundle"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -518,8 +518,15 @@ int remove_redundant_vias(RouteResult &r, GridMap &grid, const RouteConfig &cfg)
 }
 
 static void post_rubberband(RouteResult &r, GridMap &grid) {
-  // Rebuild continuous chains per net/layer and rubberband
+  // Rebuild continuous chains per net/layer and rubberband. Multipin nets are
+  // spanning trees, not polylines: greedily chaining through a branch can
+  // collapse one arm and silently disconnect an anchor. Preserve those trees
+  // until a branch-aware graph rubberband is available.
   std::vector<Segment> out;
+  std::unordered_map<int, bool> preserve_tree;
+  for (const auto &report : r.net_reports)
+    preserve_tree[report.net_id] = report.pins > 2;
+  int preserved_trees = 0;
   // Group by net+layer
   std::unordered_map<long long, std::vector<Segment>> groups;
   for (const auto &s : r.segments) {
@@ -531,6 +538,14 @@ static void post_rubberband(RouteResult &r, GridMap &grid) {
     auto &segs = kv.second;
     if (segs.empty())
       continue;
+    const int group_net = segs.front().net_id;
+    if (preserve_tree[group_net]) {
+      out.insert(out.end(), segs.begin(), segs.end());
+      for (const auto &segment : segs)
+        total += dist({segment.x1, segment.y1}, {segment.x2, segment.y2});
+      ++preserved_trees;
+      continue;
+    }
     // Build polylines by chaining endpoints
     std::vector<char> used(segs.size(), 0);
     for (size_t seed = 0; seed < segs.size(); ++seed) {
@@ -581,6 +596,10 @@ static void post_rubberband(RouteResult &r, GridMap &grid) {
     r.total_length_mm = total;
     r.notes.push_back("post_rubberband: segs " + std::to_string(before) + "→" +
                       std::to_string(r.segments.size()));
+    if (preserved_trees > 0)
+      r.notes.push_back("post_rubberband: preserved " +
+                        std::to_string(preserved_trees) +
+                        " multipin tree layer(s)");
   }
 }
 
@@ -668,7 +687,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
   std::vector<int> order(nets.size());
   for (size_t i = 0; i < nets.size(); ++i)
     order[i] = static_cast<int>(i);
-  std::sort(order.begin(), order.end(), [&](int a, int b) {
+  std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
     if (nets[a].priority != nets[b].priority)
       return nets[a].priority > nets[b].priority;
     return nets[a].anchors.size() < nets[b].anchors.size();
