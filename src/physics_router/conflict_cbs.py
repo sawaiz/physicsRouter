@@ -158,9 +158,9 @@ def _anchors_for_net(board: BoardModel, net: str) -> list[tuple[float, float]]:
 
     pins = board.nets.get(net) or []
     anchors: list[tuple[float, float]] = []
-    for ref, _pad in pins:
+    for ref, pad in pins:
         if ref in board.components:
-            anchors.append(fanout_anchor(board, ref, net))
+            anchors.append(fanout_anchor(board, ref, net, pad_num=str(pad)))
     uniq: list[tuple[float, float]] = []
     for a in anchors:
         if not any(_dist(a, u) < 0.05 for u in uniq):
