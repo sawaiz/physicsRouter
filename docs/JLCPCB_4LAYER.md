@@ -1,64 +1,71 @@
-# JLCPCB 4-layer design rules (DRC / ERC floors)
+# JLCPCB design rules (2 / 4 / 6 layer)
 
-physicsRouter defaults multilayer work to **JLCPCB 4-layer FR-4** production
-floors so autoroutes and DRC checks match fab capability.
+physicsRouter can apply **JLCPCB FR-4** manufacturing floors for **2-layer**,
+**4-layer**, or **6-layer** boards. Pick a profile in the UI (Board step) or via
+API / `load_design_rules(..., jlc_profile=...)`.
 
 Source: [JLCPCB PCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities).
 
-## Profiles
+## Profiles (pick one)
 
-| Profile | Track / space | Via (pad/drill) | Edge copper | Use when |
-|---------|---------------|-----------------|-------------|----------|
-| **4layer_recommended** (default) | ≥0.15 mm | 0.6 / 0.3 mm | ≥0.3 mm | Cheap reliable 4L |
-| **4layer_capability** | ≥0.09 mm | 0.45 / 0.2 mm | ≥0.2 mm | Dense layout, absolute fab min |
+| Profile id | Layers | Track / space | Via pad/drill | Edge copper | When to use |
+|------------|--------|---------------|---------------|-------------|-------------|
+| `2layer_recommended` | 2 | ≥0.20 mm | 0.6 / 0.3 | ≥0.3 mm | Cheap prototypes, simple PCBs |
+| `2layer_capability` | 2 | ≥0.10 mm | 0.45 / 0.2 | ≥0.2 mm | Dense 2L (DFM risk / cost) |
+| `4layer_recommended` | 4 | ≥0.15 mm | 0.6 / 0.3 | ≥0.3 mm | **Default** for most designs |
+| `4layer_capability` | 4 | ≥0.09 mm | 0.45 / 0.2 | ≥0.2 mm | BGA / dense multipin |
+| `6layer_recommended` | 6 | ≥0.15 mm | 0.6 / 0.3 | ≥0.3 mm | HS / extra planes |
+| `6layer_capability` | 6 | ≥0.09 mm | 0.45 / 0.2 | ≥0.2 mm | High density 6L |
 
-Both profiles:
+### Shared limitations (all JLC profiles)
 
-- **No blind/buried vias** (unsupported at JLCPCB)
-- **No microvias**
-- Through-hole vias only
-- 1.6 mm thickness, 1 oz outer / 0.5 oz inner (typical)
-- Stack: `F.Cu` / `In1.Cu` / `In2.Cu` / `B.Cu` — signals outer, planes inner
+- **No blind / buried vias** (through-hole only)
+- **No microvias** / HDI stacks
+- Outer copper typically **1 oz**, inner **0.5 oz** (multi)
+- Thickness default **1.6 mm**
 
-## Other DRC-related floors (recommended)
+## Suggestions by layer count
 
-| Item | Value |
-|------|-------|
-| Via → track | ≥0.2 mm |
-| PTH → track | ≥0.35 mm recommended (abs 0.28) |
-| Via hole–hole | ≥0.2 mm (capability) |
-| Pad hole–hole | ≥0.45 mm |
-| Solder mask bridge | ≥0.10 mm (1 oz green) |
-| Silk → pad | ≥0.15 mm |
-| Silk line / text | ≥0.15 mm / ≥1.0 mm height |
+### 2-layer
+- Put **GND pour on B.Cu** under signal clusters  
+- Expect **more vias** for crossings; keep power short and wide  
+- Dense LED matrices / BGA usually need **4L+**
 
-## ERC policy
+### 4-layer
+- Prefer **SIG / GND / PWR / SIG** (or SIG–GND–GND–SIG)  
+- Route signals on outer layers; keep inners for return/power pours  
+- Best cost / capability balance for mixed-signal wearables
 
-ERC remains schematic-side (`kicad-cli sch erc`). Router-side expectations:
-
-- Power / ground use dedicated net classes (wider copper, plane layers)
-- No reliance on microvia or blind/buried connectivity
-- Unconnected pins reported via router unrouted list + KiCad DRC unconnected
+### 6-layer
+- Prefer solid reference next to high-speed nets  
+- Through-hole vias still stub the full stack — length-match carefully  
+- Use JLC impedance calculator for controlled-Z stacks  
 
 ## API
 
 ```python
 from physics_router.design_rules import (
+    jlcpcb_design_rules,
+    jlcpcb_2layer_design_rules,
     jlcpcb_4layer_design_rules,
+    jlcpcb_6layer_design_rules,
+    list_jlcpcb_profiles,
     load_design_rules,
-    apply_manufacturer_floors,
 )
 
-rules = jlcpcb_4layer_design_rules()                 # recommended
-rules = jlcpcb_4layer_design_rules(aggressive=True)  # capability
-rules = load_design_rules(pcb_path, manufacturer="JLCPCB")
+rules = jlcpcb_design_rules(layers=2)              # recommended 2L
+rules = jlcpcb_design_rules(layers=6, aggressive=True)
+rules = load_design_rules(pcb, jlc_profile="6layer_recommended")
+print(list_jlcpcb_profiles())  # UI catalog
 ```
 
-`load_design_rules` merges KiCad project numbers, then **raises** any floor that
-is looser than JLCPCB (keeps stricter project values).
+### HTTP
+
+- `GET /api/snapshot` → `fab_profile`, `fab_profiles[]` (label, summary, suggestions, limitations)
+- `POST /api/fab-profile` `{"profile": "2layer_recommended"}`  
+- Route / Improve jobs accept `params.fab_profile`
 
 ## Router defaults
 
-- TopoR / hybrid / improve: clearance default = JLC min clearance  
-- Grid default ≈ max(0.15, min track)  
-- Native C++ free-angle path for geometry search; Python only for polish / hybrid planning  
+Clearance / grid default from the **selected profile** floors. Geometry search
+stays on the **native C++** path.

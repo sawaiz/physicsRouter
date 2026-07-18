@@ -195,56 +195,207 @@ def default_design_rules() -> DesignRules:
     )
 
 
-def jlcpcb_4layer_design_rules(*, aggressive: bool = False) -> DesignRules:
-    """JLCPCB 4-layer FR-4 manufacturing profile (1.6 mm, 1 oz outer / 0.5 oz inner).
+# Profile id → human metadata (suggestions / limitations for UI)
+JLCPCB_PROFILES: dict[str, dict[str, Any]] = {
+    "2layer_recommended": {
+        "layers": 2,
+        "aggressive": False,
+        "label": "2-layer recommended",
+        "summary": "Cheapest JLC process; good for simple boards and prototypes.",
+        "suggestions": [
+            "Use pours on B.Cu for GND return under signals",
+            "Prefer 0.2 mm track / 0.2 mm clearance for easy DFM",
+            "Via 0.6/0.3 mm (pad/drill) avoids special-via surcharges",
+            "Keep copper ≥0.3 mm from board outline",
+        ],
+        "limitations": [
+            "No inner planes — higher EMI and harder power distribution",
+            "Dense BGA / charlieplex often needs 4L+",
+            "Crossings require vias (each via costs impedance discontinuity)",
+            "Blind/buried and microvias not supported",
+        ],
+    },
+    "2layer_capability": {
+        "layers": 2,
+        "aggressive": True,
+        "label": "2-layer capability (min)",
+        "summary": "Absolute 1 oz 2L fab floors (4/4 mil track/space).",
+        "suggestions": [
+            "Use only where density requires it; verify DFM in JLC cart",
+            "Prefer 0.2 mm via drill when possible (0.15 mm costs more)",
+        ],
+        "limitations": [
+            "Tighter geometries increase scrap risk and cost",
+            "Same 2L topology limits as recommended profile",
+            "Blind/buried and microvias not supported",
+        ],
+    },
+    "4layer_recommended": {
+        "layers": 4,
+        "aggressive": False,
+        "label": "4-layer recommended (default)",
+        "summary": "Standard SIG–GND–PWR–SIG style stack; best default for most boards.",
+        "suggestions": [
+            "Route signals on F.Cu/B.Cu; keep In1/In2 as plane-like pours",
+            "0.15 mm track/space and 0.6/0.3 vias pass free DFM cleanly",
+            "Use hybrid free-angle with matrix buses striped across layers",
+        ],
+        "limitations": [
+            "Blind/buried vias not supported (through-hole only)",
+            "Microvias not supported",
+            "Inner copper default 0.5 oz — current-heavy planes need pours",
+        ],
+    },
+    "4layer_capability": {
+        "layers": 4,
+        "aggressive": True,
+        "label": "4-layer capability (min)",
+        "summary": "Multilayer capability floor (3.5/3.5 mil, small vias).",
+        "suggestions": [
+            "Reserve for BGA fanout or dense LED matrices",
+            "Watch annular ring (≥0.15 mm multi absolute min)",
+        ],
+        "limitations": [
+            "Higher cost / DFM flags on tiny vias",
+            "Still no blind/buried or microvias",
+        ],
+    },
+    "6layer_recommended": {
+        "layers": 6,
+        "aggressive": False,
+        "label": "6-layer recommended",
+        "summary": "Extra planes for HS / mixed-signal; more routing channels.",
+        "suggestions": [
+            "Typical: SIG–GND–SIG–PWR–GND–SIG (or SIG–GND–SIG–SIG–GND–SIG)",
+            "Keep high-speed adjacent to a solid reference plane",
+            "Still use through-hole vias only at JLC",
+            "Prefer 0.15 mm track/space and 0.6/0.3 vias for easy DFM",
+        ],
+        "limitations": [
+            "Higher cost and longer fab time than 4L",
+            "Blind/buried still unsupported — via stubs on thick stacks",
+            "Microvias not supported; HDI stacks need other fabs",
+            "Impedance control needs JLC impedance calculator + stack notes",
+        ],
+    },
+    "6layer_capability": {
+        "layers": 6,
+        "aggressive": True,
+        "label": "6-layer capability (min)",
+        "summary": "Same capability floors as multi-layer, 6 copper layers.",
+        "suggestions": [
+            "Use only for density; verify stack in JLC impedance tool",
+        ],
+        "limitations": [
+            "Through-hole vias only (stub resonance risk on thick boards)",
+            "No microvia / blind-buried HDI",
+            "Costly if many small drills",
+        ],
+    },
+}
 
-    Values follow JLCPCB published capabilities (2024–2025):
+
+def list_jlcpcb_profiles() -> list[dict[str, Any]]:
+    """UI/API catalog of selectable JLCPCB fab profiles."""
+    out: list[dict[str, Any]] = []
+    for pid, meta in JLCPCB_PROFILES.items():
+        out.append(
+            {
+                "id": pid,
+                "layers": meta["layers"],
+                "aggressive": meta["aggressive"],
+                "label": meta["label"],
+                "summary": meta["summary"],
+                "suggestions": list(meta["suggestions"]),
+                "limitations": list(meta["limitations"]),
+            }
+        )
+    return out
+
+
+def _jlc_stackup(layers: int) -> tuple[list[str], list[StackupLayer]]:
+    """Approximate FR-4 stack for physics export (not a fab construction sheet)."""
+    outer = 0.035  # ~1 oz
+    inner = 0.0175  # ~0.5 oz
+    if layers == 2:
+        copper = ["F.Cu", "B.Cu"]
+        stackup = [
+            StackupLayer(name="F.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+            StackupLayer(
+                name="dielectric_core",
+                layer_type="core",
+                thickness_mm=1.53,
+                material="FR4",
+                epsilon_r=4.5,
+            ),
+            StackupLayer(name="B.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+        ]
+    elif layers == 6:
+        copper = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"]
+        # SIG GND SIG PWR GND SIG style thicknesses (approximate)
+        stackup = [
+            StackupLayer(name="F.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+            StackupLayer(name="pp1", layer_type="prepreg", thickness_mm=0.12, material="FR4", epsilon_r=4.4),
+            StackupLayer(name="In1.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="core1", layer_type="core", thickness_mm=0.3, material="FR4", epsilon_r=4.5),
+            StackupLayer(name="In2.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="pp2", layer_type="prepreg", thickness_mm=0.2, material="FR4", epsilon_r=4.4),
+            StackupLayer(name="In3.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="core2", layer_type="core", thickness_mm=0.3, material="FR4", epsilon_r=4.5),
+            StackupLayer(name="In4.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="pp3", layer_type="prepreg", thickness_mm=0.12, material="FR4", epsilon_r=4.4),
+            StackupLayer(name="B.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+        ]
+    else:
+        # 4L default
+        copper = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+        stackup = [
+            StackupLayer(name="F.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+            StackupLayer(name="dielectric_prepreg1", layer_type="prepreg", thickness_mm=0.2, material="FR4", epsilon_r=4.4),
+            StackupLayer(name="In1.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="dielectric_core", layer_type="core", thickness_mm=1.1, material="FR4", epsilon_r=4.5),
+            StackupLayer(name="In2.Cu", layer_type="copper", thickness_mm=inner, material="Cu"),
+            StackupLayer(name="dielectric_prepreg2", layer_type="prepreg", thickness_mm=0.2, material="FR4", epsilon_r=4.4),
+            StackupLayer(name="B.Cu", layer_type="copper", thickness_mm=outer, material="Cu"),
+        ]
+    z = 0.0
+    for ly in reversed(stackup):
+        ly.z0_mm = z
+        z += ly.thickness_mm
+    return copper, stackup
+
+
+def jlcpcb_design_rules(
+    *,
+    layers: int = 4,
+    aggressive: bool = False,
+) -> DesignRules:
+    """JLCPCB FR-4 manufacturing profile for 2 / 4 / 6 copper layers.
+
+    Values follow JLCPCB published capabilities:
     https://jlcpcb.com/capabilities/pcb-capabilities
 
-    * ``aggressive=False`` (default) — production-friendly floors (recommended
-      annular, 0.3 mm drill, 0.15 mm track/space) that pass free DFM without
-      “special via” surcharges.
-    * ``aggressive=True`` — absolute capability floors (3.5 mil track/space,
-      0.2 mm preferred via drill). Still forbids blind/buried (unsupported).
+    * ``aggressive=False`` — production-friendly (recommended) floors.
+    * ``aggressive=True`` — absolute capability floors.
+    Blind/buried and microvias are always disabled (unsupported at JLCPCB).
     """
+    if layers not in (2, 4, 6):
+        raise ValueError("layers must be 2, 4, or 6")
+
+    multi = layers >= 4
     if aggressive:
-        # Capability floor (1 oz multilayer): 0.09/0.09 track/space; via 0.45/0.2
+        # Capability: 2L 0.10/0.10; multi 0.09/0.09; via multi 0.25/0.15 abs, prefer 0.45/0.2
+        track = 0.10 if layers == 2 else 0.09
         c = BoardConstraints(
-            min_clearance_mm=0.09,
-            min_track_width_mm=0.09,
-            min_via_diameter_mm=0.45,
+            min_clearance_mm=track,
+            min_track_width_mm=track,
+            min_via_diameter_mm=0.45 if multi else 0.45,
             min_via_drill_mm=0.2,
-            min_via_annular_mm=0.15,  # multilayer absolute minimum annular
-            min_copper_edge_clearance_mm=0.2,  # routed edge copper clearance
-            min_hole_to_hole_mm=0.2,  # via–via
+            min_via_annular_mm=0.15 if multi else 0.18,
+            min_copper_edge_clearance_mm=0.2,
+            min_hole_to_hole_mm=0.2,
             min_via_to_track_mm=0.2,
             min_pth_to_track_mm=0.28,
-            min_solder_mask_bridge_mm=0.1,
-            min_silk_to_pad_mm=0.15,
-            min_silk_line_width_mm=0.15,
-            min_silk_text_height_mm=1.0,
-            allow_microvias=False,
-            allow_blind_buried_vias=False,  # JLCPCB: not supported
-            board_thickness_mm=1.6,
-            outer_copper_oz=1.0,
-            inner_copper_oz=0.5,
-            manufacturer="JLCPCB",
-            manufacturer_profile="4layer_capability",
-        )
-        default_w, default_cl = 0.127, 0.127
-        via_d, via_drill = 0.45, 0.2
-    else:
-        # Recommended production defaults (cheap 4L process, reliable DFM)
-        c = BoardConstraints(
-            min_clearance_mm=0.15,
-            min_track_width_mm=0.15,
-            min_via_diameter_mm=0.6,
-            min_via_drill_mm=0.3,
-            min_via_annular_mm=0.15,
-            min_copper_edge_clearance_mm=0.3,
-            min_hole_to_hole_mm=0.45,  # pad hole spacing (safer than via–via 0.2)
-            min_via_to_track_mm=0.2,
-            min_pth_to_track_mm=0.35,  # JLCPCB recommended ≥0.35
             min_solder_mask_bridge_mm=0.1,
             min_silk_to_pad_mm=0.15,
             min_silk_line_width_mm=0.15,
@@ -253,45 +404,64 @@ def jlcpcb_4layer_design_rules(*, aggressive: bool = False) -> DesignRules:
             allow_blind_buried_vias=False,
             board_thickness_mm=1.6,
             outer_copper_oz=1.0,
-            inner_copper_oz=0.5,
+            inner_copper_oz=0.5 if multi else 0.0,
             manufacturer="JLCPCB",
-            manufacturer_profile="4layer_recommended",
+            manufacturer_profile=f"{layers}layer_capability",
         )
-        default_w, default_cl = 0.2, 0.15
+        default_w, default_cl = 0.127, 0.127
+        via_d, via_drill = 0.45, 0.2
+    else:
+        c = BoardConstraints(
+            min_clearance_mm=0.15 if multi else 0.2,
+            min_track_width_mm=0.15 if multi else 0.2,
+            min_via_diameter_mm=0.6,
+            min_via_drill_mm=0.3,
+            min_via_annular_mm=0.15 if multi else 0.2,
+            min_copper_edge_clearance_mm=0.3,
+            min_hole_to_hole_mm=0.45,
+            min_via_to_track_mm=0.2,
+            min_pth_to_track_mm=0.35,
+            min_solder_mask_bridge_mm=0.1,
+            min_silk_to_pad_mm=0.15,
+            min_silk_line_width_mm=0.15,
+            min_silk_text_height_mm=1.0,
+            allow_microvias=False,
+            allow_blind_buried_vias=False,
+            board_thickness_mm=1.6,
+            outer_copper_oz=1.0,
+            inner_copper_oz=0.5 if multi else 0.0,
+            manufacturer="JLCPCB",
+            manufacturer_profile=f"{layers}layer_recommended",
+        )
+        default_w = 0.2 if layers == 2 else 0.2
+        default_cl = 0.2 if layers == 2 else 0.15
         via_d, via_drill = 0.6, 0.3
 
-    # Typical JLC 1.6 mm 4L stack (approximate thicknesses for physics export)
-    # Outer finished ~1 oz (0.035 mm), inner ~0.5 oz (0.0175 mm)
-    stackup = [
-        StackupLayer(name="F.Cu", layer_type="copper", thickness_mm=0.035, material="Cu", z0_mm=1.6 - 0.035),
-        StackupLayer(name="dielectric_prepreg1", layer_type="prepreg", thickness_mm=0.2, material="FR4", epsilon_r=4.4),
-        StackupLayer(name="In1.Cu", layer_type="copper", thickness_mm=0.0175, material="Cu"),
-        StackupLayer(name="dielectric_core", layer_type="core", thickness_mm=1.1, material="FR4", epsilon_r=4.5),
-        StackupLayer(name="In2.Cu", layer_type="copper", thickness_mm=0.0175, material="Cu"),
-        StackupLayer(name="dielectric_prepreg2", layer_type="prepreg", thickness_mm=0.2, material="FR4", epsilon_r=4.4),
-        StackupLayer(name="B.Cu", layer_type="copper", thickness_mm=0.035, material="Cu", z0_mm=0.0),
-    ]
-    # Assign z bottoms roughly from bottom
-    z = 0.0
-    for ly in reversed(stackup):
-        ly.z0_mm = z
-        z += ly.thickness_mm
+    copper, stackup = _jlc_stackup(layers)
+    if layers == 2:
+        sig, plane = ["F.Cu", "B.Cu"], ["B.Cu"]
+    elif layers == 6:
+        # Prefer outer + mid signal; inners 1/4 as GND-like, 3 as PWR-like
+        sig = ["F.Cu", "In2.Cu", "In3.Cu", "B.Cu"]
+        plane = ["In1.Cu", "In4.Cu", "In3.Cu"]
+    else:
+        sig, plane = ["F.Cu", "B.Cu"], ["In1.Cu", "In2.Cu"]
 
-    copper = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    meta = JLCPCB_PROFILES.get(c.manufacturer_profile, {})
     rules = DesignRules(
         copper_layers=copper,
         all_layers=copper
         + ["F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "Edge.Cuts", "F.Paste", "B.Paste"],
         stackup=stackup,
         constraints=c,
-        track_width_presets_mm=[0.15, 0.2, 0.25, 0.3, 0.5, 0.8, 1.0],
+        track_width_presets_mm=[0.1, 0.127, 0.15, 0.2, 0.25, 0.3, 0.5, 0.8, 1.0],
         via_presets=[
             {"diameter": via_d, "drill": via_drill},
             {"diameter": 0.45, "drill": 0.2},
             {"diameter": 0.8, "drill": 0.4},
         ],
-        preferred_signal_layers=["F.Cu", "B.Cu"],
-        preferred_plane_layers=["In1.Cu", "In2.Cu"],
+        preferred_signal_layers=sig,
+        preferred_plane_layers=plane,
         net_classes={
             "Default": NetClassRules(
                 name="Default",
@@ -303,7 +473,7 @@ def jlcpcb_4layer_design_rules(*, aggressive: bool = False) -> DesignRules:
             "Power": NetClassRules(
                 name="Power",
                 clearance_mm=max(default_cl, 0.2),
-                track_width_mm=max(default_w, 0.4),
+                track_width_mm=max(default_w, 0.5 if layers == 2 else 0.4),
                 via_diameter_mm=max(via_d, 0.6),
                 via_drill_mm=max(via_drill, 0.3),
             ),
@@ -323,16 +493,58 @@ def jlcpcb_4layer_design_rules(*, aggressive: bool = False) -> DesignRules:
             ),
         },
         notes=[
-            "JLCPCB 4-layer FR-4 profile (no blind/buried vias)",
+            f"JLCPCB {layers}-layer FR-4 profile (through-hole vias only)",
             f"profile={c.manufacturer_profile} thickness={c.board_thickness_mm}mm "
             f"outer={c.outer_copper_oz}oz inner={c.inner_copper_oz}oz",
             f"DRC floors: track≥{c.min_track_width_mm}mm clearance≥{c.min_clearance_mm}mm "
-            f"via≥{c.min_via_diameter_mm}/{c.min_via_drill_mm}mm edge≥{c.min_copper_edge_clearance_mm}mm",
-            "ERC: power/gnd net classes for connectivity; no microvias/blind/buried",
+            f"via≥{c.min_via_diameter_mm}/{c.min_via_drill_mm}mm "
+            f"edge≥{c.min_copper_edge_clearance_mm}mm",
+            "ERC: Power/Ground net classes; no microvias/blind/buried",
+            f"suggestions: {'; '.join(meta.get('suggestions', [])[:2])}",
+            f"limitations: {'; '.join(meta.get('limitations', [])[:2])}",
         ],
     )
     _finalize_layer_roles(rules)
     return rules
+
+
+def jlcpcb_4layer_design_rules(*, aggressive: bool = False) -> DesignRules:
+    """Back-compat wrapper → :func:`jlcpcb_design_rules` with ``layers=4``."""
+    return jlcpcb_design_rules(layers=4, aggressive=aggressive)
+
+
+def jlcpcb_2layer_design_rules(*, aggressive: bool = False) -> DesignRules:
+    return jlcpcb_design_rules(layers=2, aggressive=aggressive)
+
+
+def jlcpcb_6layer_design_rules(*, aggressive: bool = False) -> DesignRules:
+    return jlcpcb_design_rules(layers=6, aggressive=aggressive)
+
+
+def parse_jlc_profile(profile: str | None) -> tuple[int, bool]:
+    """Return ``(layers, aggressive)`` for a profile id like ``4layer_recommended``."""
+    p = (profile or "4layer_recommended").strip().lower().replace(" ", "").replace("-", "")
+    # aliases
+    aliases = {
+        "2l": "2layer_recommended",
+        "2layer": "2layer_recommended",
+        "4l": "4layer_recommended",
+        "4layer": "4layer_recommended",
+        "6l": "6layer_recommended",
+        "6layer": "6layer_recommended",
+        "2lmin": "2layer_capability",
+        "4lmin": "4layer_capability",
+        "6lmin": "6layer_capability",
+    }
+    p = aliases.get(p, p)
+    if p not in JLCPCB_PROFILES:
+        # try Nlayer_recommended
+        if p.endswith("layer"):
+            p = p + "_recommended"
+    if p not in JLCPCB_PROFILES:
+        p = "4layer_recommended"
+    meta = JLCPCB_PROFILES[p]
+    return int(meta["layers"]), bool(meta["aggressive"])
 
 
 def apply_manufacturer_floors(
@@ -344,11 +556,14 @@ def apply_manufacturer_floors(
     """Raise rule floors so they never undercut the manufacturer profile.
 
     Existing KiCad project rules that are *tighter* (larger mins) are kept.
+    Copper layer list is only replaced when the board has fewer layers than the
+    selected profile (e.g. synthetic 2L board upgraded to 4L template).
     """
-    if manufacturer.upper() in ("JLC", "JLCPCB"):
-        mfg = jlcpcb_4layer_design_rules(aggressive=(profile == "4layer_capability"))
-    else:
+    if manufacturer.upper() not in ("JLC", "JLCPCB"):
         return rules
+
+    layers, aggressive = parse_jlc_profile(profile)
+    mfg = jlcpcb_design_rules(layers=layers, aggressive=aggressive)
 
     c, m = rules.constraints, mfg.constraints
     # Take the max of each geometric floor (more conservative for fab)
@@ -396,16 +611,24 @@ def apply_manufacturer_floors(
         nc.via_diameter_mm = max(nc.via_diameter_mm, c.min_via_diameter_mm)
         nc.via_drill_mm = max(nc.via_drill_mm, c.min_via_drill_mm)
 
-    # 4L copper order if board already has 4 layers, else adopt JLC 4L names
-    if len(rules.copper_layers) < 4 and profile.startswith("4layer"):
+    # Adopt profile copper list when board is thinner than profile
+    if len(rules.copper_layers) < layers:
         rules.copper_layers = list(mfg.copper_layers)
-        if not rules.stackup:
-            rules.stackup = list(mfg.stackup)
+        rules.stackup = list(mfg.stackup)
+        rules.preferred_signal_layers = list(mfg.preferred_signal_layers)
+        rules.preferred_plane_layers = list(mfg.preferred_plane_layers)
+        rules.notes.append(
+            f"copper stack upgraded to JLCPCB {layers}L template for routing"
+        )
 
     rules.notes = list(rules.notes or [])
     tag = f"manufacturer floors applied: {c.manufacturer} {c.manufacturer_profile}"
     if tag not in rules.notes:
         rules.notes.append(tag)
+    meta = JLCPCB_PROFILES.get(c.manufacturer_profile)
+    if meta:
+        rules.notes.append("suggestions: " + "; ".join(meta["suggestions"][:3]))
+        rules.notes.append("limitations: " + "; ".join(meta["limitations"][:3]))
     _finalize_layer_roles(rules)
     return rules
 
@@ -420,7 +643,7 @@ def load_design_rules(
     """Load stackup + DRC from KiCad PCB and/or project files.
 
     When ``manufacturer`` is JLCPCB (default), rule floors are raised to the
-    4-layer production profile so router DRC never undercuts fab limits.
+    selected profile (``2layer_*`` / ``4layer_*`` / ``6layer_*``).
     Pass ``manufacturer=None`` to keep pure KiCad numbers.
     """
     rules = default_design_rules()
@@ -440,23 +663,24 @@ def load_design_rules(
 
     _finalize_layer_roles(rules)
 
-    # Auto-apply JLCPCB 4L floors for multilayer boards (or always if requested)
     if manufacturer and manufacturer.upper() in ("JLC", "JLCPCB"):
-        # Prefer capability only if project already uses sub-0.12 mm geometry
-        aggressive = jlc_profile == "4layer_capability"
+        layers_req, aggressive = parse_jlc_profile(jlc_profile)
+        # Auto-pick profile from board layer count when caller left default 4L
+        # but board is clearly 2L or 6L
+        n_cu = len(rules.copper_layers)
+        if jlc_profile in ("4layer_recommended", "4layer") and n_cu in (2, 6):
+            jlc_profile = f"{n_cu}layer_recommended"
+            layers_req, aggressive = parse_jlc_profile(jlc_profile)
+        # If project already uses sub-0.12 mm geometry, allow capability floors
         if (
             not aggressive
             and rules.constraints.min_track_width_mm < 0.12
-            and len(rules.copper_layers) >= 4
+            and "capability" not in jlc_profile
         ):
-            # Keep project intent but still forbid blind/buried
-            rules = apply_manufacturer_floors(
-                rules, manufacturer="JLCPCB", profile="4layer_capability"
-            )
-        else:
-            rules = apply_manufacturer_floors(
-                rules, manufacturer="JLCPCB", profile=jlc_profile
-            )
+            jlc_profile = f"{layers_req}layer_capability"
+        rules = apply_manufacturer_floors(
+            rules, manufacturer="JLCPCB", profile=jlc_profile
+        )
     return rules
 
 
