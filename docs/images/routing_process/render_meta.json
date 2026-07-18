@@ -1,0 +1,90 @@
+{
+  "synthetic": {
+    "tag": "synthetic",
+    "timings_s": {
+      "guide": 0.027,
+      "clearance_raw": 0.153,
+      "regeometry": 0.265
+    },
+    "metrics": {
+      "raw": {
+        "total_length_mm": 178.285,
+        "via_count": 0,
+        "bend_count": 16,
+        "multi_bend_nets": 6,
+        "arc_corners": 0,
+        "min_spacing_mm": -0.4673,
+        "segment_count": 33,
+        "net_count_routed": 7,
+        "notes": []
+      },
+      "regeometry": {
+        "total_length_mm": 178.005,
+        "via_count": 0,
+        "bend_count": 69,
+        "multi_bend_nets": 7,
+        "arc_corners": 1,
+        "min_spacing_mm": -0.4502,
+        "segment_count": 92,
+        "net_count_routed": 7,
+        "notes": [
+          "TopoR metrics: bends=69 multi_bend_nets=7 min_spacing=-0.450mm arcs=1"
+        ]
+      },
+      "guide_segs": 12,
+      "polished_segs": 92
+    },
+    "images": [
+      "synthetic_1_placement_outline.png",
+      "synthetic_2_guide_topology.png",
+      "synthetic_3_clearance_raw.png",
+      "synthetic_4_regeometry.png",
+      "synthetic_5_by_layer.png",
+      "synthetic_6_process_strip.png"
+    ]
+  },
+  "halo90": {
+    "tag": "halo90",
+    "timings_s": {
+      "guide": 0.004,
+      "clearance_raw": 0.511,
+      "regeometry": 1.393
+    },
+    "metrics": {
+      "raw": {
+        "total_length_mm": 704.098,
+        "via_count": 3,
+        "bend_count": 181,
+        "multi_bend_nets": 17,
+        "arc_corners": 0,
+        "min_spacing_mm": -0.1476,
+        "segment_count": 220,
+        "net_count_routed": 23,
+        "notes": []
+      },
+      "regeometry": {
+        "total_length_mm": 685.896,
+        "via_count": 3,
+        "bend_count": 433,
+        "multi_bend_nets": 21,
+        "arc_corners": 44,
+        "min_spacing_mm": -0.1802,
+        "segment_count": 515,
+        "net_count_routed": 23,
+        "notes": [
+          "TopoR metrics: bends=433 multi_bend_nets=21 min_spacing=-0.180mm arcs=44"
+        ]
+      },
+      "guide_segs": 217,
+      "polished_segs": 515
+    },
+    "images": [
+      "halo90_1_placement_outline.png",
+      "halo90_2_guide_topology.png",
+      "halo90_3_clearance_raw.png",
+      "halo90_4_regeometry.png",
+      "halo90_5_by_layer.png",
+      "halo90_6_process_strip.png"
+    ]
+  }
+}
