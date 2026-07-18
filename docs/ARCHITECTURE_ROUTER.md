@@ -125,15 +125,15 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 |-------|--------|
 | KiCad/DSN import, obstacle expansion, free-angle single-net | **Done** |
 | Rubberband + via remove + multi-variant | **Done** |
-| Topology signatures + radar scan + negotiated congestion | **Done (v1)** |
-| K distinct homotopy alternatives per net (dedup by signature) | Partial |
-| Rip-up/reroute conflict clusters | Roadmap |
-| Continuous elastic optimization (forces) | Roadmap |
-| Local CP-SAT / CBS on BGA/connector | Roadmap |
-| Learned net order / routability | Roadmap |
-| Physics/manufacturing score terms | Partial (placement scores) |
+| Topology signatures + radar scan + negotiated congestion | **Done** |
+| K distinct homotopy alternatives per net (dedup by signature) | **Done** (`homotopy.py`) |
+| Conflict-cluster CBS + optional CP-SAT vias | **Done** (`conflict_cbs.py`) |
+| Continuous elastic optimization (forces) | **Done** (`elastic.py`) |
+| Learned-style high-level planner (feature linear policy) | **Done** (`planner.py`) |
+| SI + manufacturing score terms | **Done** (`si_mfg.py`) |
+| Explainable “why this via” UI | **Done** (via.reason + Route panel) |
 | Incremental invalidation on component move | Roadmap |
-| Explainable “why this via” UI | Signatures stored; UI next |
+| End-to-end RL manager / PCBWorld | Roadmap |
 
 ### Strongest combined design (target)
 

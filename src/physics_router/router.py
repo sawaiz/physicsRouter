@@ -38,6 +38,10 @@ class Via:
     size_mm: float = 0.8
     drill_mm: float = 0.4
     layers: tuple[str, str] = ("F.Cu", "B.Cu")
+    # Explainable routing: why this via exists
+    reason: str = ""
+    alternatives_considered: int = 0
+    blocked_same_layer: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -114,9 +118,13 @@ class RouteResult:
                     "size_mm": v.size_mm,
                     "drill_mm": v.drill_mm,
                     "layers": list(v.layers),
+                    "reason": v.reason or "",
+                    "alternatives_considered": v.alternatives_considered,
+                    "blocked_same_layer": list(v.blocked_same_layer or []),
                 }
                 for v in self.vias
             ],
+            "explanations": (self.quality or {}).get("explanations") or {},
         }
 
     def compute_quality(self) -> dict[str, Any]:
@@ -269,6 +277,9 @@ def _route_result_from_dict(raw: dict[str, Any]) -> RouteResult:
             size_mm=float(v.get("size_mm", 0.8)),
             drill_mm=float(v.get("drill_mm", 0.4)),
             layers=tuple(v.get("layers") or ("F.Cu", "B.Cu")),  # type: ignore[arg-type]
+            reason=str(v.get("reason") or ""),
+            alternatives_considered=int(v.get("alternatives_considered") or 0),
+            blocked_same_layer=list(v.get("blocked_same_layer") or []),
         )
         for v in raw.get("vias") or []
     ]
@@ -781,6 +792,7 @@ def clearance_aware_route(
     net_order: list[str] | None = None,
     style: str = "isotropic",
     congestion: Any | None = None,
+    k_homotopy: int | dict[str, int] | None = None,
 ) -> RouteResult:
     """TopoR-inspired clearance-aware free-angle router with per-net feedback.
 
@@ -928,6 +940,11 @@ def clearance_aware_route(
             current, nxt = anchors[ia], anchors[ib]
 
             meth: list[str] = []
+            kh = 1
+            if isinstance(k_homotopy, dict):
+                kh = int(k_homotopy.get(net_name, 1))
+            elif isinstance(k_homotopy, int):
+                kh = k_homotopy
             path, vias = _route_point_to_point(
                 current,
                 nxt,
@@ -939,6 +956,7 @@ def clearance_aware_route(
                 width_mm=width,
                 method_out=meth,
                 congestion=congestion,
+                k_homotopy=max(1, kh),
             )
             if path is None:
                 if soft_fallback:
@@ -1178,7 +1196,32 @@ def _route_point_to_point(
     width_mm: float = 0.25,
     method_out: list[str] | None = None,
     congestion: Any | None = None,
+    k_homotopy: int = 1,
 ) -> tuple[list[tuple[float, float, str]] | None, list[Via]]:
+    blocked_layers: list[str] = []
+    alts_same = 0
+
+    # Prefer K-homotopy same-layer paths when k_homotopy > 1
+    if k_homotopy > 1:
+        try:
+            from physics_router.homotopy import k_homotopy_paths, pick_best_homotopy
+
+            for layer in layers:
+                cands = k_homotopy_paths(
+                    start, goal, layer, net, om,
+                    k=k_homotopy, grid_mm=grid_mm, width_mm=width_mm,
+                    congestion=congestion,
+                )
+                alts_same += len(cands)
+                best = pick_best_homotopy(cands)
+                if best is not None:
+                    if method_out is not None:
+                        method_out.append(f"homotopy_{best.method}")
+                    return ([(p[0], p[1], layer) for p in best.points], [])
+                blocked_layers.append(layer)
+        except Exception:
+            pass
+
     for layer in layers:
         meth: list[str] = []
         poly = free_angle_route(
@@ -1193,7 +1236,6 @@ def _route_point_to_point(
             congestion=congestion,
         )
         if poly is not None and len(poly) >= 2:
-            # Final edge-by-edge clearance gate
             ok = True
             for i in range(len(poly) - 1):
                 if om.segment_blocked(
@@ -1208,10 +1250,12 @@ def _route_point_to_point(
                     ok = False
                     break
             if not ok:
+                blocked_layers.append(layer)
                 continue
             if method_out is not None:
                 method_out.extend(meth or ["los"])
             return ([(p[0], p[1], layer) for p in poly], [])
+        blocked_layers.append(layer)
 
     if not allow_vias or len(layers) < 2:
         return None, []
@@ -1238,9 +1282,11 @@ def _route_point_to_point(
             pairs.append((layers[0], layers[1]))
             pairs.append((layers[1], layers[0]))
 
+    sites_tried = 0
     for l0, l1 in pairs:
         for vx, vy in sites:
             vx, vy = _snap(vx, g), _snap(vy, g)
+            sites_tried += 1
             if not om.in_bounds(vx, vy):
                 continue
             if om.blocked(vx, vy, l0, net) or om.blocked(vx, vy, l1, net):
@@ -1271,7 +1317,23 @@ def _route_point_to_point(
                 if method_out is not None:
                     method_out.append("via")
                 path = [(x, y, l0) for x, y in p0] + [(x, y, l1) for x, y in p1[1:]]
-                return path, [Via(x=vx, y=vy, net=net, layers=(l0, l1))]
+                blocked_u = sorted(set(blocked_layers))
+                reason = (
+                    f"Same-layer path blocked on {', '.join(blocked_u) or 'all tried layers'}; "
+                    f"layer transition {l0}→{l1} at ({vx:.2f},{vy:.2f}). "
+                    f"Considered {alts_same} same-layer homotopy class(es) and "
+                    f"{sites_tried} via site(s)."
+                )
+                via = Via(
+                    x=vx,
+                    y=vy,
+                    net=net,
+                    layers=(l0, l1),
+                    reason=reason,
+                    alternatives_considered=alts_same + sites_tried,
+                    blocked_same_layer=blocked_u,
+                )
+                return path, [via]
     return None, []
 
 
