@@ -451,6 +451,9 @@ def hybrid_route(
     q = result.quality or {}
     q["pipeline"] = "hybrid"
     q["hybrid_plan"] = plan.to_dict()
+    from physics_router.graph_theory import analyze_route_graph
+
+    q["graph_topology"] = analyze_route_graph(result)
     strat_by_net = {a.net: a.strategy for a in plan.assignments}
     for rep in result.net_reports:
         rep.notes = list(rep.notes or [])
@@ -459,5 +462,11 @@ def hybrid_route(
             if tag not in rep.notes:
                 rep.notes.append(tag)
     result.quality = q
+    graph = q["graph_topology"]
+    result.notes.append(
+        "route graph: "
+        f"components={graph['connected_components']} "
+        f"cycles={graph['cycle_rank']} crossings={graph['crossing_number']}"
+    )
     result.notes.append(q.get("summary", ""))
     return result

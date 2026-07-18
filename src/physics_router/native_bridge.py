@@ -2,9 +2,9 @@
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 
-Native v1.7: atomic layer-reachable routing, oriented pad obstacles,
-topology-safe multipin polish, organic copper areas, and bounded parallel
-bucket-rebuild variants.
+Native v1.8: graph-planned atomic layer-reachable routing, oriented pad
+obstacles, topology-safe multipin polish, organic copper areas, and bounded
+parallel bucket-rebuild variants.
 Python remains the TopoR policy/file-format host; C++ owns geometry.
 """
 
@@ -56,6 +56,9 @@ def info() -> dict[str, Any]:
             "oriented_pad_obstacles": True,
             "anchor_layer_reachability": True,
             "width_aware_obstacle_inflation": True,
+            "hypergraph_topology": True,
+            "crossing_aware_mst": True,
+            "dsatur_layer_coloring": True,
         },
     }
 
@@ -141,6 +144,22 @@ def route_board_native(
     name_to_id = {n: i for i, n in enumerate(net_names)}
     layer_to_id = {layer: index for index, layer in enumerate(layers)}
 
+    graph_plan = None
+    graph_plan_error = ""
+    try:
+        from physics_router.graph_theory import plan_graph_topology
+
+        graph_plan = plan_graph_topology(
+            board,
+            config,
+            net_names=net_names,
+            layers=layers,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Topology is advisory: geometry remains available if incomplete board
+        # metadata makes planning impossible.
+        graph_plan_error = str(exc)
+
     nets = []
     for name in net_names:
         if name not in board.nets:
@@ -185,6 +204,8 @@ def route_board_native(
         ns.name = name
         ns.anchors = anchors
         ns.anchor_layers = [sorted(value) for value in anchor_layers]
+        if graph_plan is not None and hasattr(ns, "topology_edges"):
+            ns.topology_edges = graph_plan.topology_edges(name)
         # An exclusive bucket's caller order is the routing policy (and may be
         # a deliberate rebuild variant). Full-board calls still use semantic
         # net weights. Keeping bucket priorities equal lets the C++ stable sort
@@ -212,21 +233,29 @@ def route_board_native(
         else:
             ns.width_mm = 0.25
             nc = ""
-        # Stripe multipin matrix / CPX nets across layers to reduce same-layer crossings
+        graph_layer = (
+            graph_plan.layer_assignment.get(name) if graph_plan is not None else None
+        )
+        # Graph coloring replaces name-based striping: nets whose straight-line
+        # trees cross are assigned distinct preferred layers when possible.
         is_matrix = name.upper().startswith("CPX") or len(anchors) >= 12
+        fallback_primary = 0
         if is_matrix and cfg.num_layers >= 2:
-            try:
-                idx = int("".join(ch for ch in name if ch.isdigit()) or "0")
-            except ValueError:
-                idx = abs(hash(name)) % cfg.num_layers
-            primary = idx % cfg.num_layers
-            ns.preferred_layers = [primary] + [
-                i for i in range(cfg.num_layers) if i != primary
+            digits = "".join(ch for ch in name if ch.isdigit())
+            fallback_primary = (
+                int(digits) if digits else sum(ord(ch) for ch in name)
+            ) % cfg.num_layers
+        graph_primary = layer_to_id.get(graph_layer, fallback_primary)
+        if is_matrix and cfg.num_layers >= 2:
+            ns.preferred_layers = [graph_primary] + [
+                i for i in range(cfg.num_layers) if i != graph_primary
             ]
             # Slight priority demotion for dense buses so sparse nets paint first
             ns.priority *= 0.85
         else:
-            ns.preferred_layers = list(range(cfg.num_layers))
+            ns.preferred_layers = [graph_primary] + [
+                i for i in range(cfg.num_layers) if i != graph_primary
+            ]
         is_power_area = nc in ("power", "ground") or name.upper() in (
             "GND",
             "VSS",
@@ -385,7 +414,15 @@ def route_board_native(
         "unrouted_nets": list(result.unrouted),
         "clearance_violations": result.clearance_violations,
         "notes": list(result.notes)
-        + [f"native={result.used_native}", f"gpu={result.used_gpu}"],
+        + [
+            f"native={result.used_native}",
+            f"gpu={result.used_gpu}",
+            (
+                "graph_topology=" + str(graph_plan.to_dict())
+                if graph_plan is not None
+                else "graph_topology=fallback " + graph_plan_error
+            ),
+        ],
         "quality": {
             "score": result.quality_score,
             "grade": result.quality_grade,
@@ -394,6 +431,9 @@ def route_board_native(
                 f"native {result.elapsed_ms:.1f}ms"
             ),
             "pipeline": "native_isotropic",
+            "graph_topology_plan": (
+                graph_plan.to_dict() if graph_plan is not None else None
+            ),
             "explanations": {
                 "vias": [
                     {

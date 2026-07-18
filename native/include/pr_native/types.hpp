@@ -56,6 +56,10 @@ struct NetSpec {
   // Copper layers physically reachable at each anchor (SMD pad vs plated hole).
   // Empty outer vector or empty entry means all preferred layers.
   std::vector<std::vector<int>> anchor_layers;
+  // Advisory graph-theory spanning tree. Each pair indexes anchors; the
+  // native router prefers these frontier edges and falls back to any legal
+  // edge when geometrization invalidates the abstract topology.
+  std::vector<std::pair<int, int>> topology_edges;
   double priority = 1.0;
   double width_mm = 0.25;
   std::vector<int> preferred_layers; // empty = all

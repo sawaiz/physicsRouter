@@ -188,7 +188,7 @@ std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
 
 } // namespace
 
-const char *native_version() { return "1.7.0-pad-legal-bundle"; }
+const char *native_version() { return "1.8.0-graph-topology"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -901,6 +901,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     in[0] = 1;
     size_t in_count = 1;
     int open_edges = 0;
+    const std::string method_prefix = rep.method;
     std::string last_method;
     std::vector<Segment> net_segments;
     std::vector<Via> net_vias;
@@ -911,6 +912,17 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         double distance;
         size_t from;
         size_t to;
+        bool graph_preferred;
+      };
+      auto graph_edge = [&](size_t a, size_t b) {
+        return std::any_of(
+            net.topology_edges.begin(), net.topology_edges.end(),
+            [&](const std::pair<int, int> &edge) {
+              return (edge.first == static_cast<int>(a) &&
+                      edge.second == static_cast<int>(b)) ||
+                     (edge.first == static_cast<int>(b) &&
+                      edge.second == static_cast<int>(a));
+            });
       };
       std::vector<Candidate> candidates;
       for (size_t i = 0; i < n; ++i)
@@ -918,9 +930,12 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
           for (size_t j = 0; j < n; ++j)
             if (!in[j])
               candidates.push_back(
-                  {dist(net.anchors[i], net.anchors[j]), i, j});
+                  {dist(net.anchors[i], net.anchors[j]), i, j,
+                   graph_edge(i, j)});
       std::sort(candidates.begin(), candidates.end(),
                 [](const Candidate &a, const Candidate &b) {
+                  if (a.graph_preferred != b.graph_preferred)
+                    return a.graph_preferred > b.graph_preferred;
                   return a.distance < b.distance;
                 });
 
@@ -947,7 +962,10 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         in[candidate.to] = 1;
         ++in_count;
         connected = true;
-        last_method = rep.method.empty() ? method : rep.method + "+" + method;
+        const std::string graph_method =
+            candidate.graph_preferred ? "graph_tree+" + method : method;
+        last_method = last_method.empty() ? graph_method
+                                           : last_method + "+" + graph_method;
         net_segments.insert(net_segments.end(), edge_segments.begin(),
                             edge_segments.end());
         for (const auto &v : edge_vias) {
@@ -986,7 +1004,9 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
       break;
     }
 
-    rep.method = last_method;
+    rep.method = method_prefix.empty()
+                     ? last_method
+                     : method_prefix + "+" + last_method;
     const bool complete = in_count == n;
     const bool commit = complete || !cfg.atomic_nets || cfg.soft_fallback;
     if (commit) {

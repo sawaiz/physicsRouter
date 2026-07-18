@@ -2263,15 +2263,57 @@ def topological_guide_route(
     config: PlacementConfig | None = None,
     preferred_layer: str = "F.Cu",
 ) -> RouteResult:
-    """Guide router without clearance (MST free-angle chains)."""
-    return clearance_aware_route(
-        board,
-        config,
-        layers=[preferred_layer, "B.Cu"],
-        clearance_mm=0.0,
-        allow_vias=False,
-        guide_only=True,
+    """Abstract crossing-aware graph guide without clearance geometry."""
+    from physics_router.graph_theory import analyze_route_graph, plan_graph_topology
+
+    layers = list(board.copper_layers) or [preferred_layer, "B.Cu"]
+    plan = plan_graph_topology(board, config, layers=layers)
+    result = RouteResult()
+    for name, hyperedge in plan.hyperedges.items():
+        tree = plan.trees.get(name, [])
+        layer = plan.layer_assignment.get(name, preferred_layer)
+        width = _net_width(config, name)
+        length = 0.0
+        for edge in tree:
+            start = hyperedge.vertices[edge.u]
+            end = hyperedge.vertices[edge.v]
+            result.segments.append(
+                RouteSegment(
+                    start.x,
+                    start.y,
+                    end.x,
+                    end.y,
+                    layer=layer,
+                    net=name,
+                    width_mm=width,
+                )
+            )
+            length += edge.length_mm
+        result.total_length_mm += length
+        pins = len(hyperedge.vertices)
+        complete = pins >= 2 and len(tree) == pins - 1
+        result.net_reports.append(
+            NetRouteReport(
+                net=name,
+                pins=pins,
+                length_mm=length,
+                segments=len(tree),
+                layers=[layer] if tree else [],
+                status="ok" if complete else "skipped",
+                method="graph_crossing_mst+dsatur",
+                notes=[f"hyperedge pins={pins}", f"preferred_layer={layer}"],
+            )
+        )
+    result.notes.extend(
+        [
+            "guide_only: abstract hypergraph topology (no clearance)",
+            "graph planner: crossing-aware Kruskal tree + DSATUR layer coloring",
+        ]
     )
+    result.compute_quality()
+    result.quality["graph_topology_plan"] = plan.to_dict()
+    result.quality["graph_topology"] = analyze_route_graph(result)
+    return result
 
 
 def clearance_aware_route(

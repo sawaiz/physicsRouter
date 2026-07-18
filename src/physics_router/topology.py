@@ -393,8 +393,11 @@ def pareto_front(
 
 
 def board_topology_index(board: BoardModel) -> dict[str, Any]:
-    """Lightweight index: nets, pad anchors, suggested channel cells."""
+    """Board hypergraph, crossing conflicts, layer colors, and physical extent."""
+    from physics_router.graph_theory import plan_graph_topology
+
     comps = list(board.components.values())
+    graph = plan_graph_topology(board)
     return {
         "components": len(comps),
         "nets": len(board.nets),
@@ -403,4 +406,5 @@ def board_topology_index(board: BoardModel) -> dict[str, Any]:
             "w": board.width_mm,
             "h": board.height_mm,
         },
+        "graph": graph.to_dict(),
     }

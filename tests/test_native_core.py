@@ -27,7 +27,7 @@ def test_native_info():
     i = info()
     assert i["available"] is True
     assert "version" in i
-    assert str(i["version"]).startswith("1.7.")
+    assert str(i["version"]).startswith("1.8.")
     assert "gpu" in i
     assert i.get("features", {}).get("isotropic") is True
 
