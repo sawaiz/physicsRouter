@@ -518,5 +518,49 @@
     ],
     "glb": null,
     "step": null
+  },
+  "last_score_job": {
+    "score": {
+      "weighted_wirelength": 1664.5,
+      "power_loop_area": 330.0,
+      "critical_net_length": 1664.5,
+      "overlap_penalty": 6.645187500000004,
+      "region_violation": 0.0,
+      "density_congestion": 0.59984375,
+      "thermal_spread": 0.00485071250072666,
+      "emi_proxy": 254.5,
+      "spice_score": 9.794397547853903,
+      "openems_score": 353.5,
+      "ir_drop": 0.0,
+      "loop_inductance": 80.12310181281595,
+      "return_path": 148.9495532385217,
+      "matrix_length_match": 0.0,
+      "total": 11289.438293161678
+    },
+    "score_total": 11289.438293161678,
+    "notes": [
+      "ir_drop ok",
+      "loop_L buck1:80.1nH",
+      "return_path nets=4 gnd_centroid=(17.8,19.0)",
+      "matrix_match n/a",
+      "spice_proxy L\u224814.53nH loop_area=330.0mm\u00b2 power_len=85.0mm; ngspice_ok",
+      "em_proxy emi=254.50; em_nets=2; openEMS_binary_present(export_via_cli)"
+    ],
+    "weights": {
+      "weighted_wirelength": 1.0,
+      "power_loop_area": 4.0,
+      "critical_net_length": 3.0,
+      "overlap_penalty": 50.0,
+      "region_violation": 10.0,
+      "density_congestion": 1.5,
+      "thermal_spread": 0.5,
+      "emi_proxy": 2.0,
+      "spice_score": 5.0,
+      "openems_score": 5.0,
+      "ir_drop": 3.0,
+      "loop_inductance": 3.5,
+      "return_path": 2.5,
+      "matrix_length_match": 3.0
+    }
   }
 }
