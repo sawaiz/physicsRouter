@@ -88,6 +88,50 @@ std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &
   return rubberband(path, g, layer, net_id);
 }
 
+static double polar_ang(double x, double y, double cx, double cy) {
+  // Match halo.js: x=sinθ, y=cosθ → atan2(x-cx, y-cy)
+  return std::atan2(x - cx, y - cy);
+}
+
+static Vec2 polar_xy(double r, double ang, double cx, double cy) {
+  return {cx + r * std::sin(ang), cy + r * std::cos(ang)};
+}
+
+/** Concentric-arc path (halo.js style): radial → arc → radial. Empty if blocked. */
+static std::vector<Vec2> try_polar_arc(const GridMap &grid, Vec2 start, Vec2 goal, int layer,
+                                       int net_id, double cx, double cy, double track_r) {
+  double a0 = polar_ang(start.x, start.y, cx, cy);
+  double a1 = polar_ang(goal.x, goal.y, cx, cy);
+  double d = a1 - a0;
+  while (d > M_PI)
+    d -= 2 * M_PI;
+  while (d < -M_PI)
+    d += 2 * M_PI;
+  if (track_r <= 1e-6) {
+    double r0 = std::hypot(start.x - cx, start.y - cy);
+    double r1 = std::hypot(goal.x - cx, goal.y - cy);
+    track_r = 0.5 * (r0 + r1);
+    if (track_r < 1.0)
+      return {};
+  }
+  int n = std::max(1, static_cast<int>(std::ceil(std::abs(d) / (2.0 * M_PI / 180.0)))); // ~2°
+  std::vector<Vec2> path;
+  path.push_back(start);
+  Vec2 t0 = polar_xy(track_r, a0, cx, cy);
+  path.push_back(t0);
+  for (int i = 1; i <= n; ++i) {
+    double t = static_cast<double>(i) / n;
+    path.push_back(polar_xy(track_r, a0 + d * t, cx, cy));
+  }
+  path.push_back(goal);
+  // legality
+  for (size_t i = 0; i + 1 < path.size(); ++i) {
+    if (grid.segment_blocked(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, layer, net_id))
+      return {};
+  }
+  return path;
+}
+
 std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int layer, int net_id,
                               int max_expansions, bool isotropic) {
   // 1) LOS free-angle
@@ -247,6 +291,18 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
 
   // try each preferred layer (isotropic free-angle)
   for (int layer : layers) {
+    // HALO ring: concentric radial+arc before free-angle chords (docs/HALO_RING_ROUTING.md)
+    if (cfg.ring_mode) {
+      auto poly =
+          try_polar_arc(grid, a, b, layer, net_id, cfg.ring_cx, cfg.ring_cy, cfg.ring_track_r);
+      ++alts;
+      if (poly.size() >= 2) {
+        method = "polar_arc";
+        emit_poly(poly, layer, net_id, width, out_segs);
+        paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
+        return true;
+      }
+    }
     auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions, cfg.isotropic);
     ++alts;
     if (poly.size() >= 2) {

@@ -53,6 +53,11 @@ struct RouteConfig {
   bool post_rubberband = true;
   bool via_minimize = false; // connectivity/clearance beat via count
   int threads = 0; // 0 = auto
+  // HALO-style polar ring: prefer radial+arc paths about (ring_cx, ring_cy)
+  bool ring_mode = false;
+  double ring_cx = 0.0;
+  double ring_cy = 0.0;
+  double ring_track_r = 0.0; // 0 = auto mid-radius of start/goal
 };
 
 struct NetReport {

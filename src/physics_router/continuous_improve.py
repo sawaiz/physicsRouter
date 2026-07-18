@@ -14,6 +14,7 @@ Best-so-far is retained so a timeout still returns the strongest result.
 from __future__ import annotations
 
 import copy
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -63,6 +64,12 @@ class ImproveConfig:
     prefer_native: bool = True
     # When True, use full TopoR multi-variant on some rounds (slower, higher quality)
     allow_topor_rounds: bool = True
+    # Official KiCad DRC via kicad-cli (authoritative; native check is a fast filter)
+    pcb_path: str | None = None
+    require_kicad_drc: bool = True
+    # Run kicad-cli every round if True; else only when native looks clean / final
+    kicad_drc_every_round: bool = False
+    kicad_drc_timeout_s: float = 120.0
 
 
 @dataclass
@@ -84,6 +91,11 @@ class ImproveSnapshot:
     is_best: bool = False
     met_goal: bool = False
     summary: str = ""
+    kicad_available: bool = False
+    kicad_copper_violations: int = 0
+    kicad_errors: int = 0
+    kicad_passed: bool | None = None
+    kicad_samples: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -104,6 +116,11 @@ class ImproveSnapshot:
             "is_best": self.is_best,
             "met_goal": self.met_goal,
             "summary": self.summary,
+            "kicad_available": self.kicad_available,
+            "kicad_copper_violations": self.kicad_copper_violations,
+            "kicad_errors": self.kicad_errors,
+            "kicad_passed": self.kicad_passed,
+            "kicad_samples": list(self.kicad_samples)[:8],
         }
 
 
@@ -142,10 +159,97 @@ class ImproveResult:
 
 
 def _route_score_key(snap: ImproveSnapshot) -> tuple:
-    """Higher is better. Prefer clean DRC, then score, then completion, then fewer vias."""
+    """Higher is better. Prefer KiCad-clean, then native-clean, score, completion."""
+    kicad_clean = 1 if (snap.kicad_passed is True) else (0 if snap.kicad_available else 0)
+    # Unknown kicad ranks below known-clean, above known-fail
+    if snap.kicad_available:
+        kicad_rank = 2 if snap.kicad_passed else 0
+    else:
+        kicad_rank = 1
     clean = 1 if snap.violations == 0 else 0
     complete = 1 if snap.unrouted == 0 else 0
-    return (clean, complete, snap.score, -snap.unrouted, -snap.vias, -snap.length_mm)
+    return (
+        kicad_rank,
+        clean,
+        complete,
+        snap.score,
+        -snap.kicad_copper_violations,
+        -snap.unrouted,
+        -snap.vias,
+        -snap.length_mm,
+    )
+
+
+def _apply_kicad_to_snapshot(
+    snap: ImproveSnapshot,
+    route: RouteResult,
+    cfg: ImproveConfig,
+    *,
+    force: bool = False,
+) -> ImproveSnapshot:
+    """Optionally run official KiCad DRC and fold into score/violations."""
+    if not cfg.pcb_path or not cfg.require_kicad_drc:
+        return snap
+    # Skip expensive kicad-cli when native is messy unless forced / every_round
+    if (
+        not force
+        and not cfg.kicad_drc_every_round
+        and snap.violations > 8
+        and snap.score < 50
+    ):
+        return snap
+    try:
+        from physics_router.kicad_tools import kicad_drc_route
+
+        kd = kicad_drc_route(
+            cfg.pcb_path,
+            route,
+            timeout_s=float(cfg.kicad_drc_timeout_s),
+            keep_files=False,
+        )
+    except Exception as exc:
+        snap.summary = f"{snap.summary} · kicad_drc error: {exc}"
+        return snap
+
+    snap.kicad_available = bool(kd.get("available"))
+    if not snap.kicad_available:
+        snap.summary = f"{snap.summary} · kicad: {kd.get('error', 'unavailable')}"
+        return snap
+
+    copper = int(kd.get("copper_violation_count") or 0)
+    copper_err = int(kd.get("copper_error_count") or kd.get("error_count") or 0)
+    snap.kicad_copper_violations = copper
+    snap.kicad_errors = copper_err
+    snap.kicad_passed = bool(kd.get("copper_passed"))
+    snap.kicad_samples = list(kd.get("samples") or [])[:8]
+
+    # Authoritative: inflate violations so grade cannot claim A with KiCad fails
+    combined = max(snap.violations, copper, copper_err)
+    if combined > snap.violations:
+        route.clearance_violations = combined
+        q = route.compute_quality()
+        snap.score = float(q.get("score") or snap.score)
+        snap.grade = str(q.get("grade") or snap.grade)
+        snap.violations = combined
+        snap.summary = str(q.get("summary") or snap.summary)
+    # Always annotate summary with KiCad oracle
+    snap.summary = (
+        f"{snap.summary} · KiCad DRC copper={copper} errors={copper_err} "
+        f"({'PASS' if snap.kicad_passed else 'FAIL'})"
+    )
+    if snap.kicad_samples:
+        route.quality = {
+            **(route.quality or {}),
+            "kicad_drc": {
+                "copper_violation_count": copper,
+                "error_count": copper_err,
+                "passed": snap.kicad_passed,
+                "samples": snap.kicad_samples,
+                "by_type": kd.get("by_type") or {},
+                "kicad_version": kd.get("kicad_version") or "",
+            },
+        }
+    return snap
 
 
 def _snapshot_from_route(
@@ -158,6 +262,8 @@ def _snapshot_from_route(
     stage: str,
     placement_cost: float | None,
     clearance_mm: float,
+    cfg: ImproveConfig | None = None,
+    run_kicad: bool = False,
 ) -> ImproveSnapshot:
     attach_router_drc(route, clearance_mm=clearance_mm, board=board)
     q = route.compute_quality()
@@ -172,7 +278,7 @@ def _snapshot_from_route(
             "outline_outside": raw.get("outline_outside", 0),
         }
     viol = int(drc.get("violations") or route.clearance_violations or 0)
-    return ImproveSnapshot(
+    snap = ImproveSnapshot(
         round=round_i,
         elapsed_s=elapsed,
         strategy=strategy,
@@ -189,6 +295,9 @@ def _snapshot_from_route(
         stage=stage,
         summary=str(q.get("summary") or ""),
     )
+    if cfg is not None and run_kicad:
+        snap = _apply_kicad_to_snapshot(snap, route, cfg, force=True)
+    return snap
 
 
 def goal_met(snap: ImproveSnapshot, cfg: ImproveConfig) -> bool:
@@ -196,6 +305,13 @@ def goal_met(snap: ImproveSnapshot, cfg: ImproveConfig) -> bool:
         return False
     if cfg.require_complete and snap.unrouted > 0:
         return False
+    # Official KiCad DRC is required for goal when enabled and available
+    if cfg.require_kicad_drc and cfg.pcb_path:
+        if snap.kicad_available and not snap.kicad_passed:
+            return False
+        # If we never ran KiCad this round, do not claim goal
+        if not snap.kicad_available and cfg.require_kicad_drc:
+            return False
     # Score threshold (primary); grade is informational / alternate
     min_s = max(float(cfg.min_score), min_score_for_grade(cfg.target_grade))
     if snap.score >= min_s:
@@ -209,6 +325,14 @@ def _strategy_plan(cfg: ImproveConfig, board: BoardModel) -> list[dict[str, Any]
     """Ordered diversifying strategies cycled each round."""
     orders = _net_order_variants(board, None)
     plan: list[dict[str, Any]] = []
+    # HALO ring first when LED circle is present
+    try:
+        from physics_router.halo_ring import detect_led_ring
+
+        if detect_led_ring(board) is not None:
+            plan.append({"name": "halo_ring", "kind": "halo_ring", "grid_mm": cfg.grid_mm})
+    except Exception:
+        pass
     if cfg.prefer_native:
         plan.append(
             {
@@ -274,6 +398,7 @@ def _run_route(
 ) -> RouteResult:
     grid = float(strat.get("grid_mm") or cfg.grid_mm)
     cl = float(cfg.clearance_mm)
+    prefer_native = bool(strat.get("prefer_native", cfg.prefer_native))
 
     def _net_prog(done_n: int, total: int, name: str, stage: str, detail: dict) -> None:
         if not progress_cb:
@@ -306,17 +431,73 @@ def _run_route(
             use_regeometry=True,
         )
 
-    return clearance_aware_route(
-        board,
-        config,
-        clearance_mm=cl,
-        grid_mm=grid,
-        soft_fallback=False,
-        prefer_native=bool(strat.get("prefer_native", cfg.prefer_native)),
-        allow_vias=True,
-        net_order=strat.get("net_order"),
-        progress_cb=_net_prog if progress_cb else None,
-    )
+    if strat.get("kind") == "halo_ring":
+        from physics_router.halo_ring import halo_ring_route
+
+        return halo_ring_route(
+            board,
+            config,
+            clearance_mm=cl,
+            progress_cb=_net_prog if progress_cb else None,
+        )
+
+    # Native C++ path is skipped when progress_cb is set (router early-return
+    # requires no live callback). Prefer the fast native route; publish after.
+    use_live = bool(progress_cb) and not prefer_native
+    stop_hb = threading.Event()
+    if progress_cb and prefer_native:
+        n_nets = max(1, len(board.nets))
+        t0 = time.time()
+
+        def _heartbeat() -> None:
+            tick = 0
+            while not stop_hb.wait(0.8):
+                tick += 1
+                # Fake net progress so UI bar advances during native (no per-net CB)
+                done = min(n_nets - 1, tick)
+                try:
+                    progress_cb(
+                        {
+                            "event": "route_progress",
+                            "strategy": strat.get("name"),
+                            "done": done,
+                            "total": n_nets,
+                            "net": "(native)",
+                            "stage": "native_core",
+                            "elapsed_s": time.time() - t0,
+                            "partial": None,
+                        }
+                    )
+                except Exception:
+                    pass
+
+        progress_cb(
+            {
+                "event": "route_progress",
+                "strategy": strat.get("name"),
+                "done": 0,
+                "total": n_nets,
+                "net": "(native)",
+                "stage": "native_core",
+                "elapsed_s": 0.0,
+                "partial": None,
+            }
+        )
+        threading.Thread(target=_heartbeat, daemon=True).start()
+    try:
+        return clearance_aware_route(
+            board,
+            config,
+            clearance_mm=cl,
+            grid_mm=grid,
+            soft_fallback=False,
+            prefer_native=prefer_native,
+            allow_vias=True,
+            net_order=strat.get("net_order"),
+            progress_cb=_net_prog if use_live else None,
+        )
+    finally:
+        stop_hb.set()
 
 
 def continuous_improve(
@@ -468,6 +649,7 @@ def continuous_improve(
             continue
 
         elapsed = time.time() - t0
+        # Fast native score first; KiCad oracle when clean-looking or every_round
         snap = _snapshot_from_route(
             route,
             work,
@@ -477,7 +659,29 @@ def continuous_improve(
             stage="scored",
             placement_cost=placement_cost,
             clearance_mm=cfg.clearance_mm,
+            cfg=cfg,
+            run_kicad=False,
         )
+        want_kicad = bool(cfg.pcb_path and cfg.require_kicad_drc) and (
+            cfg.kicad_drc_every_round
+            or snap.violations <= 8
+            or snap.score >= 55
+            or round_i == 1
+        )
+        if want_kicad:
+            _emit(
+                {
+                    "event": "stage",
+                    "round": round_i,
+                    "stage": "kicad_drc",
+                    "strategy": strat["name"],
+                    "elapsed_s": time.time() - t0,
+                    "best": best_snap.to_dict() if best_snap else None,
+                }
+            )
+            snap = _apply_kicad_to_snapshot(snap, route, cfg, force=True)
+            snap.elapsed_s = time.time() - t0
+
         snap.met_goal = goal_met(snap, cfg)
         history.append(snap)
 
@@ -490,9 +694,14 @@ def continuous_improve(
             best_positions = {
                 r: (c.x_mm, c.y_mm, c.rotation_deg) for r, c in work.components.items()
             }
+            kicad_note = (
+                f" kicad={'PASS' if snap.kicad_passed else 'FAIL'}/{snap.kicad_copper_violations}"
+                if snap.kicad_available
+                else ""
+            )
             notes.append(
                 f"r{round_i}: NEW BEST {snap.grade}/{snap.score:.0f} "
-                f"viol={snap.violations} vias={snap.vias} via {snap.strategy}"
+                f"viol={snap.violations} vias={snap.vias} via {snap.strategy}{kicad_note}"
             )
         else:
             notes.append(
@@ -518,7 +727,7 @@ def continuous_improve(
             stop_reason = "goal"
             notes.append(
                 f"goal met: grade {snap.grade} score={snap.score:.1f} "
-                f"drc={snap.violations} unrouted={snap.unrouted}"
+                f"drc={snap.violations} kicad={snap.kicad_passed} unrouted={snap.unrouted}"
             )
             break
 
@@ -529,13 +738,18 @@ def continuous_improve(
     if stop_reason == "unknown":
         stop_reason = "complete"
 
-    # Ensure best_route has final quality stamped
+    # Ensure best_route has final quality stamped + final KiCad oracle
     if best_route is not None:
         attach_router_drc(best_route, clearance_mm=cfg.clearance_mm, board=best_board)
         best_route.compute_quality()
+        if best_snap is not None and cfg.pcb_path and cfg.require_kicad_drc:
+            if not best_snap.kicad_available:
+                best_snap = _apply_kicad_to_snapshot(
+                    best_snap, best_route, cfg, force=True
+                )
         if best_snap:
             best_snap.met_goal = goal_met(best_snap, cfg)
-            met = met or best_snap.met_goal
+            met = bool(best_snap.met_goal)
 
     out = ImproveResult(
         board=best_board,

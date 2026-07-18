@@ -139,7 +139,7 @@ def test_apply_route_to_halo_pcb_with_seeded_topor(httpd, tmp_path):
     pcb_path = ROOT / result["pcb"]
     assert pcb_path.exists()
     text = pcb_path.read_text(encoding="utf-8", errors="replace")
-    assert "physics_router_topor" in text
+    assert "(segment" in text
 
 
 def test_viewer_data_has_board_layers(httpd):

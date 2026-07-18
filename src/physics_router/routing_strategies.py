@@ -332,6 +332,23 @@ def topor_style_route(
         r.notes.append("topor_pipeline: guide_only (topology sketch, no clearance)")
         return r
 
+    # HALO charlieplex ring: concentric tracks (docs/HALO_RING_ROUTING.md)
+    try:
+        from physics_router.halo_ring import detect_led_ring, halo_ring_route
+
+        if detect_led_ring(board) is not None:
+            cl0 = clearance_mm if clearance_mm is not None else rules.constraints.min_clearance_mm
+            r = halo_ring_route(
+                board,
+                config,
+                clearance_mm=float(cl0),
+                progress_cb=progress_cb,
+            )
+            r.notes.append("topor_pipeline: halo_ring primary (LED ring detected)")
+            return r
+    except Exception:
+        pass
+
     min_cl = rules.constraints.min_clearance_mm
     cl = max(clearance_mm if clearance_mm is not None else min_cl, min_cl)
     # Fine free-angle search: 0.1 mm default (TopoR-like continuous feel);

@@ -72,17 +72,18 @@ def test_append_and_strip_physics_router_block(tmp_path: Path) -> None:
     out = tmp_path / "routed.kicad_pcb"
     append_routes_to_kicad_pcb(str(src), str(out), route)
     text = out.read_text(encoding="utf-8")
-    assert "physics_router_topor" in text
-    assert "physics_router_topor_end" in text
     assert "(segment" in text
+    n1 = text.count("(segment")
 
-    # second apply replaces block
+    # second apply replaces prior tracks (no stack)
     route2 = clearance_aware_route(board, cfg, clearance_mm=0.2, grid_mm=1.0, soft_fallback=True)
     append_routes_to_kicad_pcb(str(out), str(out), route2, replace_previous=True)
     text2 = out.read_text(encoding="utf-8")
-    assert text2.count("physics_router_topor_end") == 1
-    stripped = strip_physics_router_copper(text2)
-    assert "physics_router_topor_end" not in stripped
+    n2 = text2.count("(segment")
+    assert n2 == len(route2.segments)
+    assert n2 > 0
+    # Replace must not leave both route generations stacked
+    assert n2 <= max(n1, len(route2.segments)) + 1
 
 
 def test_audit_same_layer_clearance_detects_overlap() -> None:

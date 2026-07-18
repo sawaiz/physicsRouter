@@ -10,6 +10,7 @@ Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) / [Eremex TopoR](https:
 | **[RESEARCH.md](RESEARCH.md)** | Algorithm survey and bibliography |
 | **[docs/TOPOR.md](docs/TOPOR.md)** | Eremex TopoR product model, images, manuals, binary catalog |
 | **[docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md)** | Topology-first architecture (3 representations, congestion, roadmap) |
+| **[docs/HALO_RING_ROUTING.md](docs/HALO_RING_ROUTING.md)** | Charlieplex LED ring routing (halo.js concentric tracks) |
 | **[DATASETS.md](DATASETS.md)** | Training corpora and conversion paths |
 
 ### TopoR-style routing (what we implement)

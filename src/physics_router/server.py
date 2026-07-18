@@ -701,6 +701,11 @@ class AppState:
         if max_rounds is not None:
             max_rounds = int(max_rounds)
 
+        with self.lock:
+            board = copy.deepcopy(self.board())
+            cfg = copy.deepcopy(self.config)
+            pcb_for_drc = self.pcb_path
+        require_kicad = bool(p.get("require_kicad_drc", True))
         icfg = ImproveConfig(
             timeout_s=timeout_s,
             min_score=min_score,
@@ -715,25 +720,28 @@ class AppState:
             place_candidates=int(p.get("place_candidates", 2)),
             place_sa_iterations=int(p.get("place_sa_iterations", 200)),
             prefer_native=bool(p.get("prefer_native", True)),
-            allow_topor_rounds=bool(p.get("allow_topor_rounds", True)),
+            # TopoR multi-variant rounds are slow; default off for responsive improve
+            allow_topor_rounds=bool(p.get("allow_topor_rounds", False)),
+            pcb_path=str(pcb_for_drc) if pcb_for_drc else None,
+            require_kicad_drc=require_kicad and bool(pcb_for_drc),
+            kicad_drc_every_round=bool(p.get("kicad_drc_every_round", False)),
+            kicad_drc_timeout_s=float(p.get("kicad_drc_timeout_s", 120)),
         )
         self.set_progress(job, 1, "continuous improve")
         self.log(
             job,
             f"Improve: timeout={timeout_s:.0f}s target={target_grade} "
             f"min_score≥{min_score:.0f} drc_clean={require_drc} "
-            f"place={do_place} route={do_route}",
+            f"kicad_drc={icfg.require_kicad_drc} place={do_place} route={do_route}",
         )
-        with self.lock:
-            board = copy.deepcopy(self.board())
-            cfg = copy.deepcopy(self.config)
 
         last_pub = {"t": 0.0}
+        t_job0 = time.time()
 
         def on_progress(ev: dict[str, Any]) -> None:
             event = ev.get("event")
-            elapsed = float(ev.get("elapsed_s") or 0)
-            # Map time to 5–95% of progress bar
+            # Wall-clock progress so the bar always moves (events may omit elapsed_s)
+            elapsed = float(ev.get("elapsed_s") or 0) or (time.time() - t_job0)
             frac = 5.0 + 90.0 * min(1.0, elapsed / max(timeout_s, 1.0))
             best = ev.get("best") or {}
             if event == "stage":
@@ -750,6 +758,12 @@ class AppState:
                     f"viol={ev.get('violations')} best="
                     f"{(best or {}).get('grade', '—')}/{(best or {}).get('score', '—')}",
                 )
+                kicad_bit = ""
+                if ev.get("kicad_available"):
+                    kicad_bit = (
+                        f" kicad={'PASS' if ev.get('kicad_passed') else 'FAIL'}"
+                        f"/{ev.get('kicad_copper_violations')}"
+                    )
                 self.log(
                     job,
                     f"  r{ev.get('round')} [{ev.get('strategy')}] "
@@ -757,11 +771,14 @@ class AppState:
                     f"viol={ev.get('violations')} (S={ev.get('shorts')} "
                     f"sp={ev.get('spacing')} out={ev.get('outline')}) "
                     f"vias={ev.get('vias')} unrouted={ev.get('unrouted')}"
+                    f"{kicad_bit}"
                     + (" ★BEST" if ev.get("is_best") else ""),
                 )
+                for s in (ev.get("kicad_samples") or [])[:4]:
+                    self.log(job, f"    kicad: {s}")
                 # Live copper + score on session (throttle ~2/s)
                 now = time.time()
-                if now - last_pub["t"] >= 0.4:
+                if now - last_pub["t"] >= 0.35:
                     last_pub["t"] = now
                     partial = ev.get("partial")
                     if isinstance(partial, dict) and partial.get("segments") is not None:
@@ -789,10 +806,13 @@ class AppState:
             elif event == "route_progress":
                 done_n = int(ev.get("done") or 0)
                 total = max(1, int(ev.get("total") or 1))
+                # Blend time with net progress so native (no per-net) still moves
+                net_frac = 5.0 + 90.0 * (done_n / total)
                 self.set_progress(
                     job,
-                    frac,
-                    f"{ev.get('strategy')} nets {done_n}/{total} · {ev.get('net')}",
+                    max(frac, min(95.0, net_frac * 0.35 + frac * 0.65)),
+                    f"r? {ev.get('strategy')} {ev.get('stage')} "
+                    f"{done_n}/{total} · {ev.get('net')}",
                 )
                 partial = ev.get("partial")
                 if isinstance(partial, dict) and partial.get("segments") is not None:
