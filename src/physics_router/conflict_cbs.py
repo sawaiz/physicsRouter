@@ -137,12 +137,14 @@ def conflict_clusters(conflicts: list[Conflict]) -> list[ConflictCluster]:
 def _strip_net(result: RouteResult, net: str) -> RouteResult:
     segs = [s for s in result.segments if s.net != net]
     vias = [v for v in result.vias if v.net != net]
+    areas = [area for area in result.areas if area.net != net]
     unrouted = [u for u in result.unrouted_nets if u != net]
     total = sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in segs)
     reports = [r for r in result.net_reports if r.net != net]
     return RouteResult(
         segments=segs,
         vias=vias,
+        areas=areas,
         via_count=len(vias),
         total_length_mm=total,
         unrouted_nets=unrouted,
@@ -226,7 +228,9 @@ def cbs_repair_cluster(
         if n_conf == 0:
             break
         confs = detect_conflicts(cur, clearance_mm=clearance_mm)
-        confs = [c for c in confs if c.net_a in cluster.nets and c.net_b in cluster.nets]
+        confs = [
+            c for c in confs if c.net_a in cluster.nets and c.net_b in cluster.nets
+        ]
         if not confs:
             break
         c0 = confs[0]
@@ -234,10 +238,15 @@ def cbs_repair_cluster(
             branch_id += 1
             if branch_id > max_branches:
                 break
-            new_forbid = list(forbids) + [(c0.x, c0.y, max(clearance_mm * 3, 0.6), c0.layer)]
+            new_forbid = list(forbids) + [
+                (c0.x, c0.y, max(clearance_mm * 3, 0.6), c0.layer)
+            ]
             stripped = _strip_net(cur, victim)
             om = _rebuild_om(
-                board, stripped, clearance_mm=clearance_mm, layers=layers,
+                board,
+                stripped,
+                clearance_mm=clearance_mm,
+                layers=layers,
                 forbid_regions=new_forbid,
             )
             anchors = _anchors_for_net(board, victim)
@@ -266,21 +275,30 @@ def cbs_repair_cluster(
                 placed = False
                 for ly in layers:
                     cands = k_homotopy_paths(
-                        anchors[ia], anchors[ib], ly, victim, om,
-                        k=k_homotopy, grid_mm=grid_mm, width_mm=0.25,
+                        anchors[ia],
+                        anchors[ib],
+                        ly,
+                        victim,
+                        om,
+                        k=k_homotopy,
+                        grid_mm=grid_mm,
+                        width_mm=0.25,
                     )
                     if not cands:
                         continue
                     path = cands[0].points
                     for i in range(len(path) - 1):
                         seg = RS(
-                            path[i][0], path[i][1], path[i + 1][0], path[i + 1][1],
-                            layer=ly, net=victim, width_mm=0.25,
+                            path[i][0],
+                            path[i][1],
+                            path[i + 1][0],
+                            path[i + 1][1],
+                            layer=ly,
+                            net=victim,
+                            width_mm=0.25,
                         )
                         new_segs.append(seg)
-                        om.paint_trace(
-                            seg.x1, seg.y1, seg.x2, seg.y2, ly, 0.25, victim
-                        )
+                        om.paint_trace(seg.x1, seg.y1, seg.x2, seg.y2, ly, 0.25, victim)
                     placed = True
                     break
                 if not placed:
@@ -293,6 +311,7 @@ def cbs_repair_cluster(
             trial = RouteResult(
                 segments=new_segs,
                 vias=new_vias,
+                areas=list(stripped.areas),
                 via_count=len(new_vias),
                 total_length_mm=total,
                 unrouted_nets=list(stripped.unrouted_nets),
@@ -302,10 +321,14 @@ def cbs_repair_cluster(
                 quality=dict(cur.quality or {}),
             )
             n2 = len(detect_conflicts(trial, clearance_mm=clearance_mm))
-            log["branches"].append({
-                "victim": victim, "status": "ok", "conflicts_after": n2,
-                "forbid": {"x": c0.x, "y": c0.y, "layer": c0.layer},
-            })
+            log["branches"].append(
+                {
+                    "victim": victim,
+                    "status": "ok",
+                    "conflicts_after": n2,
+                    "forbid": {"x": c0.x, "y": c0.y, "layer": c0.layer},
+                }
+            )
             work.append((n2, trial, new_forbid))
             if n2 < best_conf:
                 best_conf = n2
@@ -369,12 +392,14 @@ def try_cpsat_via_assignment(
         report["assignments"] = []
         for i, v in enumerate(vias):
             pi = solver.Value(pair_vars[i])
-            report["assignments"].append({
-                "net": v.net,
-                "x": v.x,
-                "y": v.y,
-                "layers": list(pairs[pi]),
-            })
+            report["assignments"].append(
+                {
+                    "net": v.net,
+                    "x": v.x,
+                    "y": v.y,
+                    "layers": list(pairs[pi]),
+                }
+            )
             v.layers = pairs[pi]
     return report
 
@@ -405,8 +430,12 @@ def repair_route_conflicts(
         if len(cl.nets) < 2:
             continue
         cur, log = cbs_repair_cluster(
-            cur, board, cl, config,
-            clearance_mm=clearance_mm, grid_mm=grid_mm,
+            cur,
+            board,
+            cl,
+            config,
+            clearance_mm=clearance_mm,
+            grid_mm=grid_mm,
         )
         report["repairs"].append(log)
 

@@ -121,13 +121,22 @@ def classify_board(
             strategy = "power"
             reason = f"net_class={lab.net_class.value}"
             w = max(w, 0.4 if lab.net_class == NetClass.POWER else 0.3)
-        elif any(k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS", "PGND")):
+        elif any(
+            k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS", "PGND")
+        ):
             strategy = "power"
             reason = "name heuristic power/gnd"
             w = max(w, 0.3)
-        elif _matrix_name(net) or (pins >= 12 and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))):
+        elif _matrix_name(net) or (
+            pins >= 12
+            and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))
+        ):
             strategy = "matrix"
-            reason = f"dense multipin bus pins={pins}" if pins >= 12 else "charlieplex/matrix name"
+            reason = (
+                f"dense multipin bus pins={pins}"
+                if pins >= 12
+                else "charlieplex/matrix name"
+            )
             w = min(w, max(rules.constraints.min_track_width_mm, 0.2))
         elif lab and (
             lab.critical
@@ -162,11 +171,15 @@ def classify_board(
         )
 
     counts = {s: len(plan.nets_for(s)) for s in _STRATEGY_ORDER if plan.nets_for(s)}
-    plan.notes.append("strategy counts: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+    plan.notes.append(
+        "strategy counts: " + ", ".join(f"{k}={v}" for k, v in counts.items())
+    )
     return plan
 
 
-def _merge_route(dst: RouteResult, src: RouteResult, *, only_nets: set[str] | None = None) -> None:
+def _merge_route(
+    dst: RouteResult, src: RouteResult, *, only_nets: set[str] | None = None
+) -> None:
     for s in src.segments:
         if only_nets is not None and s.net not in only_nets:
             continue
@@ -177,6 +190,10 @@ def _merge_route(dst: RouteResult, src: RouteResult, *, only_nets: set[str] | No
             continue
         dst.vias.append(v)
         dst.via_count += 1
+    for area in src.areas:
+        if only_nets is not None and area.net not in only_nets:
+            continue
+        dst.areas.append(area)
     for rep in src.net_reports:
         if only_nets is not None and rep.net not in only_nets:
             continue
@@ -311,7 +328,7 @@ def hybrid_route(
             rules,
             nets,
             strategy=strategy,
-            seed=result if result.segments else None,
+            seed=result if result.segments or result.areas else None,
             plan=plan,
             progress_cb=progress_cb,
             phase_i=pi,
@@ -320,7 +337,8 @@ def hybrid_route(
         _merge_route(result, partial, only_nets=set(nets))
         result.notes.append(
             f"hybrid phase {strategy}: +{len(partial.segments)} segs "
-            f"+{partial.via_count} vias unrouted={len(partial.unrouted_nets)}"
+            f"+{partial.via_count} vias +{len(partial.areas)} areas "
+            f"unrouted={len(partial.unrouted_nets)}"
         )
 
     cl_floor = rules.constraints.min_clearance_mm

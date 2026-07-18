@@ -153,9 +153,13 @@ def elastic_optimize_polyline(
                 continue
             # edges to neighbors must stay clear
             prev, nxt = pts[i - 1], pts[i + 1]
-            if om.segment_blocked(prev[0], prev[1], nx, ny, layer, net, width_mm=width_mm):
+            if om.segment_blocked(
+                prev[0], prev[1], nx, ny, layer, net, width_mm=width_mm
+            ):
                 continue
-            if om.segment_blocked(nx, ny, nxt[0], nxt[1], layer, net, width_mm=width_mm):
+            if om.segment_blocked(
+                nx, ny, nxt[0], nxt[1], layer, net, width_mm=width_mm
+            ):
                 continue
             new_pts[i] = (nx, ny)
         pts = new_pts
@@ -169,7 +173,9 @@ def elastic_optimize_polyline(
         ac = _dist(a, c)
         if ab + bc > ac * 1.02:  # not collinear enough to drop
             # keep if needed for clearance
-            if om.segment_blocked(a[0], a[1], c[0], c[1], layer, net, width_mm=width_mm):
+            if om.segment_blocked(
+                a[0], a[1], c[0], c[1], layer, net, width_mm=width_mm
+            ):
                 cleaned.append(b)
             elif ab + bc - ac > 0.05:
                 cleaned.append(b)
@@ -187,7 +193,9 @@ def elastic_optimize_route(
     iterations: int = 20,
 ) -> RouteResult:
     """Apply elastic optimization per net/layer continuous chain."""
-    layers = sorted({s.layer for s in result.segments}) or list(board.copper_layers or ["F.Cu"])
+    layers = sorted({s.layer for s in result.segments}) or list(
+        board.copper_layers or ["F.Cu"]
+    )
     om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
     # Paint all copper first
     for s in result.segments:
@@ -215,8 +223,12 @@ def elastic_optimize_route(
                 while changed:
                     changed = False
                     for i, s in enumerate(remaining):
-                        ends = {(chain[0].x1, chain[0].y1), (chain[0].x2, chain[0].y2),
-                                (chain[-1].x1, chain[-1].y1), (chain[-1].x2, chain[-1].y2)}
+                        ends = {
+                            (chain[0].x1, chain[0].y1),
+                            (chain[0].x2, chain[0].y2),
+                            (chain[-1].x1, chain[-1].y1),
+                            (chain[-1].x2, chain[-1].y2),
+                        }
                         s_ends = {(s.x1, s.y1), (s.x2, s.y2)}
                         if any(_dist(a, b) < 0.08 for a in ends for b in s_ends):
                             chain.append(remaining.pop(i))
@@ -228,8 +240,13 @@ def elastic_optimize_route(
                 pts = _polyline_from_segs(chain)
                 before = list(pts)
                 pts2 = elastic_optimize_polyline(
-                    pts, ly, net, om, width_mm=width,
-                    iterations=iterations, clearance_mm=clearance_mm,
+                    pts,
+                    ly,
+                    net,
+                    om,
+                    width_mm=width,
+                    iterations=iterations,
+                    clearance_mm=clearance_mm,
                 )
                 if pts2 != before:
                     moved += 1
@@ -248,11 +265,13 @@ def elastic_optimize_route(
     out = RouteResult(
         segments=new_segs,
         vias=list(result.vias),
+        areas=list(result.areas),
         via_count=result.via_count,
         total_length_mm=total,
         unrouted_nets=list(result.unrouted_nets),
         clearance_violations=result.clearance_violations,
-        notes=list(result.notes) + [f"elastic: optimized {moved} chain(s), {iterations} iters"],
+        notes=list(result.notes)
+        + [f"elastic: optimized {moved} chain(s), {iterations} iters"],
         net_reports=list(result.net_reports),
         quality=dict(result.quality or {}),
     )
@@ -260,7 +279,9 @@ def elastic_optimize_route(
     by_net_len: dict[str, float] = {}
     by_net_seg: dict[str, int] = {}
     for s in new_segs:
-        by_net_len[s.net] = by_net_len.get(s.net, 0.0) + _dist((s.x1, s.y1), (s.x2, s.y2))
+        by_net_len[s.net] = by_net_len.get(s.net, 0.0) + _dist(
+            (s.x1, s.y1), (s.x2, s.y2)
+        )
         by_net_seg[s.net] = by_net_seg.get(s.net, 0) + 1
     for rep in out.net_reports:
         if rep.net in by_net_len:

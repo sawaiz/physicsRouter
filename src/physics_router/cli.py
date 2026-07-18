@@ -63,8 +63,12 @@ def init_config(output: Path) -> None:
 
 
 @main.command("import-nets")
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--sch", "sch_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--sch", "sch_path", type=click.Path(exists=True, path_type=Path), default=None
+)
 @click.option(
     "--project-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -84,7 +88,9 @@ def init_config(output: Path) -> None:
     type=click.Path(path_type=Path),
     default=Path("placement_config.yaml"),
 )
-@click.option("--override/--no-override", default=False, help="Override existing net labels")
+@click.option(
+    "--override/--no-override", default=False, help="Override existing net labels"
+)
 def import_nets_cmd(
     pcb_path: Path | None,
     sch_path: Path | None,
@@ -99,7 +105,11 @@ def import_nets_cmd(
     if not pcb_path and not sch_path and not project_dir:
         raise click.UsageError("Provide --pcb and/or --sch and/or --project-dir")
 
-    base = load_config(config_path) if config_path and config_path.exists() else example_config()
+    base = (
+        load_config(config_path)
+        if config_path and config_path.exists()
+        else example_config()
+    )
     # start from empty nets if no prior config path
     if config_path is None:
         base.nets = []
@@ -153,7 +163,9 @@ def import_nets_cmd(
 @click.option("--candidates", type=int, default=None, help="Override num_candidates")
 @click.option("--iterations", type=int, default=None, help="Override SA iterations")
 @click.option("--no-spice/--spice", default=False, help="Disable Ngspice/proxy scoring")
-@click.option("--no-openems/--openems", default=False, help="Disable OpenEMS/proxy scoring")
+@click.option(
+    "--no-openems/--openems", default=False, help="Disable OpenEMS/proxy scoring"
+)
 def place_cmd(
     config_path: Path,
     pcb_path: Path | None,
@@ -209,8 +221,15 @@ def place_cmd(
 
 
 @main.command("score")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
 def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
     """Score current placement with geometric + physics terms (no optimization)."""
     from physics_router.physics import (
@@ -221,7 +240,11 @@ def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
     )
 
     config = load_config(config_path)
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
     sb = geometric_score(board, config)
     sb = apply_simulation_scores(
         board,
@@ -234,8 +257,12 @@ def score_cmd(config_path: Path, pcb_path: Path | None) -> None:
 
 
 @main.command("rules")
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pro", "pro_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True
+)
+@click.option(
+    "--pro", "pro_path", type=click.Path(exists=True, path_type=Path), default=None
+)
 @click.option("--out-json", type=click.Path(path_type=Path), default=None)
 def rules_cmd(pcb_path: Path, pro_path: Path | None, out_json: Path | None) -> None:
     """Dump KiCad stackup, copper layers, and design rules (DRC floors / net classes)."""
@@ -248,12 +275,23 @@ def rules_cmd(pcb_path: Path, pro_path: Path | None, out_json: Path | None) -> N
 
 
 @main.command("pre-route")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
 def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
     """Run congestion / methodology checks before routing (multilayer advice)."""
     config = load_config(config_path)
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
     rules = load_design_rules(pcb_path=pcb_path) if pcb_path else None
     from physics_router.design_rules import default_design_rules
 
@@ -261,21 +299,48 @@ def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
     report = pre_route_analysis(board, config, rules)
     budget = estimate_via_budget(board, rules, config)
     hints = escape_hints(board, config)
-    click.echo(json.dumps({**report.to_dict(), "via_budget": budget, "escape_hints": hints}, indent=2))
+    click.echo(
+        json.dumps(
+            {**report.to_dict(), "via_budget": budget, "escape_hints": hints}, indent=2
+        )
+    )
 
 
 @main.command("improve")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--out-json", type=click.Path(path_type=Path), default=Path("improve_result.json"))
-@click.option("--timeout", "timeout_s", type=float, default=120.0, help="Seconds to keep trying")
-@click.option("--grade", "target_grade", type=click.Choice(["A", "B", "C", "D"], case_sensitive=False), default="A")
-@click.option("--min-score", type=float, default=None, help="Override min score (default from grade)")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--out-json", type=click.Path(path_type=Path), default=Path("improve_result.json")
+)
+@click.option(
+    "--timeout", "timeout_s", type=float, default=120.0, help="Seconds to keep trying"
+)
+@click.option(
+    "--grade",
+    "target_grade",
+    type=click.Choice(["A", "B", "C", "D"], case_sensitive=False),
+    default="A",
+)
+@click.option(
+    "--min-score",
+    type=float,
+    default=None,
+    help="Override min score (default from grade)",
+)
 @click.option("--clearance", type=float, default=0.2)
 @click.option("--grid", type=float, default=0.25)
 @click.option("--no-place", is_flag=True, help="Route only (skip placement reseeds)")
 @click.option("--max-rounds", type=int, default=None)
-@click.option("--allow-drc-fail", is_flag=True, help="Do not require zero DRC violations for goal")
+@click.option(
+    "--allow-drc-fail", is_flag=True, help="Do not require zero DRC violations for goal"
+)
 def improve_cmd(
     config_path: Path,
     pcb_path: Path | None,
@@ -290,11 +355,21 @@ def improve_cmd(
     allow_drc_fail: bool,
 ) -> None:
     """Continuously improve place+route until timeout or grade + full DRC pass."""
-    from physics_router.continuous_improve import ImproveConfig, continuous_improve, min_score_for_grade
+    from physics_router.continuous_improve import (
+        ImproveConfig,
+        continuous_improve,
+        min_score_for_grade,
+    )
 
     config = load_config(config_path)
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
-    ms = float(min_score) if min_score is not None else min_score_for_grade(target_grade)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
+    ms = (
+        float(min_score) if min_score is not None else min_score_for_grade(target_grade)
+    )
     icfg = ImproveConfig(
         timeout_s=timeout_s,
         min_score=ms,
@@ -344,9 +419,18 @@ def improve_cmd(
 
 
 @main.command("route")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--out-json", type=click.Path(path_type=Path), default=Path("route_result.json"))
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--out-json", type=click.Path(path_type=Path), default=Path("route_result.json")
+)
 @click.option(
     "--out-pcb",
     type=click.Path(path_type=Path),
@@ -361,7 +445,9 @@ def improve_cmd(
 )
 @click.option("--grid", type=float, default=None, help="Routing grid mm")
 @click.option("--no-vias/--vias", default=False, help="Disable vias / multi-layer")
-@click.option("--guide-only", is_flag=True, help="Legacy free-angle guide without clearance")
+@click.option(
+    "--guide-only", is_flag=True, help="Legacy free-angle guide without clearance"
+)
 @click.option(
     "--variants",
     type=int,
@@ -400,7 +486,11 @@ def route_cmd(
 ) -> None:
     """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish)."""
     config = load_config(config_path)
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
 
     rules = None
     if pcb_path and not ignore_kicad_rules:
@@ -475,7 +565,9 @@ def route_cmd(
 
 
 @main.command("drc")
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True
+)
 @click.option(
     "--out-dir",
     type=click.Path(path_type=Path),
@@ -486,19 +578,25 @@ def route_cmd(
 def drc_cmd(pcb_path: Path, out_dir: Path | None, refill_zones: bool) -> None:
     """Run official KiCad DRC (kicad-cli) and summarize copper violations."""
     if find_kicad_cli() is None:
-        raise click.ClickException("kicad-cli not found. Install KiCad or set KICAD_CLI.")
+        raise click.ClickException(
+            "kicad-cli not found. Install KiCad or set KICAD_CLI."
+        )
     out_dir = out_dir or Path("drc_out")
     out_dir.mkdir(parents=True, exist_ok=True)
     report = run_drc(pcb_path, out_dir / "drc.json", refill_zones=refill_zones)
     summary = report.to_dict()
-    (out_dir / "drc_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "drc_summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    )
     click.echo(json.dumps(summary, indent=2))
     if not report.passed:
         sys.exit(2)
 
 
 @main.command("render")
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True
+)
 @click.option(
     "--out-dir",
     type=click.Path(path_type=Path),
@@ -510,7 +608,9 @@ def drc_cmd(pcb_path: Path, out_dir: Path | None, refill_zones: bool) -> None:
     default="F.Cu,B.Cu,In1.Cu,In2.Cu,Edge.Cuts,F.SilkS",
     help="Comma-separated KiCad layer names",
 )
-@click.option("--no-pcbnew", is_flag=True, help="Skip direct pcbnew PLOT_CONTROLLER path")
+@click.option(
+    "--no-pcbnew", is_flag=True, help="Skip direct pcbnew PLOT_CONTROLLER path"
+)
 def render_cmd(pcb_path: Path, out_dir: Path, layers: str, no_pcbnew: bool) -> None:
     """Render board with official KiCad tools (kicad-cli SVG/3D + optional pcbnew)."""
     if find_kicad_cli() is None and find_kicad_python() is None:
@@ -526,7 +626,9 @@ def render_cmd(pcb_path: Path, out_dir: Path, layers: str, no_pcbnew: bool) -> N
 
 
 @main.command("export-step")
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), required=True
+)
 @click.option(
     "-o",
     "--output",
@@ -545,7 +647,9 @@ def render_cmd(pcb_path: Path, out_dir: Path, layers: str, no_pcbnew: bool) -> N
     default="",
     help="Optional KiCad net wildcard for copper-only STEP (e.g. 'CPX*')",
 )
-@click.option("--with-components/--board-only", default=False, help="Include footprint 3D models")
+@click.option(
+    "--with-components/--board-only", default=False, help="Include footprint 3D models"
+)
 def export_step_cmd(
     pcb_path: Path,
     output: Path | None,
@@ -583,13 +687,26 @@ def export_step_cmd(
 
 
 @main.command("route-guide")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--out-json", type=click.Path(path_type=Path), default=Path("route_guide.json"))
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--out-json", type=click.Path(path_type=Path), default=Path("route_guide.json")
+)
 def route_guide_cmd(config_path: Path, pcb_path: Path | None, out_json: Path) -> None:
     """Emit free-angle topological guide routes (no clearance)."""
     config = load_config(config_path)
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
     routes = topological_guide_route(board, config)
     out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
     click.echo(
@@ -600,8 +717,15 @@ def route_guide_cmd(config_path: Path, pcb_path: Path | None, out_json: Path) ->
 
 
 @main.command("export-openems")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
 @click.option(
     "--gerber",
     "gerbers",
@@ -615,7 +739,9 @@ def route_guide_cmd(config_path: Path, pcb_path: Path | None, out_json: Path) ->
     default=Path("openems_export"),
     help="Output directory for geometry + simulate_board.py",
 )
-@click.option("--route/--no-route", default=True, help="Run clearance-aware route before export")
+@click.option(
+    "--route/--no-route", default=True, help="Run clearance-aware route before export"
+)
 @click.option("--f0", type=float, default=1e9, help="Gaussian excite center Hz")
 @click.option("--fc", type=float, default=1e9, help="Gaussian excite width Hz")
 def export_openems_cmd(
@@ -656,7 +782,9 @@ def export_openems_cmd(
     nets_filter = None
     if config.nets and any(n.simulate_em or n.emi_sensitive for n in config.nets):
         nets_filter = {
-            n.name for n in config.nets if n.simulate_em or n.emi_sensitive or n.critical
+            n.name
+            for n in config.nets
+            if n.simulate_em or n.emi_sensitive or n.critical
         }
 
     design_rules = load_design_rules(pcb_path=pcb_path) if pcb_path else None
@@ -687,15 +815,30 @@ def serve_cmd(host: str, port: int) -> None:
 
 
 @main.command("export-dsn")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("board.dsn"))
-def export_dsn_cmd(config_path: Path | None, pcb_path: Path | None, output: Path) -> None:
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "-o", "--output", type=click.Path(path_type=Path), default=Path("board.dsn")
+)
+def export_dsn_cmd(
+    config_path: Path | None, pcb_path: Path | None, output: Path
+) -> None:
     """Export Specctra DSN for FreeRouting baseline autorouting."""
     from physics_router.dsn_export import export_dsn, write_freerouting_readme
 
     config = load_config(config_path) if config_path else example_config()
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
     rules = load_design_rules(pcb_path) if pcb_path else None
     path = export_dsn(board, output, config=config, rules=rules)
     write_freerouting_readme(output.parent)
@@ -704,11 +847,24 @@ def export_dsn_cmd(config_path: Path | None, pcb_path: Path | None, output: Path
 
 
 @main.command("compare-routes")
-@click.option("--topor", "topor_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.option("--baseline-json", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--ses", "ses_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--out", "out_json", type=click.Path(path_type=Path), default=Path("comparison.json"))
-@click.option("--md", "out_md", type=click.Path(path_type=Path), default=Path("comparison.md"))
+@click.option(
+    "--topor", "topor_path", type=click.Path(exists=True, path_type=Path), required=True
+)
+@click.option(
+    "--baseline-json", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--ses", "ses_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--out",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=Path("comparison.json"),
+)
+@click.option(
+    "--md", "out_md", type=click.Path(path_type=Path), default=Path("comparison.md")
+)
 def compare_routes_cmd(
     topor_path: Path,
     baseline_json: Path | None,
@@ -738,10 +894,21 @@ def compare_routes_cmd(
 
 
 @main.command("dashboard")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--viewer-data", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("dashboard.html"))
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "--viewer-data", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "-o", "--output", type=click.Path(path_type=Path), default=Path("dashboard.html")
+)
 @click.option("--viewer-url", default="viewer/index.html")
 def dashboard_cmd(
     config_path: Path | None,
@@ -775,7 +942,11 @@ def dashboard_cmd(
         }
     else:
         config = load_config(config_path) if config_path else example_config()
-        board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+        board = (
+            load_board_from_kicad_pcb(pcb_path, config)
+            if pcb_path
+            else board_from_synthetic(config)
+        )
         sb = geometric_score(board, config)
         sb = apply_simulation_scores(
             board, config, sb, spice=GeometricSpiceProxy(), openems=OpenEMSBackend()
@@ -799,10 +970,21 @@ def dashboard_cmd(
 
 
 @main.command("viewer-data")
-@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("viewer_data.json"))
-@click.option("--route-json", multiple=True, help="name=path.json for additional route variants")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
+)
+@click.option(
+    "-o", "--output", type=click.Path(path_type=Path), default=Path("viewer_data.json")
+)
+@click.option(
+    "--route-json", multiple=True, help="name=path.json for additional route variants"
+)
 def viewer_data_cmd(
     config_path: Path | None,
     pcb_path: Path | None,
@@ -810,11 +992,15 @@ def viewer_data_cmd(
     route_json: tuple[str, ...],
 ) -> None:
     """Export viewer_data.json for the interactive three.js viewer."""
-    from physics_router.router import RouteResult, RouteSegment, Via
+    from physics_router.router import CopperArea, RouteResult, RouteSegment, Via
     from physics_router.viewer_export import build_viewer_payload, write_viewer_data
 
     config = load_config(config_path) if config_path else example_config()
-    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    board = (
+        load_board_from_kicad_pcb(pcb_path, config)
+        if pcb_path
+        else board_from_synthetic(config)
+    )
     routes = {"guide": topological_guide_route(board, config)}
     for item in route_json:
         if "=" not in item:
@@ -843,9 +1029,21 @@ def viewer_data_cmd(
             )
             for v in data.get("vias") or []
         ]
+        areas = [
+            CopperArea(
+                outline=[tuple(point) for point in area.get("outline") or []],
+                layer=area.get("layer", "F.Cu"),
+                net=area.get("net", ""),
+                clearance_mm=area.get("clearance_mm", 0.2),
+                min_thickness_mm=area.get("min_thickness_mm", 0.25),
+                priority=area.get("priority", 0),
+            )
+            for area in data.get("areas") or []
+        ]
         routes[name] = RouteResult(
             segments=segs,
             vias=vias,
+            areas=areas,
             via_count=int(data.get("via_count") or len(vias)),
             total_length_mm=float(data.get("total_length_mm") or 0),
             unrouted_nets=list(data.get("unrouted_nets") or []),

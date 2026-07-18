@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,7 @@ from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules
 from physics_router.dsn_export import export_dsn
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
-from physics_router.models import BoardModel, Component, NetClass, NetLabel, PlacementConfig
+from physics_router.models import BoardModel, Component
 from physics_router.router import (
     append_routes_to_kicad_pcb,
     audit_same_layer_clearance,
@@ -20,7 +19,6 @@ from physics_router.router import (
     clearance_aware_route,
     free_angle_route,
     rubberband_cleanup,
-    strip_physics_router_copper,
     topological_guide_route,
 )
 from physics_router.routing_strategies import multilayer_route, pre_route_analysis
@@ -64,11 +62,15 @@ def test_soft_fallback_allowed_in_guide_only() -> None:
 
 def test_append_and_strip_physics_router_block(tmp_path: Path) -> None:
     cfg, board = _synthetic()
-    route = clearance_aware_route(board, cfg, clearance_mm=0.15, grid_mm=1.0, soft_fallback=True)
+    route = clearance_aware_route(
+        board, cfg, clearance_mm=0.15, grid_mm=1.0, soft_fallback=True
+    )
     assert route.segments
 
     src = tmp_path / "board.kicad_pcb"
-    src.write_text("(kicad_pcb\n  (version 20240108)\n  (generator test)\n)\n", encoding="utf-8")
+    src.write_text(
+        "(kicad_pcb\n  (version 20240108)\n  (generator test)\n)\n", encoding="utf-8"
+    )
     out = tmp_path / "routed.kicad_pcb"
     append_routes_to_kicad_pcb(str(src), str(out), route)
     text = out.read_text(encoding="utf-8")
@@ -76,7 +78,9 @@ def test_append_and_strip_physics_router_block(tmp_path: Path) -> None:
     n1 = text.count("(segment")
 
     # second apply replaces prior tracks (no stack)
-    route2 = clearance_aware_route(board, cfg, clearance_mm=0.2, grid_mm=1.0, soft_fallback=True)
+    route2 = clearance_aware_route(
+        board, cfg, clearance_mm=0.2, grid_mm=1.0, soft_fallback=True
+    )
     append_routes_to_kicad_pcb(str(out), str(out), route2, replace_previous=True)
     text2 = out.read_text(encoding="utf-8")
     n2 = text2.count("(segment")
@@ -84,6 +88,36 @@ def test_append_and_strip_physics_router_block(tmp_path: Path) -> None:
     assert n2 > 0
     # Replace must not leave both route generations stacked
     assert n2 <= max(n1, len(route2.segments)) + 1
+
+
+def test_append_and_replace_native_copper_area(tmp_path: Path) -> None:
+    from physics_router.router import (
+        CopperArea,
+        RouteResult,
+        strip_physics_router_zones,
+    )
+
+    src = tmp_path / "area_src.kicad_pcb"
+    src.write_text(
+        '(kicad_pcb\n  (version 20240108)\n  (generator "test")\n'
+        '  (layers (0 "F.Cu" signal) (31 "B.Cu" signal))\n'
+        '  (net 0 "")\n  (net 1 "GND")\n)\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "area_out.kicad_pcb"
+    area = CopperArea(
+        outline=[(1, 1), (9, 1), (9, 9), (1, 9)],
+        layer="B.Cu",
+        net="GND",
+        clearance_mm=0.2,
+    )
+    append_routes_to_kicad_pcb(str(src), str(out), RouteResult(areas=[area]))
+    text = out.read_text(encoding="utf-8")
+    assert '(zone (net 1) (net_name "GND")' in text
+    assert "(tstamp 70726f75-" in text
+    assert '(layer "B.Cu")' in text
+    assert text.count("(xy ") == 4
+    assert "(zone" not in strip_physics_router_zones(text)
 
 
 def test_audit_same_layer_clearance_detects_overlap() -> None:
@@ -117,7 +151,9 @@ def test_free_angle_los() -> None:
         BoardModel(
             width_mm=20,
             height_mm=20,
-            components={"R1": Component(ref="R1", x_mm=5, y_mm=5, width_mm=1, height_mm=1)},
+            components={
+                "R1": Component(ref="R1", x_mm=5, y_mm=5, width_mm=1, height_mm=1)
+            },
             nets={},
         ),
         clearance_mm=0.1,
@@ -212,7 +248,9 @@ def test_obstacle_map_same_net_may_pass() -> None:
     assert not om.blocked(10, 10, "F.Cu", "SIG")
 
 
-@pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo-90 missing")
+@pytest.mark.skipif(
+    not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo-90 missing"
+)
 def test_halo_leds_locked_and_extent() -> None:
     cfg = load_config(HALO_CFG)
     assert "D" in (cfg.lock_ref_prefixes or [])
@@ -228,7 +266,9 @@ def test_halo_leds_locked_and_extent() -> None:
     assert om.in_bounds(10, 0)
 
 
-@pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo-90 missing")
+@pytest.mark.skipif(
+    not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo-90 missing"
+)
 def test_halo_guide_route_runs() -> None:
     cfg = load_config(HALO_CFG)
     board = load_board_from_kicad_pcb(HALO_PCB, cfg)

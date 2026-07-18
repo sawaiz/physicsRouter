@@ -64,12 +64,11 @@ void GridMap::paint_rect(double cx, double cy, double w, double h, int layer, in
 
 void GridMap::paint_trace(double x1, double y1, double x2, double y2, double width_mm,
                           int layer, int net_id) {
-  // width_mm should already include track + 2*clearance when called from router
   double dx = x2 - x1, dy = y2 - y1;
   double len = std::hypot(dx, dy);
   double step = std::max(width_mm * 0.35, grid_ * 0.5);
   int n = std::max(1, static_cast<int>(std::ceil(len / step)));
-  n = std::min(n, 128);
+  n = std::min(n, 4096);
   for (int i = 0; i <= n; ++i) {
     double t = static_cast<double>(i) / n;
     paint_rect(x1 + dx * t, y1 + dy * t, width_mm, width_mm, layer, net_id);
@@ -99,7 +98,8 @@ bool GridMap::segment_blocked(double x1, double y1, double x2, double y2, int la
     return true;
   double dx = x2 - x1, dy = y2 - y1;
   double len = std::hypot(dx, dy);
-  int samples = len < 2 ? 4 : (len < 10 ? 6 : 10);
+  int samples = std::max(1, static_cast<int>(std::ceil(len / (grid_ * 0.5))));
+  samples = std::min(samples, 4096);
   for (int i = 0; i <= samples; ++i) {
     double t = static_cast<double>(i) / samples;
     if (point_blocked(x1 + dx * t, y1 + dy * t, layer, net_id))

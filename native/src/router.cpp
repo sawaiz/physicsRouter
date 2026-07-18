@@ -59,9 +59,12 @@ std::vector<Vec2> rubberband(const std::vector<Vec2> &path, const GridMap &g, in
 
 void paint_poly(GridMap &grid, const std::vector<Vec2> &poly, int layer, int net_id,
                 double width, double clearance) {
+  // Grid queries operate on centerlines. Reserve both track half-widths plus
+  // the required edge clearance (equal-width assumption for the fast map).
+  const double centerline_keepout_diameter = 2.0 * width + 2.0 * clearance;
   for (size_t i = 0; i + 1 < poly.size(); ++i)
     grid.paint_trace(poly[i].x, poly[i].y, poly[i + 1].x, poly[i + 1].y,
-                     width + clearance, layer, net_id);
+                     centerline_keepout_diameter, layer, net_id);
 }
 
 void emit_poly(const std::vector<Vec2> &poly, int layer, int net_id, double width,
@@ -79,9 +82,113 @@ void emit_poly(const std::vector<Vec2> &poly, int layer, int net_id, double widt
   }
 }
 
+double cross(Vec2 origin, Vec2 a, Vec2 b) {
+  return (a.x - origin.x) * (b.y - origin.y) -
+         (a.y - origin.y) * (b.x - origin.x);
+}
+
+std::vector<Vec2> convex_hull(std::vector<Vec2> points) {
+  if (points.size() < 3)
+    return points;
+  std::sort(points.begin(), points.end(), [](Vec2 a, Vec2 b) {
+    return a.x < b.x || (a.x == b.x && a.y < b.y);
+  });
+  points.erase(std::unique(points.begin(), points.end(), [](Vec2 a, Vec2 b) {
+                 return std::abs(a.x - b.x) < 1e-9 &&
+                        std::abs(a.y - b.y) < 1e-9;
+               }),
+               points.end());
+  if (points.size() < 3)
+    return points;
+  std::vector<Vec2> hull(points.size() * 2);
+  size_t k = 0;
+  for (const auto &point : points) {
+    while (k >= 2 && cross(hull[k - 2], hull[k - 1], point) <= 0)
+      --k;
+    hull[k++] = point;
+  }
+  for (size_t i = points.size() - 1, lower = k + 1; i > 0; --i) {
+    const auto &point = points[i - 1];
+    while (k >= lower && cross(hull[k - 2], hull[k - 1], point) <= 0)
+      --k;
+    hull[k++] = point;
+  }
+  hull.resize(k - 1);
+  return hull;
+}
+
+bool point_in_polygon(Vec2 point, const std::vector<Vec2> &polygon) {
+  bool inside = false;
+  if (polygon.size() < 3)
+    return true;
+  size_t previous = polygon.size() - 1;
+  for (size_t current = 0; current < polygon.size(); ++current) {
+    const auto &a = polygon[current];
+    const auto &b = polygon[previous];
+    if (((a.y > point.y) != (b.y > point.y)) &&
+        point.x < (b.x - a.x) * (point.y - a.y) /
+                          ((b.y - a.y) + 1e-18) +
+                      a.x)
+      inside = !inside;
+    previous = current;
+  }
+  return inside;
+}
+
+std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
+                               double margin, const RouteConfig &cfg) {
+  if (anchors.empty())
+    return {};
+  // Convex hull of small circles is a rounded Minkowski expansion of the
+  // anchor hull: a stable organic boundary without a polygon clipping stack.
+  constexpr int circle_steps = 16;
+  std::vector<Vec2> cloud;
+  cloud.reserve(anchors.size() * circle_steps);
+  const double radius = std::max(margin, cfg.clearance_mm * 2.0);
+  for (const auto &anchor : anchors) {
+    for (int i = 0; i < circle_steps; ++i) {
+      double angle = 2.0 * M_PI * static_cast<double>(i) / circle_steps;
+      cloud.push_back(
+          {std::clamp(anchor.x + radius * std::cos(angle), cfg.x_min, cfg.x_max),
+           std::clamp(anchor.y + radius * std::sin(angle), cfg.y_min, cfg.y_max)});
+    }
+  }
+  auto hull = convex_hull(std::move(cloud));
+  if (cfg.board_outline.size() < 3)
+    return hull;
+
+  Vec2 center{};
+  for (const auto &anchor : anchors) {
+    center.x += anchor.x;
+    center.y += anchor.y;
+  }
+  center.x /= static_cast<double>(anchors.size());
+  center.y /= static_cast<double>(anchors.size());
+  if (!point_in_polygon(center, cfg.board_outline))
+    return {};
+
+  // Project rounded boundary samples back inside a non-rectangular Edge.Cuts
+  // polygon (HALO's teardrop is the motivating case).
+  for (auto &point : hull) {
+    if (point_in_polygon(point, cfg.board_outline))
+      continue;
+    Vec2 low = center;
+    Vec2 high = point;
+    for (int iteration = 0; iteration < 32; ++iteration) {
+      Vec2 mid{(low.x + high.x) * 0.5, (low.y + high.y) * 0.5};
+      if (point_in_polygon(mid, cfg.board_outline))
+        low = mid;
+      else
+        high = mid;
+    }
+    point = low;
+  }
+  return hull;
+}
+
 } // namespace
 
-const char *native_version() { return "1.2.0-native-atomic"; }
+const char *native_version() { return "1.5.0-native-clearance"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -525,11 +632,36 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
 
   GridMap grid(cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max, cfg.grid_mm, cfg.num_layers);
 
+  if (cfg.board_outline.size() >= 3) {
+    auto &cells = grid.data();
+    for (int layer = 0; layer < grid.layers(); ++layer) {
+      for (int iy = 0; iy < grid.height(); ++iy) {
+        for (int ix = 0; ix < grid.width(); ++ix) {
+          Vec2 point{grid.ix_to_world(ix), grid.iy_to_world(iy)};
+          if (!point_in_polygon(point, cfg.board_outline)) {
+            size_t index = (static_cast<size_t>(layer) * grid.height() + iy) *
+                               grid.width() +
+                           ix;
+            cells[index] = 255;
+          }
+        }
+      }
+    }
+  }
+
   // paint pads
   for (const auto &ob : pad_obstacles) {
-    for (int ly = 0; ly < cfg.num_layers; ++ly)
-      grid.paint_rect(ob.cx, ob.cy, ob.w + cfg.clearance_mm * 2, ob.h + cfg.clearance_mm * 2, ly,
-                      ob.net_id);
+    std::vector<int> obstacle_layers = ob.layers;
+    if (obstacle_layers.empty()) {
+      for (int ly = 0; ly < cfg.num_layers; ++ly)
+        obstacle_layers.push_back(ly);
+    }
+    for (int ly : obstacle_layers) {
+      if (ly < 0 || ly >= cfg.num_layers)
+        continue;
+      grid.paint_rect(ob.cx, ob.cy, ob.w + cfg.clearance_mm * 2 + 0.25,
+                      ob.h + cfg.clearance_mm * 2 + 0.25, ly, ob.net_id);
+    }
   }
 
   // sort nets by priority desc, then fewer pins first
@@ -559,6 +691,35 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
       rep.status = "skipped";
       result.net_reports.push_back(rep);
       ++done;
+      continue;
+    }
+
+    if (net.use_copper_area) {
+      CopperArea area;
+      area.outline = organic_area(net.anchors, net.area_margin_mm, cfg);
+      area.layer = net.area_layer >= 0
+                       ? net.area_layer
+                       : (net.preferred_layers.empty()
+                              ? 0
+                              : net.preferred_layers.front());
+      area.layer = std::clamp(area.layer, 0, cfg.num_layers - 1);
+      area.net_id = net.net_id;
+      area.clearance_mm = cfg.clearance_mm;
+      area.min_thickness_mm = std::max(0.1, net.width_mm * 0.5);
+      area.priority = net.area_priority;
+      if (area.outline.size() >= 3) {
+        result.areas.push_back(std::move(area));
+        rep.status = "ok";
+        rep.method = "copper_area";
+      } else {
+        rep.status = "unrouted";
+        rep.method = "area_failed";
+        result.unrouted.push_back(net.name);
+      }
+      result.net_reports.push_back(rep);
+      ++done;
+      if (progress)
+        progress(done, total, net.name, rep.status);
       continue;
     }
 
@@ -616,11 +777,13 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         net_segments.insert(net_segments.end(), edge_segments.begin(),
                             edge_segments.end());
         for (const auto &v : edge_vias) {
-          net_vias.push_back(v);
-          for (int ly = 0; ly < cfg.num_layers; ++ly)
-            net_grid.paint_rect(v.x, v.y,
-                                v.size_mm + cfg.clearance_mm,
-                                v.size_mm + cfg.clearance_mm, ly, net.net_id);
+            net_vias.push_back(v);
+            for (int ly = 0; ly < cfg.num_layers; ++ly)
+              net_grid.paint_rect(
+                  v.x, v.y,
+                  v.size_mm + 2.0 * cfg.clearance_mm + net.width_mm,
+                  v.size_mm + 2.0 * cfg.clearance_mm + net.width_mm, ly,
+                  net.net_id);
         }
         break;
       }
