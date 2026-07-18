@@ -1,0 +1,735 @@
+[
+  {
+    "mode": "native_seq_grid0.5 (earlier)",
+    "time_s": 1.97,
+    "segments": 34,
+    "vias": 1,
+    "length_mm": 83.97,
+    "unrouted": [
+      "CPX-1",
+      "CPX-3",
+      "CPX-5",
+      "CPX-8",
+      "CPX-9",
+      "MIC",
+      "Net-(R3-Pad2)",
+      "SCL",
+      "SDA",
+      "Net-(TP2-Pad1)",
+      "SW-A",
+      "SW-B",
+      "XL-INT1",
+      "XL-INT2",
+      "RX",
+      "TX"
+    ],
+    "statuses": {
+      "partial": 7,
+      "unrouted": 16
+    },
+    "drc": {
+      "violations": 0,
+      "shorts": 0,
+      "spacing": 0,
+      "outline_outside": 0
+    },
+    "clearance_violations": 0,
+    "score": 0.0,
+    "grade": "F",
+    "summary": "grade F (0/100) \u00b7 0 soft viol \u00b7 1 vias \u00b7 16 unrouted \u00b7 84.0 mm",
+    "notes_snip": [
+      "backend: native_cpp sequential zero-violation",
+      "policy: one net at a time by priority/weight; rip-up; open > short",
+      "unrouted CPX-1: native zero-violation gate",
+      "unrouted CPX-3: native zero-violation gate",
+      "unrouted CPX-5: native zero-violation gate",
+      "unrouted CPX-8: native zero-violation gate",
+      "unrouted CPX-9: native zero-violation gate",
+      "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.15mm"
+    ]
+  },
+  {
+    "mode": "hybrid",
+    "time_s": 4.13,
+    "segments": 62,
+    "vias": 0,
+    "length_mm": 87.97,
+    "unrouted": [
+      "MIC",
+      "Net-(R3-Pad2)",
+      "SCL",
+      "SDA",
+      "Net-(TP2-Pad1)",
+      "SW-A",
+      "SW-B",
+      "XL-INT1",
+      "XL-INT2",
+      "RX",
+      "TX"
+    ],
+    "statuses": {
+      "partial": 12,
+      "unrouted": 11
+    },
+    "drc": {
+      "violations": 0,
+      "shorts": 0,
+      "spacing": 0,
+      "outline_outside": 0
+    },
+    "score": 12.2,
+    "grade": "F",
+    "summary": "grade F (12/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 11 unrouted \u00b7 88.0 mm",
+    "routed_ok_or_partial": 12,
+    "notes": [
+      "pipeline: hybrid multi-strategy (topological free-angle)",
+      "policy: sequential zero-violation per phase (priority/weight, rip-up, open>short)",
+      "backend: native_cpp sequential zero-violation",
+      "policy: one net at a time by priority/weight; rip-up; open > short",
+      "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.2mm",
+      "grade A (100/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 0 unrouted \u00b7 77.8 mm",
+      "hybrid: matrix phase nets=10 cl=0.200 grid=0.15",
+      "hybrid phase matrix: +54 segs +0 vias unrouted=0",
+      "grade A (100/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 0 unrouted \u00b7 10.2 mm",
+      "hybrid: power phase nets=2 cl=0.200 grid=0.25",
+      "hybrid phase power: +8 segs +0 vias unrouted=0",
+      "grade F (0/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 11 unrouted \u00b7 0.0 mm",
+      "hybrid: critical phase nets=11 cl=0.200 grid=0.15",
+      "hybrid phase critical: +0 segs +0 vias unrouted=11",
+      "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.2mm",
+      "grade F (12/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 11 unrouted \u00b7 88.0 mm"
+    ],
+    "net_reports": [
+      {
+        "net": "CPX-0",
+        "pins": 19,
+        "length_mm": 16.3175,
+        "segments": 10,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-1",
+        "pins": 19,
+        "length_mm": 2.5398,
+        "segments": 6,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-2",
+        "pins": 19,
+        "length_mm": 9.7565,
+        "segments": 7,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-3",
+        "pins": 19,
+        "length_mm": 15.6773,
+        "segments": 8,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-4",
+        "pins": 19,
+        "length_mm": 4.931,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-5",
+        "pins": 19,
+        "length_mm": 5.7674,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-6",
+        "pins": 19,
+        "length_mm": 7.4246,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-7",
+        "pins": 19,
+        "length_mm": 5.6487,
+        "segments": 3,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-8",
+        "pins": 19,
+        "length_mm": 7.3227,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "CPX-9",
+        "pins": 19,
+        "length_mm": 2.42,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=matrix"
+        ]
+      },
+      {
+        "net": "GND",
+        "pins": 8,
+        "length_mm": 4.3153,
+        "segments": 3,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "isotropic+native_seq",
+        "notes": [
+          "strategy=power"
+        ]
+      },
+      {
+        "net": "+3V",
+        "pins": 15,
+        "length_mm": 5.8454,
+        "segments": 5,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=power"
+        ]
+      },
+      {
+        "net": "MIC",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "Net-(R3-Pad2)",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "SCL",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "SDA",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "Net-(TP2-Pad1)",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "SW-A",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "SW-B",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "XL-INT1",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "XL-INT2",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "RX",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      },
+      {
+        "net": "TX",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": [
+          "strategy=critical"
+        ]
+      }
+    ],
+    "drc_samples": []
+  },
+  {
+    "mode": "native_seq_grid0.25",
+    "time_s": 2.74,
+    "segments": 40,
+    "vias": 0,
+    "length_mm": 65.82,
+    "unrouted": [
+      "CPX-2",
+      "CPX-3",
+      "CPX-4",
+      "CPX-5",
+      "CPX-7",
+      "CPX-8",
+      "MIC",
+      "SCL",
+      "SDA",
+      "Net-(TP2-Pad1)",
+      "SW-A",
+      "SW-B",
+      "XL-INT1",
+      "XL-INT2",
+      "RX",
+      "TX"
+    ],
+    "statuses": {
+      "partial": 7,
+      "unrouted": 16
+    },
+    "drc": {
+      "violations": 0,
+      "shorts": 0,
+      "spacing": 0,
+      "outline_outside": 0
+    },
+    "score": 0.0,
+    "grade": "F",
+    "summary": "grade F (0/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 16 unrouted \u00b7 65.8 mm",
+    "routed_ok_or_partial": 7,
+    "notes": [
+      "backend: native_cpp sequential zero-violation",
+      "policy: one net at a time by priority/weight; rip-up; open > short",
+      "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.15mm",
+      "grade F (0/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 16 unrouted \u00b7 65.8 mm"
+    ],
+    "net_reports": [
+      {
+        "net": "GND",
+        "pins": 8,
+        "length_mm": 4.1085,
+        "segments": 3,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "isotropic+native_seq",
+        "notes": []
+      },
+      {
+        "net": "+3V",
+        "pins": 15,
+        "length_mm": 5.4726,
+        "segments": 4,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "CPX-0",
+        "pins": 19,
+        "length_mm": 36.0536,
+        "segments": 11,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "CPX-1",
+        "pins": 19,
+        "length_mm": 2.9027,
+        "segments": 7,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "CPX-2",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=1 shorts=1; open > short"
+        ]
+      },
+      {
+        "net": "CPX-3",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=1 shorts=1; open > short"
+        ]
+      },
+      {
+        "net": "CPX-4",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=2 shorts=2; open > short"
+        ]
+      },
+      {
+        "net": "CPX-5",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=3 shorts=0; open > short"
+        ]
+      },
+      {
+        "net": "CPX-6",
+        "pins": 19,
+        "length_mm": 3.6891,
+        "segments": 8,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "CPX-7",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=1 shorts=1; open > short"
+        ]
+      },
+      {
+        "net": "CPX-8",
+        "pins": 19,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "native_drc_reject",
+        "notes": [
+          "rejected: hits=5 shorts=0; open > short"
+        ]
+      },
+      {
+        "net": "CPX-9",
+        "pins": 19,
+        "length_mm": 11.374,
+        "segments": 5,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "isotropic+native_seq",
+        "notes": []
+      },
+      {
+        "net": "MIC",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "Net-(R3-Pad2)",
+        "pins": 3,
+        "length_mm": 2.2165,
+        "segments": 2,
+        "vias": 0,
+        "layers": [],
+        "status": "partial",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "SCL",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "SDA",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "Net-(TP2-Pad1)",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "SW-A",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "SW-B",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "XL-INT1",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "XL-INT2",
+        "pins": 2,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "RX",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      },
+      {
+        "net": "TX",
+        "pins": 3,
+        "length_mm": 0.0,
+        "segments": 0,
+        "vias": 0,
+        "layers": [],
+        "status": "unrouted",
+        "method": "unrouted_edge+native_seq",
+        "notes": []
+      }
+    ],
+    "drc_samples": []
+  },
+  {
+    "mode": "prior_baseline_drc_report_json",
+    "time_s": 59.26,
+    "segments": 162,
+    "vias": 22,
+    "length_mm": 746.52,
+    "unrouted": [],
+    "drc": {
+      "violations": 38,
+      "shorts": 25,
+      "spacing": 13,
+      "outline_outside": 0
+    },
+    "score": 42.4,
+    "grade": "D",
+    "summary": "from docs/images/routing_process/drc_report.json (pre zero-violation)"
+  }
+]

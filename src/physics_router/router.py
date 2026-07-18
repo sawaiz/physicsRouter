@@ -886,24 +886,201 @@ def _conflict_partners(items: list[dict[str, Any]], net: str) -> set[str]:
     return partners
 
 
+def _is_matrix_net(net: str, config: PlacementConfig | None = None) -> bool:
+    """Charlieplex / matrix-style nets (equal-weight peers may rip each other)."""
+    u = net.upper()
+    if u.startswith("CPX") or u.startswith("COL") or u.startswith("ROW"):
+        return True
+    if config is not None:
+        lab = config.net_by_name().get(net)
+        if lab is not None and (lab.power_loop_group or "").lower() in (
+            "charlieplex",
+            "matrix",
+            "led_matrix",
+        ):
+            return True
+    return False
+
+
+def _is_multipin_net(board: BoardModel, net: str, *, min_pins: int = 3) -> bool:
+    # 3+ pins = multi-edge MST (needs full-tree commit, not a single segment)
+    return len(board.nets.get(net) or []) >= min_pins
+
+
 def _rippable_partners(
     partners: set[str],
     current: str,
     config: PlacementConfig | None,
     board: BoardModel,
+    *,
+    allow_equal_matrix: bool = True,
 ) -> list[str]:
-    """Lower-priority (or equal-priority, more pins) conflict nets we may rip."""
+    """Nets we may rip to free space for *current*.
+
+    - Always: lower priority
+    - Equal priority + more pins
+    - Equal-weight matrix/CPX peers (bidirectional rip among the matrix)
+    - Equal priority multipin peers when current is multipin
+    Never rips strictly higher-priority nets.
+    """
     cur_p = _net_priority(config, current)
+    cur_matrix = _is_matrix_net(current, config)
+    cur_multi = _is_multipin_net(board, current)
     out: list[str] = []
     for p in partners:
         pp = _net_priority(config, p)
         if pp < cur_p:
             out.append(p)
-        elif pp == cur_p and len(board.nets.get(p, [])) > len(board.nets.get(current, [])):
+            continue
+        if pp > cur_p:
+            continue
+        # equal weight
+        if len(board.nets.get(p, [])) > len(board.nets.get(current, [])):
             out.append(p)
-    # Rip lowest priority first
-    out.sort(key=lambda n: (_net_priority(config, n), -len(board.nets.get(n, [])), n))
+            continue
+        if allow_equal_matrix and cur_matrix and _is_matrix_net(p, config):
+            out.append(p)
+            continue
+        if cur_multi and _is_multipin_net(board, p):
+            out.append(p)
+            continue
+    # Rip lowest priority first, then most pins (harder blockers), then name
+    out.sort(
+        key=lambda n: (
+            _net_priority(config, n),
+            -len(board.nets.get(n, [])),
+            n,
+        )
+    )
     return out
+
+
+def _space_rip_candidates(
+    result: RouteResult,
+    current: str,
+    config: PlacementConfig | None,
+    board: BoardModel,
+) -> list[str]:
+    """Committed peers to rip when *current* cannot fully connect (space starvation).
+
+    Includes equal-weight non-matrix peers (needed for multipin power etc.).
+    Never includes strictly higher-priority nets.
+    """
+    committed = {s.net for s in result.segments} | {v.net for v in result.vias}
+    committed.discard(current)
+    out = _rippable_partners(committed, current, config, board, allow_equal_matrix=True)
+    cur_p = _net_priority(config, current)
+    for p in committed:
+        if p in out:
+            continue
+        pp = _net_priority(config, p)
+        if pp < cur_p:
+            out.append(p)
+        elif pp == cur_p:
+            # Equal weight: prefer ripping nets with fewer pins (easier to re-route)
+            out.append(p)
+    out.sort(
+        key=lambda n: (
+            _net_priority(config, n),
+            len(board.nets.get(n, [])),  # fewer pins first (cheaper re-route)
+            n,
+        )
+    )
+    return out
+
+
+def _net_fully_connected(
+    board: BoardModel,
+    net: str,
+    segments: list[RouteSegment],
+    vias: list[Via],
+    *,
+    tol_mm: float = 0.45,
+) -> bool:
+    """True if copper of *net* connects all unique pin anchors (union-find)."""
+    anchors = _unique_anchors(board, net)
+    if len(anchors) < 2:
+        return True
+    segs = [s for s in segments if s.net == net]
+    if not segs:
+        return False
+    # Collect graph nodes: anchors + segment endpoints + vias
+    nodes: list[tuple[float, float]] = list(anchors)
+    for s in segs:
+        nodes.append((s.x1, s.y1))
+        nodes.append((s.x2, s.y2))
+    for v in vias:
+        if v.net == net:
+            nodes.append((v.x, v.y))
+
+    parent = list(range(len(nodes)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    # Connect segment endpoints
+    def nearest(pt: tuple[float, float]) -> int:
+        best_i, best_d = 0, 1e18
+        for i, n in enumerate(nodes):
+            d = _dist(pt, n)
+            if d < best_d:
+                best_d, best_i = d, i
+        return best_i
+
+    for s in segs:
+        ia = nearest((s.x1, s.y1))
+        ib = nearest((s.x2, s.y2))
+        union(ia, ib)
+    for v in vias:
+        if v.net != net:
+            continue
+        # Via joins all layers at same XY — already one node
+        pass
+
+    # Snap nearby nodes (pad fanout vs track ends)
+    for i in range(len(nodes)):
+        for j in range(i + 1, len(nodes)):
+            if _dist(nodes[i], nodes[j]) <= tol_mm:
+                union(i, j)
+
+    roots = {find(i) for i in range(len(anchors))}
+    return len(roots) == 1
+
+
+def _dense_grid_for_net(
+    board: BoardModel, net: str, base_grid: float, attempt: int = 0
+) -> float:
+    """Finer grid for multipin/matrix nets; denser still on retries."""
+    g = float(base_grid)
+    pins = len(board.nets.get(net) or [])
+    if pins >= 12 or _is_matrix_net(net):
+        g = min(g, 0.2)
+    if pins >= 8:
+        g = min(g, 0.25)
+    if attempt >= 1:
+        g = min(g, 0.15)
+    if attempt >= 3:
+        g = min(g, 0.12)
+    return max(0.08, g)
+
+
+def _native_expansions_for_net(board: BoardModel, net: str, attempt: int = 0) -> int:
+    pins = len(board.nets.get(net) or [])
+    base = 8000
+    if pins >= 12:
+        base = 28000
+    elif pins >= 6:
+        base = 16000
+    base += attempt * 4000
+    return min(40000, base)
 
 
 def _net_layer_prefs(
@@ -1135,6 +1312,129 @@ def _route_one_net_mst(
     return report
 
 
+def _python_try_full_net(
+    board: BoardModel,
+    config: PlacementConfig | None,
+    result: RouteResult,
+    net_name: str,
+    *,
+    layers: list[str],
+    clearance_mm: float,
+    grid_mm: float,
+    allow_vias: bool,
+    design_rules: Any | None,
+    seed_result: RouteResult | None,
+    attempt: int = 0,
+) -> bool:
+    """Edge-by-edge Python MST attempt; commits only if fully connected + DRC clean.
+
+    Mutates *result* on success. Returns True if the net was committed.
+    """
+    # Snapshot
+    snap_segs = list(result.segments)
+    snap_vias = list(result.vias)
+    snap_reports = list(result.net_reports)
+    snap_unr = list(result.unrouted_nets)
+
+    result = result  # noqa: PLW0127 — clarity
+    # Ensure no residual copper for this net
+    stripped = _strip_nets_from_result(result, {net_name})
+    result.segments = stripped.segments
+    result.vias = stripped.vias
+    result.via_count = stripped.via_count
+    result.total_length_mm = stripped.total_length_mm
+    result.net_reports = [r for r in result.net_reports if r.net != net_name]
+    if net_name in result.unrouted_nets:
+        result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+
+    om = _rebuild_om_with_copper(
+        board,
+        result,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        seed_result=seed_result,
+    )
+    g = _dense_grid_for_net(board, net_name, grid_mm, attempt=max(1, attempt))
+    kh = 2 + min(3, attempt) if _is_multipin_net(board, net_name) else 1
+    report = _route_one_net_mst(
+        net_name,
+        board,
+        config,
+        om,
+        result,
+        layers=layers,
+        grid_mm=g,
+        allow_vias=allow_vias,
+        guide_only=False,
+        soft_fallback=False,
+        design_rules=design_rules,
+        k_homotopy=kh,
+        clearance_mm=clearance_mm,
+        check_drc_per_edge=True,
+    )
+    if any(n == "_om_dirty" for n in report.notes):
+        # Mid-net DRC reject left dirty map; strip net copper
+        result.segments = [s for s in result.segments if s.net != net_name]
+        result.vias = [v for v in result.vias if v.net != net_name]
+        _rebuild_totals(result)
+
+    fully = _net_fully_connected(board, net_name, result.segments, result.vias)
+    trial = result
+    if seed_result is not None:
+        trial = RouteResult(
+            segments=list(seed_result.segments) + list(result.segments),
+            vias=list(seed_result.vias) + list(result.vias),
+        )
+    rep = native_drc_check(trial, clearance_mm=clearance_mm, board=board)
+    hard_ok = not _drc_items_involving(rep, net_name) and int(rep.get("shorts") or 0) == 0
+
+    if fully and hard_ok and report.status == "ok":
+        report.method = (report.method or "") + "+python_full"
+        report.notes = list(report.notes or []) + [f"python_mst grid={g:.3f}"]
+        result.net_reports.append(report)
+        result.notes.append(f"python_full committed {net_name}")
+        return True
+
+    # Restore snapshot (failed)
+    result.segments = snap_segs
+    result.vias = snap_vias
+    result.via_count = len(snap_vias)
+    result.total_length_mm = sum(
+        _dist((s.x1, s.y1), (s.x2, s.y2)) for s in snap_segs
+    )
+    result.net_reports = snap_reports
+    result.unrouted_nets = snap_unr
+    return False
+
+
+def _seed_segs_with_vias(
+    result: RouteResult,
+    seed_result: RouteResult | None,
+    layers: list[str],
+) -> list[RouteSegment]:
+    """Committed + seed copper, with vias as short keepout stubs on every layer."""
+    seed_segs = list(result.segments)
+    if seed_result is not None:
+        seed_segs = list(seed_result.segments) + seed_segs
+    via_list = list(result.vias)
+    if seed_result is not None:
+        via_list = list(seed_result.vias) + via_list
+    for v in via_list:
+        for ly in layers:
+            seed_segs.append(
+                RouteSegment(
+                    x1=v.x,
+                    y1=v.y,
+                    x2=v.x + 0.01,
+                    y2=v.y,
+                    layer=ly,
+                    net=v.net,
+                    width_mm=v.size_mm,
+                )
+            )
+    return seed_segs
+
+
 def _native_sequential_zero_violation(
     board: BoardModel,
     config: PlacementConfig | None,
@@ -1149,10 +1449,14 @@ def _native_sequential_zero_violation(
     design_rules: Any | None,
     progress_cb: ProgressCallback | None,
 ) -> RouteResult | None:
-    """Route nets one-at-a-time via native core; commit only if exact DRC is clean.
+    """Route nets one-at-a-time via native core with zero-violation full-net commit.
 
-    Priority/weight order. On conflict, rip lower-priority partners and requeue.
-    Never keeps shorting copper. Returns None if native is unavailable.
+    Policy:
+    - Priority/weight order
+    - Commit **only** fully connected nets with zero shorts/spacing
+    - Drop partial stubs (never leave incomplete copper)
+    - Rip lower-priority + equal-weight matrix/CPX peers
+    - Denser grid / higher expansions for multipin nets and retries
     """
     from collections import deque
 
@@ -1162,6 +1466,8 @@ def _native_sequential_zero_violation(
         return None
 
     def net_sort_key(n: str) -> tuple:
+        # High weight first; within weight prefer fewer pins (less blockage early),
+        # but multipin matrix gets a denser pass later via retries.
         return (-_net_priority(config, n), len(board.nets.get(n, [])), n)
 
     allowed = set(nets_filter) if nets_filter is not None else None
@@ -1180,25 +1486,68 @@ def _native_sequential_zero_violation(
     result = RouteResult()
     result.notes.append("backend: native_cpp sequential zero-violation")
     result.notes.append(
-        "policy: one net at a time by priority/weight; rip-up; open > short"
+        "policy: full-net commit only; equal-weight matrix rip-up; dense multipin; open>short"
     )
     if seed_result is not None:
-        # Seed is foreign copper — never mutated here
         result.notes.append(
             f"seed: {len(seed_result.segments)} segs + {len(seed_result.vias)} vias"
         )
 
+    # More attempts for multipin boards
+    multi_count = sum(1 for n in net_names if _is_multipin_net(board, n))
+    max_attempts = 14 if multi_count >= 4 else 8
     queue: deque[str] = deque(net_names)
     attempts: dict[str, int] = {n: 0 for n in net_names}
-    max_attempts = 5
     finished: set[str] = set()
     total = len(net_names)
     done = 0
+
+    def _trial_drc_result() -> RouteResult:
+        if seed_result is None:
+            return result
+        return RouteResult(
+            segments=list(seed_result.segments) + list(result.segments),
+            vias=list(seed_result.vias) + list(result.vias),
+            via_count=len(seed_result.vias) + len(result.vias),
+        )
+
+    def _do_rip(net_name: str, rippable: list[str], reason: str) -> bool:
+        nonlocal result
+        if not rippable or attempts.get(net_name, 0) >= max_attempts:
+            return False
+        # Rip one strongest blocker first (last in sort = most pins among lowest prio)
+        # Rip up to 3 peers per attempt to free corridors without thrashing
+        batch = rippable[: max(1, min(3, len(rippable)))]
+        result = _strip_nets_from_result(result, set(batch))
+        for p in batch:
+            finished.discard(p)
+            result.net_reports = [r for r in result.net_reports if r.net != p]
+            if p in result.unrouted_nets:
+                result.unrouted_nets = [u for u in result.unrouted_nets if u != p]
+            if p not in queue:
+                queue.append(p)
+        result.notes.append(
+            f"ripup({reason}): {net_name} vs {','.join(batch)} "
+            f"(attempt {attempts.get(net_name, 0)})"
+        )
+        queue.appendleft(net_name)
+        return True
 
     while queue:
         net_name = queue.popleft()
         if net_name in finished and attempts.get(net_name, 0) >= max_attempts:
             continue
+        # Skip if already committed fully (can re-enter after rip)
+        existing = next((r for r in result.net_reports if r.net == net_name), None)
+        if (
+            existing
+            and existing.status == "ok"
+            and net_name in finished
+            and any(s.net == net_name for s in result.segments)
+        ):
+            continue
+
+        att = attempts.get(net_name, 0)
         if progress_cb:
             try:
                 progress_cb(
@@ -1206,50 +1555,27 @@ def _native_sequential_zero_violation(
                     total,
                     net_name,
                     "routing",
-                    {"pins": len(board.nets.get(net_name, [])), "priority": _net_priority(config, net_name)},
+                    {
+                        "pins": len(board.nets.get(net_name, [])),
+                        "priority": _net_priority(config, net_name),
+                        "attempt": att,
+                    },
                 )
             except Exception:
                 pass
 
-        # Committed copper (plus seed) as keepouts for this exclusive native call
-        seed_segs = list(result.segments)
-        if seed_result is not None:
-            seed_segs = list(seed_result.segments) + seed_segs
-        # Also pass vias as zero-length keepout via seed? native seed_segments only
-        # — vias from committed nets: emulate as short stubs on each layer
-        for v in result.vias:
-            for ly in layers[:1]:
-                seed_segs.append(
-                    RouteSegment(
-                        x1=v.x,
-                        y1=v.y,
-                        x2=v.x + 0.01,
-                        y2=v.y,
-                        layer=ly,
-                        net=v.net,
-                        width_mm=v.size_mm,
-                    )
-                )
-        if seed_result is not None:
-            for v in seed_result.vias:
-                for ly in layers[:1]:
-                    seed_segs.append(
-                        RouteSegment(
-                            x1=v.x,
-                            y1=v.y,
-                            x2=v.x + 0.01,
-                            y2=v.y,
-                            layer=ly,
-                            net=v.net,
-                            width_mm=v.size_mm,
-                        )
-                    )
+        g_net = _dense_grid_for_net(board, net_name, grid_mm, attempt=att)
+        exp = _native_expansions_for_net(board, net_name, attempt=att)
+        seed_segs = _seed_segs_with_vias(result, seed_result, layers)
+        # post_rubberband collapses multipin spanning trees on exclusive one-net
+        # runs — keep MST geometry until commit (connectivity verified after).
+        use_rb = len(board.nets.get(net_name) or []) <= 2
 
         raw = route_board_native(
             board,
             config,
             clearance_mm=float(clearance_mm),
-            grid_mm=float(grid_mm),
+            grid_mm=float(g_net),
             soft_fallback=False,
             allow_vias=bool(allow_vias),
             use_gpu=True,
@@ -1257,124 +1583,375 @@ def _native_sequential_zero_violation(
             net_order=[net_name],
             exclusive_nets=True,
             seed_segments=seed_segs or None,
-            post_rubberband=True,
+            post_rubberband=use_rb,
             via_minimize=False,
+            max_expansions=exp,
         )
         if raw is None:
             return None  # fall back to Python sequential
 
-        partial = _route_result_from_dict(raw)
-        # Keep only this net's copper from partial
-        p_segs = [s for s in partial.segments if s.net == net_name]
-        p_vias = [v for v in partial.vias if v.net == net_name]
+        trial = _route_result_from_dict(raw)
+        p_segs = [s for s in trial.segments if s.net == net_name]
+        p_vias = [v for v in trial.vias if v.net == net_name]
 
-        # Strip any prior attempt copper for this net
+        # Never leave prior stubs: strip then trial-insert
         result = _strip_nets_from_result(result, {net_name})
+        if net_name in result.unrouted_nets:
+            result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+
+        # Empty result → incomplete
+        if not p_segs:
+            attempts[net_name] = att + 1
+            peers = _space_rip_candidates(result, net_name, config, board)
+            if _do_rip(net_name, peers, "empty"):
+                continue
+            result.net_reports = [r for r in result.net_reports if r.net != net_name]
+            result.net_reports.append(
+                NetRouteReport(
+                    net=net_name,
+                    pins=len(board.nets.get(net_name, [])),
+                    status="unrouted",
+                    method="native_empty",
+                    notes=["no legal copper from search"],
+                )
+            )
+            if net_name not in result.unrouted_nets:
+                result.unrouted_nets.append(net_name)
+            finished.add(net_name)
+            done += 1
+            continue
+
+        # Temporarily attach for connectivity + DRC checks
         result.segments.extend(p_segs)
         result.vias.extend(p_vias)
         _rebuild_totals(result)
 
-        trial_for_drc = result
-        if seed_result is not None:
-            # DRC must also see seed copper as foreign
-            trial_for_drc = RouteResult(
-                segments=list(seed_result.segments) + list(result.segments),
-                vias=list(seed_result.vias) + list(result.vias),
-                via_count=len(seed_result.vias) + len(result.vias),
-            )
-        rep = native_drc_check(
-            trial_for_drc, clearance_mm=clearance_mm, board=board
-        )
+        fully = _net_fully_connected(board, net_name, result.segments, result.vias)
+        rep = native_drc_check(_trial_drc_result(), clearance_mm=clearance_mm, board=board)
         involving = _drc_items_involving(rep, net_name)
         shorts = int(rep.get("shorts") or 0)
+        hard_ok = not involving and shorts == 0
 
-        if not involving and shorts == 0:
-            # Commit
-            p_rep = next(
-                (r for r in partial.net_reports if r.net == net_name),
-                None,
-            )
+        if fully and hard_ok:
+            # Full-net commit
+            p_rep = next((r for r in trial.net_reports if r.net == net_name), None)
             if p_rep is None:
                 p_rep = NetRouteReport(
                     net=net_name,
                     pins=len(board.nets.get(net_name, [])),
                     segments=len(p_segs),
                     vias=len(p_vias),
-                    length_mm=sum(
-                        _dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs
-                    ),
-                    status="ok" if p_segs else "unrouted",
-                    method="native_seq",
+                    length_mm=sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs),
+                    status="ok",
+                    method="native_seq_full",
                 )
             else:
-                p_rep.method = (p_rep.method or "") + "+native_seq"
+                p_rep.status = "ok"
+                p_rep.method = (p_rep.method or "") + "+native_seq_full"
+                p_rep.notes = list(p_rep.notes or []) + [
+                    f"grid={g_net:.3f} exp={exp} attempt={att}"
+                ]
             result.net_reports = [r for r in result.net_reports if r.net != net_name]
             result.net_reports.append(p_rep)
-            if not p_segs and net_name not in result.unrouted_nets:
-                if p_rep.status in ("unrouted", "skipped"):
-                    result.unrouted_nets.append(net_name)
             finished.add(net_name)
             done += 1
             if progress_cb:
                 try:
-                    progress_cb(done, total, net_name, p_rep.status, p_rep.to_dict())
+                    progress_cb(done, total, net_name, "ok", p_rep.to_dict())
                 except Exception:
                     pass
             continue
 
-        # Reject copper
+        # Drop partial / illegal stubs entirely
         result = _strip_nets_from_result(result, {net_name})
-        partners = _conflict_partners(involving, net_name)
+        attempts[net_name] = att + 1
+
+        # Python free-angle MST fallback (edge-by-edge) before ripping peers
+        if not fully or not hard_ok:
+            py_ok = _python_try_full_net(
+                board,
+                config,
+                result,
+                net_name,
+                layers=layers,
+                clearance_mm=clearance_mm,
+                grid_mm=g_net,
+                allow_vias=allow_vias,
+                design_rules=design_rules,
+                seed_result=seed_result,
+                attempt=att,
+            )
+            if py_ok:
+                finished.add(net_name)
+                done += 1
+                if progress_cb:
+                    try:
+                        progress_cb(done, total, net_name, "ok", {"method": "python_full"})
+                    except Exception:
+                        pass
+                continue
+
+        partners: set[str] = set()
+        if involving:
+            partners |= _conflict_partners(involving, net_name)
         if shorts > 0:
             for it in rep.get("items") or []:
                 if it.get("kind") == "short":
                     partners |= _conflict_partners([it], net_name)
-        # Partners may be seed-only (not rippable)
         committed_partners = {
             p for p in partners if any(s.net == p for s in result.segments)
         }
-        rippable = _rippable_partners(committed_partners, net_name, config, board)
-        attempts[net_name] = attempts.get(net_name, 0) + 1
+        rippable = _rippable_partners(
+            committed_partners, net_name, config, board, allow_equal_matrix=True
+        )
+        # Space starvation: incomplete but DRC-clean partial was dropped — rip peers
+        if not fully:
+            space_peers = _space_rip_candidates(result, net_name, config, board)
+            for p in space_peers:
+                if p not in rippable:
+                    rippable.append(p)
 
-        if rippable and attempts[net_name] < max_attempts:
-            result = _strip_nets_from_result(result, set(rippable))
-            for p in rippable:
-                finished.discard(p)
-                result.net_reports = [r for r in result.net_reports if r.net != p]
-                if p not in queue:
-                    queue.append(p)
-            result.notes.append(
-                f"ripup: {net_name} vs {','.join(rippable)} "
-                f"(native attempt {attempts[net_name]})"
-            )
-            queue.appendleft(net_name)
+        reason = "drc" if not hard_ok else "partial"
+        if _do_rip(net_name, rippable, reason):
             continue
 
-        # Leave open
-        nr = NetRouteReport(
-            net=net_name,
-            pins=len(board.nets.get(net_name, [])),
-            status="unrouted",
-            method="native_drc_reject",
-            notes=[
-                f"rejected: hits={len(involving)} shorts={shorts}; open > short",
-            ],
-        )
+        # Out of options — leave open (no stubs)
         result.net_reports = [r for r in result.net_reports if r.net != net_name]
-        result.net_reports.append(nr)
+        result.net_reports.append(
+            NetRouteReport(
+                net=net_name,
+                pins=len(board.nets.get(net_name, [])),
+                status="unrouted",
+                method="native_reject",
+                notes=[
+                    f"reject: full={fully} hard_ok={hard_ok} shorts={shorts} "
+                    f"hits={len(involving)} att={attempts[net_name]}",
+                ],
+            )
+        )
         if net_name not in result.unrouted_nets:
             result.unrouted_nets.append(net_name)
         finished.add(net_name)
         done += 1
-        result.notes.append(f"unrouted {net_name}: native zero-violation gate")
+        result.notes.append(
+            f"unrouted {net_name}: full-net gate (partial/illegal dropped)"
+        )
+
+    # ---- Dense multipin recovery pass: re-try unrouted multipin/matrix ----
+    unrouted_multi = [
+        n
+        for n in net_names
+        if n in result.unrouted_nets
+        and (_is_multipin_net(board, n) or _is_matrix_net(n, config))
+    ]
+    if unrouted_multi:
+        result.notes.append(
+            f"dense_multipin_pass: retry {len(unrouted_multi)} unrouted multipin/matrix"
+        )
+        # Prefer fewer pins first within recovery so some complete
+        unrouted_multi.sort(key=lambda n: (len(board.nets.get(n, [])), n))
+        for net_name in unrouted_multi:
+            # Rip equal-weight matrix peers to give a clear board, then re-route denser
+            peers = _space_rip_candidates(result, net_name, config, board)
+            # For recovery, rip ALL equal matrix peers so multipin can complete
+            matrix_peers = [p for p in peers if _is_matrix_net(p, config)]
+            if matrix_peers:
+                result = _strip_nets_from_result(result, set(matrix_peers))
+                for p in matrix_peers:
+                    finished.discard(p)
+                    result.net_reports = [r for r in result.net_reports if r.net != p]
+                    if p not in result.unrouted_nets:
+                        result.unrouted_nets.append(p)
+                    if p not in queue:
+                        queue.append(p)
+                result.notes.append(
+                    f"dense_pass rip matrix peers for {net_name}: {','.join(matrix_peers)}"
+                )
+
+            g_net = min(0.12, _dense_grid_for_net(board, net_name, grid_mm, attempt=5))
+            exp = _native_expansions_for_net(board, net_name, attempt=5)
+            seed_segs = _seed_segs_with_vias(result, seed_result, layers)
+            use_rb = len(board.nets.get(net_name) or []) <= 2
+            raw = route_board_native(
+                board,
+                config,
+                clearance_mm=float(clearance_mm),
+                grid_mm=float(g_net),
+                soft_fallback=False,
+                allow_vias=bool(allow_vias),
+                use_gpu=True,
+                isotropic=True,
+                net_order=[net_name],
+                exclusive_nets=True,
+                seed_segments=seed_segs or None,
+                post_rubberband=use_rb,
+                via_minimize=False,
+                max_expansions=exp,
+            )
+            if raw is None:
+                continue
+            trial = _route_result_from_dict(raw)
+            p_segs = [s for s in trial.segments if s.net == net_name]
+            p_vias = [v for v in trial.vias if v.net == net_name]
+            result = _strip_nets_from_result(result, {net_name})
+            if not p_segs:
+                continue
+            result.segments.extend(p_segs)
+            result.vias.extend(p_vias)
+            _rebuild_totals(result)
+            fully = _net_fully_connected(board, net_name, result.segments, result.vias)
+            rep = native_drc_check(
+                _trial_drc_result(), clearance_mm=clearance_mm, board=board
+            )
+            involving = _drc_items_involving(rep, net_name)
+            shorts = int(rep.get("shorts") or 0)
+            if fully and not involving and shorts == 0:
+                result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+                result.net_reports = [r for r in result.net_reports if r.net != net_name]
+                result.net_reports.append(
+                    NetRouteReport(
+                        net=net_name,
+                        pins=len(board.nets.get(net_name, [])),
+                        segments=len(p_segs),
+                        vias=len(p_vias),
+                        length_mm=sum(
+                            _dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs
+                        ),
+                        status="ok",
+                        method="native_dense_multipin",
+                        notes=[f"recovery grid={g_net:.3f}"],
+                    )
+                )
+                finished.add(net_name)
+                result.notes.append(f"dense_pass committed {net_name}")
+            else:
+                # Drop incomplete recovery copper
+                result = _strip_nets_from_result(result, {net_name})
+                if net_name not in result.unrouted_nets:
+                    result.unrouted_nets.append(net_name)
+
+        # Re-run queue for any matrix peers we ripped during dense pass
+        recovery_round = 0
+        while queue and recovery_round < len(net_names) * max_attempts:
+            recovery_round += 1
+            net_name = queue.popleft()
+            if any(s.net == net_name for s in result.segments):
+                # already has copper — verify full+legal
+                fully = _net_fully_connected(
+                    board, net_name, result.segments, result.vias
+                )
+                rep = native_drc_check(
+                    _trial_drc_result(), clearance_mm=clearance_mm, board=board
+                )
+                if fully and not _drc_items_involving(rep, net_name) and not rep.get(
+                    "shorts"
+                ):
+                    continue
+                result = _strip_nets_from_result(result, {net_name})
+            att = attempts.get(net_name, 0) + 1
+            attempts[net_name] = att
+            g_net = _dense_grid_for_net(board, net_name, grid_mm, attempt=att)
+            exp = _native_expansions_for_net(board, net_name, attempt=att)
+            seed_segs = _seed_segs_with_vias(result, seed_result, layers)
+            use_rb = len(board.nets.get(net_name) or []) <= 2
+            raw = route_board_native(
+                board,
+                config,
+                clearance_mm=float(clearance_mm),
+                grid_mm=float(g_net),
+                soft_fallback=False,
+                allow_vias=bool(allow_vias),
+                use_gpu=True,
+                isotropic=True,
+                net_order=[net_name],
+                exclusive_nets=True,
+                seed_segments=seed_segs or None,
+                post_rubberband=use_rb,
+                via_minimize=False,
+                max_expansions=exp,
+            )
+            if raw is None:
+                continue
+            trial = _route_result_from_dict(raw)
+            p_segs = [s for s in trial.segments if s.net == net_name]
+            p_vias = [v for v in trial.vias if v.net == net_name]
+            if not p_segs:
+                if net_name not in result.unrouted_nets:
+                    result.unrouted_nets.append(net_name)
+                continue
+            result = _strip_nets_from_result(result, {net_name})
+            result.segments.extend(p_segs)
+            result.vias.extend(p_vias)
+            _rebuild_totals(result)
+            fully = _net_fully_connected(board, net_name, result.segments, result.vias)
+            rep = native_drc_check(
+                _trial_drc_result(), clearance_mm=clearance_mm, board=board
+            )
+            involving = _drc_items_involving(rep, net_name)
+            shorts = int(rep.get("shorts") or 0)
+            if fully and not involving and shorts == 0:
+                result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+                result.net_reports = [r for r in result.net_reports if r.net != net_name]
+                result.net_reports.append(
+                    NetRouteReport(
+                        net=net_name,
+                        pins=len(board.nets.get(net_name, [])),
+                        segments=len(p_segs),
+                        vias=len(p_vias),
+                        length_mm=sum(
+                            _dist((s.x1, s.y1), (s.x2, s.y2)) for s in p_segs
+                        ),
+                        status="ok",
+                        method="native_recovery",
+                    )
+                )
+                finished.add(net_name)
+            else:
+                result = _strip_nets_from_result(result, {net_name})
+                if net_name not in result.unrouted_nets:
+                    result.unrouted_nets.append(net_name)
+                # Try one more peer rip
+                peers = _space_rip_candidates(result, net_name, config, board)
+                if peers and att < max_attempts:
+                    batch = peers[:2]
+                    result = _strip_nets_from_result(result, set(batch))
+                    for p in batch:
+                        finished.discard(p)
+                        if p not in queue:
+                            queue.append(p)
+                    queue.appendleft(net_name)
 
     for n in net_names:
         if not any(r.net == n for r in result.net_reports):
+            st = "ok" if any(s.net == n for s in result.segments) else "unrouted"
+            if st == "unrouted" and n not in result.unrouted_nets:
+                result.unrouted_nets.append(n)
             result.net_reports.append(
                 NetRouteReport(
-                    net=n, pins=len(board.nets.get(n, [])), status="skipped"
+                    net=n,
+                    pins=len(board.nets.get(n, [])),
+                    status=st,
+                    method="native_seq",
                 )
             )
+        # Ensure partial never survives
+        segs_n = [s for s in result.segments if s.net == n]
+        if segs_n and not _net_fully_connected(
+            board, n, result.segments, result.vias
+        ):
+            result = _strip_nets_from_result(result, {n})
+            result.net_reports = [r for r in result.net_reports if r.net != n]
+            result.net_reports.append(
+                NetRouteReport(
+                    net=n,
+                    pins=len(board.nets.get(n, [])),
+                    status="unrouted",
+                    method="partial_stripped",
+                    notes=["incomplete stubs removed"],
+                )
+            )
+            if n not in result.unrouted_nets:
+                result.unrouted_nets.append(n)
 
     # Final safety: purge any residual shorts (should be none)
     result = purge_shorting_copper(
@@ -1528,7 +2105,7 @@ def clearance_aware_route(
         )
     if not guide_only:
         result.notes.append(
-            "policy: sequential zero-violation (priority/weight, rip-up, open>short)"
+            "policy: full-net commit only; equal-weight matrix rip-up; dense multipin; open>short"
         )
 
     # Priority: weight, then prefer fewer pins first within same class (less blockage)
@@ -1553,18 +2130,19 @@ def clearance_aware_route(
 
     from collections import deque
 
-    # One net at a time by priority; requeue after rip-up of lower-priority conflicts
+    multi_count = sum(1 for n in net_names if _is_multipin_net(board, n))
+    max_attempts = 14 if multi_count >= 4 else 8
     queue: deque[str] = deque(net_names)
     attempts: dict[str, int] = {n: 0 for n in net_names}
-    max_attempts = 5
     finished: set[str] = set()
     ni_progress = 0
 
     while queue:
         net_name = queue.popleft()
-        if net_name in finished and attempts[net_name] >= max_attempts:
+        if net_name in finished and attempts.get(net_name, 0) >= max_attempts:
             continue
         pins = board.nets.get(net_name) or []
+        att = attempts.get(net_name, 0)
         if progress_cb:
             try:
                 progress_cb(
@@ -1572,7 +2150,11 @@ def clearance_aware_route(
                     total_nets,
                     net_name,
                     "routing",
-                    {"pins": len(pins), "priority": _net_priority(config, net_name)},
+                    {
+                        "pins": len(pins),
+                        "priority": _net_priority(config, net_name),
+                        "attempt": att,
+                    },
                 )
             except Exception:
                 pass
@@ -1589,10 +2171,24 @@ def clearance_aware_route(
                 layers=layers,
                 seed_result=seed_result,
             )
-        # Replace prior report for this net
         result.net_reports = [r for r in result.net_reports if r.net != net_name]
         if net_name in result.unrouted_nets:
             result.unrouted_nets = [u for u in result.unrouted_nets if u != net_name]
+
+        g_net = (
+            float(grid)
+            if guide_only
+            else _dense_grid_for_net(board, net_name, float(grid), attempt=att)
+        )
+        kh = k_homotopy
+        if not guide_only and _is_multipin_net(board, net_name):
+            # Extra homotopy variants for multipin matrix
+            if isinstance(k_homotopy, dict):
+                kh = dict(k_homotopy)
+                kh[net_name] = max(int(kh.get(net_name, 1)), 2 + min(2, att))
+            else:
+                base_kh = int(k_homotopy or 1)
+                kh = max(base_kh, 2 + min(2, att))
 
         report = _route_one_net_mst(
             net_name,
@@ -1601,18 +2197,17 @@ def clearance_aware_route(
             om,
             result,
             layers=layers,
-            grid_mm=grid,
+            grid_mm=g_net,
             allow_vias=allow_vias,
             guide_only=guide_only,
             soft_fallback=soft_fallback,
             design_rules=design_rules,
-            k_homotopy=k_homotopy,
+            k_homotopy=kh,
             congestion=congestion,
             clearance_mm=clearance_mm,
             check_drc_per_edge=not guide_only,
         )
 
-        # ExactMap cannot unpaint — rebuild if an edge was DRC-rejected mid-net
         if any(n == "_om_dirty" for n in report.notes):
             report.notes = [n for n in report.notes if n != "_om_dirty"]
             om = _rebuild_om_with_copper(
@@ -1629,14 +2224,14 @@ def clearance_aware_route(
             ni_progress += 1
             continue
 
-        # Net-level exact DRC gate: commit only if zero hard hits involving this net
-        # and zero shorts anywhere (never accept early shorts)
+        fully = _net_fully_connected(board, net_name, result.segments, result.vias)
         rep = native_drc_check(result, clearance_mm=clearance_mm, board=board)
         involving = _drc_items_involving(rep, net_name)
         shorts = int(rep.get("shorts") or 0)
-        hard_hits = len(involving)
+        hard_ok = not involving and shorts == 0
 
-        if hard_hits == 0 and shorts == 0:
+        # Full-net commit only — drop partial stubs
+        if fully and hard_ok and report.status == "ok":
             result.net_reports.append(report)
             finished.add(net_name)
             ni_progress += 1
@@ -1646,7 +2241,7 @@ def clearance_aware_route(
                         ni_progress,
                         total_nets,
                         net_name,
-                        report.status,
+                        "ok",
                         {
                             **report.to_dict(),
                             "partial": {
@@ -1685,21 +2280,34 @@ def clearance_aware_route(
                     pass
             continue
 
-        # Illegal — uncommit this net completely
+        # Drop incomplete/illegal copper for this net
         result = _strip_nets_from_result(result, {net_name})
+        om = _rebuild_om_with_copper(
+            board,
+            result,
+            clearance_mm=clearance_mm,
+            layers=layers,
+            seed_result=seed_result,
+        )
+        attempts[net_name] = att + 1
+
         partners = _conflict_partners(involving, net_name)
-        # Also consider any short partners if shorts exist without involving list
         if shorts > 0:
             for it in rep.get("items") or []:
                 if it.get("kind") == "short":
                     partners |= _conflict_partners([it], net_name)
-        rippable = _rippable_partners(partners, net_name, config, board)
-        attempts[net_name] = attempts.get(net_name, 0) + 1
+        rippable = _rippable_partners(
+            partners, net_name, config, board, allow_equal_matrix=True
+        )
+        if not fully:
+            for p in _space_rip_candidates(result, net_name, config, board):
+                if p not in rippable:
+                    rippable.append(p)
 
         if rippable and attempts[net_name] < max_attempts:
-            # Rip lower-priority conflict nets, retry current, requeue ripped
-            result = _strip_nets_from_result(result, set(rippable))
-            for p in rippable:
+            batch = rippable[: max(1, min(3, len(rippable)))]
+            result = _strip_nets_from_result(result, set(batch))
+            for p in batch:
                 finished.discard(p)
                 result.net_reports = [r for r in result.net_reports if r.net != p]
                 if p not in queue:
@@ -1712,28 +2320,19 @@ def clearance_aware_route(
                 seed_result=seed_result,
             )
             result.notes.append(
-                f"ripup: {net_name} vs {','.join(rippable)} "
-                f"(attempt {attempts[net_name]})"
+                f"ripup: {net_name} vs {','.join(batch)} "
+                f"(attempt {attempts[net_name]}, full={fully})"
             )
-            queue.appendleft(net_name)  # re-try current after space freed
+            queue.appendleft(net_name)
             continue
 
-        # Cannot rip (only higher-priority partners) or out of attempts — leave open
-        om = _rebuild_om_with_copper(
-            board,
-            result,
-            clearance_mm=clearance_mm,
-            layers=layers,
-            seed_result=seed_result,
-        )
         report = NetRouteReport(
             net=net_name,
             pins=len(pins),
             status="unrouted",
-            method="drc_reject",
+            method="full_net_reject",
             notes=[
-                f"rejected: {hard_hits} hard hit(s), shorts={shorts}; open > short",
-                f"partners={sorted(partners)} rippable={rippable}",
+                f"rejected: full={fully} hard_ok={hard_ok} shorts={shorts}; open > short",
             ],
         )
         if net_name not in result.unrouted_nets:
@@ -1741,15 +2340,37 @@ def clearance_aware_route(
         result.net_reports.append(report)
         finished.add(net_name)
         ni_progress += 1
-        result.notes.append(f"unrouted {net_name}: zero-violation gate (open > short)")
+        result.notes.append(f"unrouted {net_name}: full-net gate (stubs dropped)")
 
-    # Ensure every net has a report
+    # Ensure every net has a report; strip any residual partial stubs
     reported = {r.net for r in result.net_reports}
     for n in net_names:
         if n not in reported:
             result.net_reports.append(
                 NetRouteReport(net=n, pins=len(board.nets.get(n, [])), status="skipped")
             )
+        if any(s.net == n for s in result.segments) and not _net_fully_connected(
+            board, n, result.segments, result.vias
+        ):
+            result = _strip_nets_from_result(result, {n})
+            result.net_reports = [r for r in result.net_reports if r.net != n]
+            result.net_reports.append(
+                NetRouteReport(
+                    net=n,
+                    pins=len(board.nets.get(n, [])),
+                    status="unrouted",
+                    method="partial_stripped",
+                )
+            )
+            if n not in result.unrouted_nets:
+                result.unrouted_nets.append(n)
+    om = _rebuild_om_with_copper(
+        board,
+        result,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        seed_result=seed_result,
+    )
 
     # CPX length match feedback
     cpx = [r for r in result.net_reports if r.net.upper().startswith("CPX") and r.length_mm > 0]
