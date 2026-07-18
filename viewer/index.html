@@ -4,6 +4,8 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>physicsRouter</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
+  <link rel="icon" href="/favicon.ico" sizes="any"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -1447,11 +1449,19 @@
     return [fx + lx * c - ly * s, fy + lx * s + ly * c];
   }
 
-  /** Pad-local shape rotation (same −angle convention). */
-  function localPadCorner(px, py, prDeg, cx, cy) {
-    const th = (-(Number(prDeg) || 0) * Math.PI) / 180;
+  /**
+   * Rectangular pad corners in board mm.
+   * Center via localToBoard; shape rotated by −padRot in *board* space.
+   * (Rotating in footprint-local space before place double-counts frot → 90° off.)
+   */
+  function padCornersBoard(fx, fy, frotDeg, px, py, padRotDeg, w, h) {
+    const [cx, cy] = localToBoard(fx, fy, frotDeg, px, py);
+    const th = (-(Number(padRotDeg) || 0) * Math.PI) / 180;
     const c = Math.cos(th), s = Math.sin(th);
-    return [px + cx * c - cy * s, py + cx * s + cy * c];
+    return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([lx, ly]) => [
+      cx + lx * c - ly * s,
+      cy + lx * s + ly * c,
+    ]);
   }
 
   /**
@@ -1523,9 +1533,12 @@
    */
   function drawFootprintGraphics(ctx, gfx, toScreen, {
     showSilk = true, showCu = true, layersOn = null, scaleMm = 1,
+    // Footprint place (needed for board-space pad orientation)
+    fx = 0, fy = 0, frot = 0, boardToScreen = null,
   } = {}) {
     const copperAlpha = 0.70;
     const lineW = (mm) => Math.max(0.7, (mm || 0.1) * scaleMm);
+    const b2s = boardToScreen || ((bx, by) => toScreen(bx - fx, by - fy)); // fallback unused
 
     // Pads — front view skips pure B.Cu (e.g. battery 12mm ground pad); V-flip shows B.
     for (const g of gfx) {
@@ -1563,11 +1576,8 @@
           ctx.fill();
         }
       } else {
-        const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
-        const pts = corners.map(([cx, cy]) => {
-          const [lx, ly] = localPadCorner(px, py, pr, cx, cy);
-          return toScreen(lx, ly);
-        });
+        const bcorners = padCornersBoard(fx, fy, frot, px, py, pr, w, h);
+        const pts = bcorners.map(([bx, by]) => boardToScreen(bx, by));
         ctx.beginPath();
         ctx.moveTo(pts[0][0], pts[0][1]);
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
@@ -1581,11 +1591,16 @@
           ctx.fill();
         }
         if (!large && /^k$/i.test(g.pinfunction || '')) {
-          const strip = [[w / 2 - w * 0.2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [w / 2 - w * 0.2, h / 2]];
-          const sp = strip.map(([cx, cy]) => {
-            const [lx, ly] = localPadCorner(px, py, pr, cx, cy);
-            return toScreen(lx, ly);
-          });
+          // K strip on +local-X edge of pad, rotated in board space like the pad body
+          const sw = w * 0.2;
+          const [cx, cy] = localToBoard(fx, fy, frot, px, py);
+          const th = (-(Number(pr) || 0) * Math.PI) / 180;
+          const c = Math.cos(th), s = Math.sin(th);
+          const localStrip = [
+            [w / 2 - sw, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [w / 2 - sw, h / 2],
+          ];
+          const sp = localStrip.map(([lx, ly]) =>
+            boardToScreen(cx + lx * c - ly * s, cy + lx * s + ly * c));
           ctx.fillStyle = 'rgba(240,224,128,0.95)';
           ctx.beginPath();
           ctx.moveTo(sp[0][0], sp[0][1]);
@@ -1881,7 +1896,11 @@
       };
 
       if (hasGfx) {
-        drawFootprintGraphics(ctx, gfx, toScreen, { showSilk, showCu, layersOn, scaleMm: scale });
+        drawFootprintGraphics(ctx, gfx, toScreen, {
+          showSilk, showCu, layersOn, scaleMm: scale,
+          fx: c.x, fy: c.y, frot: c.rot,
+          boardToScreen: (bx, by) => tx(bx, by),
+        });
       } else {
         const w = Math.max(0.4, c.w || 0.8);
         const h = Math.max(0.3, c.h || 0.5);

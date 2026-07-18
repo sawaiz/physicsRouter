@@ -16,7 +16,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from physics_router.config_io import load_config
-from physics_router.kicad_io import load_board_from_kicad_pcb, local_to_board
+from physics_router.kicad_io import (
+    load_board_from_kicad_pcb,
+    local_to_board,
+    pad_corners_board,
+)
 from physics_router.viewer_export import board_to_viewer_dict
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,9 +222,6 @@ def draw_footprint(cv: Canvas, comp: dict) -> None:
         shape = (g.get("shape") or "rect").lower()
         if large:
             col = hex_rgba("F.Cu", 50)
-        # Pad shape rot in footprint local space — same −angle convention as place
-        thr = math.radians(-float(pr or 0))
-        cr, sr = math.cos(thr), math.sin(thr)
         if "circle" in shape or (shape == "oval" and abs(w - h) < 0.05):
             c = cv.board_to_local_img(px, py, fx, fy, frot)
             r = 0.5 * max(w, h) * cv.scale
@@ -229,28 +230,28 @@ def draw_footprint(cv: Canvas, comp: dict) -> None:
             else:
                 d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=col)
         else:
-            corners = [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]
-            pts = []
-            for lx, ly_ in corners:
-                flx = px + lx * cr - ly_ * sr
-                fly = py + lx * sr + ly_ * cr
-                pts.append(cv.board_to_local_img(flx, fly, fx, fy, frot))
+            # Board-space pad orientation (not local-then-place — that is 90° off)
+            bcorners = pad_corners_board(fx, fy, frot, px, py, pr, w, h)
+            pts = [cv.tx(bx, by) for bx, by in bcorners]
             if large:
                 d.line(pts + [pts[0]], fill=col, width=2)
             else:
                 d.polygon(pts, fill=col)
         if not large and str(g.get("pinfunction") or "").upper() == "K":
-            strip = [
-                (w / 2 - w * 0.2, -h / 2),
+            # K strip along +local-X edge of pad, same board-space rot as pad body
+            sw = w * 0.2
+            strip_local = [
+                (w / 2 - sw, -h / 2),
                 (w / 2, -h / 2),
                 (w / 2, h / 2),
-                (w / 2 - w * 0.2, h / 2),
+                (w / 2 - sw, h / 2),
             ]
+            cx, cy = local_to_board(fx, fy, frot, px, py)
+            thr = math.radians(-float(pr or 0))
+            cr, sr = math.cos(thr), math.sin(thr)
             pts = []
-            for lx, ly_ in strip:
-                flx = px + lx * cr - ly_ * sr
-                fly = py + lx * sr + ly_ * cr
-                pts.append(cv.board_to_local_img(flx, fly, fx, fy, frot))
+            for lx, ly_ in strip_local:
+                pts.append(cv.tx(cx + lx * cr - ly_ * sr, cy + lx * sr + ly_ * cr))
             d.polygon(pts, fill=(240, 224, 128, 230))
 
     # silk / fab (front only for comparison with KiCad F.SilkS plot)

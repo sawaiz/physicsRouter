@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 from physics_router.config_io import load_config
-from physics_router.kicad_io import load_board_from_kicad_pcb, local_to_board
+from physics_router.kicad_io import (
+    load_board_from_kicad_pcb,
+    local_to_board,
+    pad_corners_board,
+)
 from physics_router.viewer_export import board_to_viewer_dict
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -270,3 +274,88 @@ def test_local_to_board_unit_identity_and_negation():
     # rot -90 file → effective +90 CCW: (lx,ly) → (-ly, lx)
     assert local_to_board(0, 0, -90, 1, 0) == pytest.approx((0, 1))
     assert local_to_board(0, 0, -90, 0, 1) == pytest.approx((-1, 0))
+
+
+def _pad_dxdy(comp: dict, num: str) -> tuple[float, float]:
+    g = next(
+        g
+        for g in (comp.get("graphics") or [])
+        if g.get("kind") == "pad" and str(g.get("num")) == str(num)
+    )
+    corners = pad_corners_board(
+        comp["x"],
+        comp["y"],
+        comp["rot"],
+        g["x"],
+        g["y"],
+        g.get("rot", 0),
+        g["w"],
+        g["h"],
+    )
+    xs = [p[0] for p in corners]
+    ys = [p[1] for p in corners]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
+
+def test_pad_shape_orientation_not_90_off():
+    """Pad rectangles must match pcbnew AABB (board-space −pad_rot, not local-then-place)."""
+    _, _, _, by = _load_viewer_board()
+
+    # D1: size 0.4×0.5 with padrot 270 + frot -90 → 0.5×0.4 on board (long axis horizontal)
+    dx, dy = _pad_dxdy(by["D1"], "1")
+    assert dx == pytest.approx(0.5, abs=0.05)
+    assert dy == pytest.approx(0.4, abs=0.05)
+
+    # S1: pads are horizontal bars (1.5 × 0.55), not vertical
+    dx, dy = _pad_dxdy(by["S1"], "1")
+    assert dx == pytest.approx(1.5, abs=0.05)
+    assert dy == pytest.approx(0.55, abs=0.05)
+    assert dx > dy, "S1 pad must be wider than tall on board"
+
+    # U2 side pad (num 2): long axis horizontal (along package edge)
+    dx, dy = _pad_dxdy(by["U2"], "2")
+    assert dx == pytest.approx(0.675, abs=0.05)
+    assert dy == pytest.approx(0.25, abs=0.05)
+
+    # U2 corner/rotated pad 4: after 90° pad rot, long axis still horizontal on left side
+    dx, dy = _pad_dxdy(by["U2"], "4")
+    assert dx == pytest.approx(0.675, abs=0.05)
+    assert dy == pytest.approx(0.25, abs=0.05)
+
+    # U2 top pad 6: long axis vertical
+    dx, dy = _pad_dxdy(by["U2"], "6")
+    assert dx == pytest.approx(0.25, abs=0.05)
+    assert dy == pytest.approx(0.675, abs=0.05)
+
+
+def test_local_then_place_pad_rot_is_wrong_for_d1():
+    """Guard: rotating pad in footprint local space before place is 90° off on D1."""
+    _, _, _, by = _load_viewer_board()
+    c = by["D1"]
+    g = next(g for g in c["graphics"] if g.get("kind") == "pad" and str(g.get("num")) == "1")
+    # Wrong method (old bug)
+    pr = float(g.get("rot") or 0)
+    th = math.radians(-pr)
+    cos_t, sin_t = math.cos(th), math.sin(th)
+    w, h = g["w"], g["h"]
+    wrong = []
+    for lx, ly in [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]:
+        flx = g["x"] + lx * cos_t - ly * sin_t
+        fly = g["y"] + lx * sin_t + ly * cos_t
+        wrong.append(local_to_board(c["x"], c["y"], c["rot"], flx, fly))
+    wdx = max(p[0] for p in wrong) - min(p[0] for p in wrong)
+    wdy = max(p[1] for p in wrong) - min(p[1] for p in wrong)
+    # Old method yields 0.4×0.5; correct is 0.5×0.4
+    assert wdx == pytest.approx(0.4, abs=0.05)
+    assert wdy == pytest.approx(0.5, abs=0.05)
+    right = _pad_dxdy(c, "1")
+    assert right[0] == pytest.approx(0.5, abs=0.05)
+    assert right[1] == pytest.approx(0.4, abs=0.05)
+
+
+def test_favicon_assets_exist():
+    viewer = ROOT / "viewer"
+    assert (viewer / "favicon.svg").is_file()
+    assert (viewer / "favicon.ico").is_file()
+    svg = (viewer / "favicon.svg").read_text()
+    assert "physicsRouter" in svg or "svg" in svg.lower()
