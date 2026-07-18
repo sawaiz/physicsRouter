@@ -1,108 +1,334 @@
 {
-  "mode": "native_sequential_zero_violation",
-  "time_s": 1.97,
-  "segments": 34,
-  "vias": 1,
-  "length_mm": 83.97,
+  "time_s": 625.44,
+  "segments": 204,
+  "vias": 0,
+  "length_mm": 563.24,
+  "ok_nets": 19,
+  "total_nets": 23,
   "unrouted": [
-    "CPX-1",
+    "CPX-2",
     "CPX-3",
-    "CPX-5",
-    "CPX-8",
-    "CPX-9",
-    "MIC",
-    "Net-(R3-Pad2)",
-    "SCL",
-    "SDA",
-    "Net-(TP2-Pad1)",
-    "SW-A",
-    "SW-B",
-    "XL-INT1",
-    "XL-INT2",
-    "RX",
-    "TX"
+    "CPX-4",
+    "CPX-8"
   ],
-  "statuses": {
-    "partial": 7,
-    "unrouted": 16
-  },
   "drc": {
     "violations": 0,
     "shorts": 0,
     "spacing": 0,
     "outline_outside": 0
   },
-  "clearance_violations": 0,
-  "score": 0.0,
-  "grade": "F",
-  "summary": "grade F (0/100) \u00b7 0 soft viol \u00b7 1 vias \u00b7 16 unrouted \u00b7 84.0 mm",
-  "notes": [
-    "backend: native_cpp sequential zero-violation",
-    "policy: one net at a time by priority/weight; rip-up; open > short",
-    "unrouted CPX-1: native zero-violation gate",
-    "unrouted CPX-3: native zero-violation gate",
-    "unrouted CPX-5: native zero-violation gate",
-    "unrouted CPX-8: native zero-violation gate",
-    "unrouted CPX-9: native zero-violation gate",
-    "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.15mm",
-    "grade F (0/100) \u00b7 0 soft viol \u00b7 1 vias \u00b7 16 unrouted \u00b7 84.0 mm"
-  ],
+  "score": 50.6,
+  "grade": "D",
+  "summary": "grade D (51/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 4 unrouted \u00b7 563.2 mm",
   "net_reports": [
     {
       "net": "GND",
       "pins": 8,
-      "length_mm": 4.2993,
-      "segments": 3,
+      "length_mm": 17.6774,
+      "segments": 7,
       "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "isotropic+native_seq",
-      "notes": []
+      "layers": [
+        "In1.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.150"
+      ]
     },
     {
       "net": "+3V",
-      "pins": 15,
-      "length_mm": 7.1117,
-      "segments": 5,
+      "pins": 16,
+      "length_mm": 33.6351,
+      "segments": 14,
       "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
+      "layers": [
+        "In1.Cu",
+        "In2.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.150"
+      ]
+    },
+    {
+      "net": "CPX-6",
+      "pins": 19,
+      "length_mm": 67.9157,
+      "segments": 19,
+      "vias": 0,
+      "layers": [
+        "F.Cu",
+        "In1.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_detour+homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.150"
+      ]
+    },
+    {
+      "net": "CPX-5",
+      "pins": 19,
+      "length_mm": 68.8477,
+      "segments": 21,
+      "vias": 0,
+      "layers": [
+        "B.Cu",
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+homotopy_detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "MIC",
+      "pins": 2,
+      "length_mm": 1.7241,
+      "segments": 1,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "SDA",
+      "pins": 3,
+      "length_mm": 1.7331,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "SW-B",
+      "pins": 2,
+      "length_mm": 2.9201,
+      "segments": 1,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "TX",
+      "pins": 3,
+      "length_mm": 7.7924,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
     },
     {
       "net": "CPX-0",
       "pins": 19,
-      "length_mm": 27.9811,
-      "segments": 8,
-      "vias": 1,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
+      "length_mm": 77.3215,
+      "segments": 31,
+      "vias": 0,
+      "layers": [
+        "B.Cu",
+        "F.Cu",
+        "In1.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+homotopy_astar+homotopy_detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "Net-(R3-Pad2)",
+      "pins": 3,
+      "length_mm": 4.1008,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "In1.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "SCL",
+      "pins": 3,
+      "length_mm": 2.0072,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "Net-(TP2-Pad1)",
+      "pins": 2,
+      "length_mm": 3.863,
+      "segments": 1,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "SW-A",
+      "pins": 2,
+      "length_mm": 2.4114,
+      "segments": 1,
+      "vias": 0,
+      "layers": [
+        "In1.Cu"
+      ],
+      "status": "ok",
+      "method": "los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "XL-INT1",
+      "pins": 2,
+      "length_mm": 3.6954,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "XL-INT2",
+      "pins": 2,
+      "length_mm": 3.7451,
+      "segments": 2,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "RX",
+      "pins": 3,
+      "length_mm": 7.247,
+      "segments": 3,
+      "vias": 0,
+      "layers": [
+        "F.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_los+homotopy_detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
     },
     {
       "net": "CPX-1",
+      "pins": 19,
+      "length_mm": 82.4059,
+      "segments": 29,
+      "vias": 0,
+      "layers": [
+        "B.Cu",
+        "F.Cu",
+        "In1.Cu",
+        "In2.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_astar+homotopy_detour+homotopy_los+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "CPX-7",
+      "pins": 19,
+      "length_mm": 69.1592,
+      "segments": 26,
+      "vias": 0,
+      "layers": [
+        "B.Cu",
+        "F.Cu",
+        "In1.Cu",
+        "In2.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_detour+homotopy_los+homotopy_astar+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "CPX-9",
+      "pins": 19,
+      "length_mm": 105.0364,
+      "segments": 38,
+      "vias": 0,
+      "layers": [
+        "B.Cu",
+        "F.Cu",
+        "In1.Cu",
+        "In2.Cu"
+      ],
+      "status": "ok",
+      "method": "homotopy_astar+homotopy_los+homotopy_detour+python_full",
+      "notes": [
+        "python_mst grid=0.120"
+      ]
+    },
+    {
+      "net": "CPX-2",
       "pins": 19,
       "length_mm": 0.0,
       "segments": 0,
       "vias": 0,
       "layers": [],
       "status": "unrouted",
-      "method": "native_drc_reject",
-      "notes": [
-        "rejected: hits=1 shorts=0; open > short"
-      ]
-    },
-    {
-      "net": "CPX-2",
-      "pins": 19,
-      "length_mm": 20.9197,
-      "segments": 7,
-      "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
+      "method": "native_seq",
       "notes": []
     },
     {
@@ -113,55 +339,18 @@
       "vias": 0,
       "layers": [],
       "status": "unrouted",
-      "method": "native_drc_reject",
-      "notes": [
-        "rejected: hits=1 shorts=0; open > short"
-      ]
-    },
-    {
-      "net": "CPX-4",
-      "pins": 19,
-      "length_mm": 8.1113,
-      "segments": 4,
-      "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
+      "method": "native_seq",
       "notes": []
     },
     {
-      "net": "CPX-5",
+      "net": "CPX-4",
       "pins": 19,
       "length_mm": 0.0,
       "segments": 0,
       "vias": 0,
       "layers": [],
       "status": "unrouted",
-      "method": "native_drc_reject",
-      "notes": [
-        "rejected: hits=3 shorts=0; open > short"
-      ]
-    },
-    {
-      "net": "CPX-6",
-      "pins": 19,
-      "length_mm": 1.6089,
-      "segments": 2,
-      "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "CPX-7",
-      "pins": 19,
-      "length_mm": 13.9333,
-      "segments": 5,
-      "vias": 0,
-      "layers": [],
-      "status": "partial",
-      "method": "unrouted_edge+native_seq",
+      "method": "native_seq",
       "notes": []
     },
     {
@@ -172,145 +361,8 @@
       "vias": 0,
       "layers": [],
       "status": "unrouted",
-      "method": "native_drc_reject",
-      "notes": [
-        "rejected: hits=6 shorts=0; open > short"
-      ]
-    },
-    {
-      "net": "CPX-9",
-      "pins": 19,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "native_drc_reject",
-      "notes": [
-        "rejected: hits=6 shorts=0; open > short"
-      ]
-    },
-    {
-      "net": "MIC",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "Net-(R3-Pad2)",
-      "pins": 3,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "SCL",
-      "pins": 3,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "SDA",
-      "pins": 3,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "Net-(TP2-Pad1)",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "SW-A",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "SW-B",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "XL-INT1",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "XL-INT2",
-      "pins": 2,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "RX",
-      "pins": 3,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
-      "notes": []
-    },
-    {
-      "net": "TX",
-      "pins": 3,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "unrouted_edge+native_seq",
+      "method": "native_seq",
       "notes": []
     }
-  ],
-  "drc_samples": []
+  ]
 }
