@@ -15,6 +15,7 @@ find_package(Threads REQUIRED)
 add_library(pr_core STATIC
   src/grid.cpp
   src/router.cpp
+  src/exact.cpp
   src/score.cpp
   src/gpu_opencl.cpp
 )

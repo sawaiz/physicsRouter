@@ -20,9 +20,9 @@ def _try_load() -> Any:
     if _native is not None or _load_error is not None:
         return _native
     try:
-        import pr_native  # type: ignore
+        from physics_router.router import _native_core
 
-        _native = pr_native
+        _native = _native_core()
         return _native
     except Exception as e:  # noqa: BLE001
         _load_error = str(e)
@@ -62,7 +62,7 @@ def route_board_native(
     use_gpu: bool = True,
     isotropic: bool = True,
     post_rubberband: bool = True,
-    via_minimize: bool = True,
+    via_minimize: bool = False,
     net_order: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``."""
@@ -83,7 +83,8 @@ def route_board_native(
     cfg.soft_fallback = bool(soft_fallback)
     cfg.allow_vias = bool(allow_vias)
     cfg.use_gpu = bool(use_gpu)
-    cfg.max_expansions = 4000
+    # Scale A* budget with resolution (matches Python free_angle_route scaling)
+    cfg.max_expansions = int(min(20000, max(4000, 4000 * max(1.0, 0.35 / max(float(grid_mm), 0.05)))))
     if hasattr(cfg, "isotropic"):
         cfg.isotropic = bool(isotropic)
     if hasattr(cfg, "post_rubberband"):
@@ -245,6 +246,7 @@ def polish_native_with_python(
     raw: dict[str, Any],
     *,
     clearance_mm: float = 0.2,
+    via_minimize: bool = False,
 ) -> Any:
     """Apply Python elastic + SI/MFG + via explain polish to a native route dict."""
     from physics_router.router import _route_result_from_dict, rubberband_cleanup, remove_redundant_vias
@@ -253,7 +255,9 @@ def polish_native_with_python(
 
     r = _route_result_from_dict(raw)
     r = rubberband_cleanup(r, board, config, clearance_mm=clearance_mm)
-    r = remove_redundant_vias(r, board, config, clearance_mm=clearance_mm)
+    r = remove_redundant_vias(
+        r, board, config, clearance_mm=clearance_mm, aggressive=via_minimize
+    )
     if len(board.nets) <= 40:
         r = elastic_optimize_route(r, board, clearance_mm=clearance_mm, iterations=12)
     si = evaluate_si_mfg(r, board, config, clearance_mm=clearance_mm)
@@ -278,6 +282,10 @@ def polish_native_with_python(
     }
     for n in si.notes:
         r.notes.append(n)
-    r.notes.append("polish: rubberband + via_minimize + elastic + SI/MFG")
+    r.notes.append(
+        "polish: rubberband + "
+        + ("via_minimize" if via_minimize else "keep-vias")
+        + " + elastic + SI/MFG"
+    )
     r.compute_quality()
     return r

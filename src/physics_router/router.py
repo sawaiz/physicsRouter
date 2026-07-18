@@ -1,22 +1,51 @@
-"""Clearance-aware TopoR-style free-angle router.
+"""Clearance-aware TopoR-style free-angle router (orchestration layer).
 
-Priority-ordered nets, LOS / detour / grid A*, optional vias, rubberband cleanup.
-Supports corner- or center-origin boards. Uses C++ ``pr_native`` when available.
+The geometric router lives in the C++ core (``pr_native``): exact obstacle map
+(spatial hash + Liang–Barsky + painted-copper distance) and the full free-angle
+search (LOS / detours / radar / hierarchical A* / rubberband). Python owns net
+ordering, via planning, polish, and reporting. There is no Python fallback —
+build the core with ``bash scripts/build_native.sh``.
 See DESIGN.md for policy decisions (soft fallback, DRC loop).
 """
 
 from __future__ import annotations
 
-import heapq
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from physics_router.models import BoardModel, PlacementConfig
 
 # progress_cb(done_nets, total_nets, net_name, stage, detail)
 ProgressCallback = Callable[[int, int, str, str, dict[str, Any]], None]
+
+_NATIVE: Any = None
+
+
+def _native_core() -> Any:
+    """Load the required C++ core, searching native/build for dev checkouts."""
+    global _NATIVE
+    if _NATIVE is not None:
+        return _NATIVE
+    try:
+        import pr_native  # type: ignore[import-not-found]
+    except ImportError:
+        import sys
+
+        build = Path(__file__).resolve().parents[2] / "native" / "build"
+        if build.is_dir():
+            sys.path.insert(0, str(build))
+        try:
+            import pr_native  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "physicsRouter requires the native C++ router core (pr_native). "
+                "Build it with: bash scripts/build_native.sh"
+            ) from exc
+    _NATIVE = pr_native
+    return _NATIVE
 
 
 @dataclass
@@ -235,30 +264,6 @@ def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
-def _point_in_rect(px: float, py: float, cx: float, cy: float, w: float, h: float) -> bool:
-    return abs(px - cx) <= w / 2 and abs(py - cy) <= h / 2
-
-
-def _segment_hits_rect(
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    samples: int = 8,
-) -> bool:
-    for i in range(samples + 1):
-        t = i / samples
-        px = x1 + (x2 - x1) * t
-        py = y1 + (y2 - y1) * t
-        if _point_in_rect(px, py, cx, cy, w, h):
-            return True
-    return False
-
-
 @dataclass
 class Obstacle:
     cx: float
@@ -397,9 +402,33 @@ class ObstacleMap:
         self.y_max = height_mm if y_max is None else y_max
         self.layers = layers or ["F.Cu", "B.Cu"]
         self.clearance_mm = clearance_mm
+        # Python mirrors for topology/elastic/regeometry consumers; the C++
+        # ExactMap is the clearance authority for every query.
         self.obstacles: dict[str, list[Obstacle]] = {ly: [] for ly in self.layers}
-        # Exact copper segments for continuous clearance (catches thin spokes)
         self.painted: dict[str, list[PaintedSeg]] = {ly: [] for ly in self.layers}
+        self._layer_ids: dict[str, int] = {ly: i for i, ly in enumerate(self.layers)}
+        self._net_ids: dict[str, int] = {}
+        self._native = _native_core().ExactMap(
+            self.x_min, self.x_max, self.y_min, self.y_max, clearance_mm, len(self.layers)
+        )
+
+    def _lid(self, layer: str) -> int:
+        lid = self._layer_ids.get(layer)
+        if lid is None:
+            lid = len(self._layer_ids)
+            self._layer_ids[layer] = lid
+            self.obstacles.setdefault(layer, [])
+            self.painted.setdefault(layer, [])
+        return lid
+
+    def _nid(self, net: str | None) -> int:
+        if net is None:
+            return -1
+        nid = self._net_ids.get(net)
+        if nid is None:
+            nid = len(self._net_ids)
+            self._net_ids[net] = nid
+        return nid
 
     def add_rect(
         self,
@@ -411,33 +440,18 @@ class ObstacleMap:
         net: str | None = None,
         inflate: bool = True,
     ) -> None:
-        if layer not in self.obstacles:
-            self.obstacles[layer] = []
+        lid = self._lid(layer)
         # Inflate by full clearance on each side (not half) so min gap is clearance
         pad = self.clearance_mm * 2 if inflate else 0.0
-        self.obstacles[layer].append(
-            Obstacle(cx=cx, cy=cy, w=w + pad, h=h + pad, net=net, layer=layer)
-        )
+        ob = Obstacle(cx=cx, cy=cy, w=w + pad, h=h + pad, net=net, layer=layer)
+        self.obstacles[layer].append(ob)
+        self._native.add_rect(ob.cx, ob.cy, ob.w, ob.h, lid, self._nid(net))
 
     def in_bounds(self, x: float, y: float) -> bool:
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
     def blocked(self, x: float, y: float, layer: str, net: str) -> bool:
-        if not self.in_bounds(x, y):
-            return True
-        for ob in self.obstacles.get(layer, []):
-            if ob.net is not None and ob.net == net:
-                continue
-            if _point_in_rect(x, y, ob.cx, ob.cy, ob.w, ob.h):
-                return True
-        # Distance to painted foreign copper (half-width + clearance)
-        for ps in self.painted.get(layer, []):
-            if ps.net == net:
-                continue
-            need = self.clearance_mm + 0.5 * ps.width_mm
-            if _point_seg_dist(x, y, ps.x1, ps.y1, ps.x2, ps.y2) < need:
-                return True
-        return False
+        return bool(self._native.blocked(x, y, self._lid(layer), self._nid(net)))
 
     def segment_blocked(
         self,
@@ -450,25 +464,11 @@ class ObstacleMap:
         width_mm: float = 0.25,
     ) -> bool:
         """True if candidate segment would violate clearance vs obstacles or copper."""
-        if not (self.in_bounds(x1, y1) and self.in_bounds(x2, y2)):
-            return True
-        length = _dist((x1, y1), (x2, y2))
-        # Dense sampling along the path (every ~clearance/2)
-        step = max(self.clearance_mm * 0.4, 0.08)
-        samples = max(6, min(80, int(math.ceil(length / step)) + 1))
-        for ob in self.obstacles.get(layer, []):
-            if ob.net is not None and ob.net == net:
-                continue
-            if _segment_hits_rect(x1, y1, x2, y2, ob.cx, ob.cy, ob.w, ob.h, samples=samples):
-                return True
-        # Continuous segment–segment clearance vs already painted foreign nets
-        for ps in self.painted.get(layer, []):
-            if ps.net == net:
-                continue
-            need = self.clearance_mm + 0.5 * (width_mm + ps.width_mm)
-            if _seg_seg_min_dist(x1, y1, x2, y2, ps.x1, ps.y1, ps.x2, ps.y2) < need:
-                return True
-        return False
+        return bool(
+            self._native.segment_blocked(
+                x1, y1, x2, y2, self._lid(layer), self._nid(net), width_mm=width_mm
+            )
+        )
 
     def paint_trace(
         self,
@@ -481,11 +481,11 @@ class ObstacleMap:
         net: str,
     ) -> None:
         """Record copper and paint inflated keepout so later nets cannot touch."""
-        if layer not in self.painted:
-            self.painted[layer] = []
+        lid = self._lid(layer)
         self.painted[layer].append(
             PaintedSeg(x1=x1, y1=y1, x2=x2, y2=y2, width_mm=width_mm, net=net)
         )
+        self._native.add_painted(x1, y1, x2, y2, lid, width_mm, self._nid(net))
         length = max(_dist((x1, y1), (x2, y2)), 0.01)
         # Keepout diameter = track width + 2*clearance (full gap for next track edge)
         keep = width_mm + 2.0 * self.clearance_mm
@@ -536,29 +536,6 @@ def build_obstacle_map(
     return om
 
 
-# 8-neighbour + 16-way (knight-ish) for freer-angle A* polylines
-_DIRS8 = [
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-    (1, 1),
-    (1, -1),
-    (-1, 1),
-    (-1, -1),
-]
-_DIRS16 = _DIRS8 + [
-    (2, 1),
-    (2, -1),
-    (-2, 1),
-    (-2, -1),
-    (1, 2),
-    (1, -2),
-    (-1, 2),
-    (-1, -2),
-]
-
-
 def _snap(v: float, grid: float) -> float:
     return round(v / grid) * grid
 
@@ -576,202 +553,55 @@ def free_angle_route(
     method_out: list[str] | None = None,
     congestion: Any | None = None,
 ) -> list[tuple[float, float]] | None:
-    """Direct LOS, multi-bend isotropic detours / radar, then fine-grid A*.
+    """Free-angle search in the C++ core (the only router implementation).
 
-    Topology-first style: explore free-space boundaries before freezing geometry.
-    Every candidate edge is checked for clearance vs painted copper and keepouts.
-    Paths may bend (1–3+ corners); A* uses a fine grid (default 0.1 mm).
-    If ``method_out`` is provided, appends one of: los | detour | detour2 | detour3 | astar.
+    LOS → isotropic detours (obstacle corners, bulges, angled offsets, radar
+    scan) → 1/2/3-corner chains → hierarchical multi-grid A* (16-dir on fine
+    grids) → rubberband. Every candidate edge is clearance-checked against the
+    exact obstacle map. If ``method_out`` is provided, appends one of:
+    los | detour | detour2 | detour3 | astar.
     """
-    grid_mm = max(0.05, float(grid_mm or 0.1))
-    # Scale A* budget with resolution; keep interactive latency bounded
-    if max_expansions <= 8000:
-        scale = max(1.0, 0.35 / grid_mm)
-        max_expansions = int(min(20000, max(2500, max_expansions * scale)))
+    n = _native_core()
+    cell_mm = 1.0
+    keys: list[int] = []
+    costs: list[float] = []
+    if congestion is not None:
+        cell_mm = float(getattr(congestion, "cell_mm", 1.0) or 1.0)
+        pw = float(getattr(congestion, "present_weight", 1.0))
+        hw = float(getattr(congestion, "historical_weight", 0.35))
+        combined: dict[tuple[int, int], float] = {}
+        for (ix, iy, ly), v in getattr(congestion, "present", {}).items():
+            if ly == layer:
+                combined[(ix, iy)] = combined.get((ix, iy), 0.0) + pw * float(v)
+        for (ix, iy, ly), v in getattr(congestion, "historical", {}).items():
+            if ly == layer:
+                combined[(ix, iy)] = combined.get((ix, iy), 0.0) + hw * float(v)
+        for (ix, iy), v in combined.items():
+            keys.append((ix << 32) ^ (iy & 0xFFFFFFFF))
+            costs.append(v)
 
-    def _set_method(m: str) -> None:
-        if method_out is not None:
-            method_out.append(m)
-
-    def _blocked(x1: float, y1: float, x2: float, y2: float) -> bool:
-        return om.segment_blocked(x1, y1, x2, y2, layer, net, width_mm=width_mm)
-
-    def _edge_cost(x1: float, y1: float, x2: float, y2: float, base: float) -> float:
-        if congestion is None:
-            return base
-        try:
-            return float(congestion.edge_cost(x1, y1, x2, y2, layer, length_weight=1.0))
-        except Exception:
-            return base
-
-    def _valid_mid(p: tuple[float, float]) -> bool:
-        return om.in_bounds(p[0], p[1]) and not om.blocked(p[0], p[1], layer, net)
-
-    # 1) straight free-angle when fully clear
-    if not _blocked(start[0], start[1], goal[0], goal[1]):
-        _set_method("los")
-        return [start, goal]
-
-    # 2) Isotropic free-angle detours (TopoR-style: not limited to 90°/45°)
-    reach = max(40.0, _dist(start, goal) * 1.8)
-    detour_pts: list[tuple[float, float]] = []
-    for ob in om.obstacles.get(layer, []):
-        if ob.net == net:
-            continue
-        if _dist((ob.cx, ob.cy), start) > reach and _dist((ob.cx, ob.cy), goal) > reach:
-            continue
-        detour_pts.extend(ob.corners(pad=max(grid_mm * 2.0, 0.2)))
-    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
-    dx, dy = goal[0] - start[0], goal[1] - start[1]
-    length = math.hypot(dx, dy) or 1.0
-    ux, uy = dx / length, dy / length
-    px, py = -uy, ux
-    detour_pts.extend(
-        [
-            (start[0], goal[1]),
-            (goal[0], start[1]),
-            (mx, my),
-        ]
+    res = n.free_angle_route_exact(
+        om._native,
+        float(start[0]),
+        float(start[1]),
+        float(goal[0]),
+        float(goal[1]),
+        om._lid(layer),
+        om._nid(net),
+        grid_mm=float(grid_mm or 0.1),
+        max_expansions=int(max_expansions),
+        width_mm=float(width_mm),
+        cong_cell_mm=cell_mm,
+        cong_keys=keys,
+        cong_costs=costs,
     )
-    # Perpendicular bulges for free-angle flow around blocks
-    for t in (0.2, 0.4, 0.5, 0.6, 0.8):
-        bx = start[0] + dx * t
-        by = start[1] + dy * t
-        for sign in (1.0, -1.0):
-            for k in (2.0, 4.0, 7.0, 12.0, 18.0):
-                detour_pts.append((bx + sign * px * grid_mm * k, by + sign * py * grid_mm * k))
-    for ang_off in (math.pi / 6, math.pi / 4, math.pi / 3, -math.pi / 6, -math.pi / 4, -math.pi / 3):
-        ca, sa = math.cos(ang_off), math.sin(ang_off)
-        rx = ux * ca - uy * sa
-        ry = ux * sa + uy * ca
-        for k in (3.0, 6.0, 10.0):
-            detour_pts.append((mx + rx * grid_mm * k, my + ry * grid_mm * k))
+    if res is None:
+        return None
+    pts, method = res
+    if method_out is not None:
+        method_out.append(str(method))
+    return [(float(x), float(y)) for x, y in pts]
 
-    try:
-        from physics_router.topology import radar_scan_points
-
-        detour_pts.extend(
-            radar_scan_points(
-                start, goal, om, layer, net, rays=12, grid_mm=max(grid_mm, 0.15)
-            )
-        )
-    except Exception:
-        pass
-
-    def _detour_cost(mid: tuple[float, float]) -> float:
-        return _edge_cost(start[0], start[1], mid[0], mid[1], _dist(start, mid)) + _edge_cost(
-            mid[0], mid[1], goal[0], goal[1], _dist(mid, goal)
-        )
-
-    detour_pts = sorted(
-        set((round(p[0], 4), round(p[1], 4)) for p in detour_pts), key=_detour_cost
-    )
-
-    for mid in detour_pts:
-        if not _valid_mid(mid):
-            continue
-        if _blocked(start[0], start[1], mid[0], mid[1]):
-            continue
-        if _blocked(mid[0], mid[1], goal[0], goal[1]):
-            continue
-        _set_method("detour")
-        return [start, mid, goal]
-
-    # two-corner chain (capped — clearance checks are the cost)
-    cand = detour_pts[:28]
-    for a in cand:
-        if not _valid_mid(a) or _blocked(start[0], start[1], a[0], a[1]):
-            continue
-        for b in cand:
-            if a == b or not _valid_mid(b):
-                continue
-            if _blocked(a[0], a[1], b[0], b[1]):
-                continue
-            if _blocked(b[0], b[1], goal[0], goal[1]):
-                continue
-            _set_method("detour2")
-            return [start, a, b, goal]
-
-    # three-corner chain — small fan only (A* handles dense blocks)
-    cand3 = detour_pts[:12]
-    for ai, a in enumerate(cand3):
-        if not _valid_mid(a) or _blocked(start[0], start[1], a[0], a[1]):
-            continue
-        for b in cand3[ai + 1 : ai + 6]:
-            if not _valid_mid(b) or _blocked(a[0], a[1], b[0], b[1]):
-                continue
-            for c in cand3[:8]:
-                if c in (a, b) or not _valid_mid(c):
-                    continue
-                if _blocked(b[0], b[1], c[0], c[1]):
-                    continue
-                if _blocked(c[0], c[1], goal[0], goal[1]):
-                    continue
-                _set_method("detour3")
-                return [start, a, b, c, goal]
-
-    # 3) Hierarchical A*: try requested grid, then coarser (still multi-bend free-angle)
-    span = max(_dist(start, goal), 1.0)
-    grids_try: list[float] = []
-    for g in (grid_mm, 0.25, 0.5, 1.0):
-        g = max(0.05, float(g))
-        if not grids_try or g > grids_try[-1] + 1e-9:
-            grids_try.append(g)
-
-    for gcell in grids_try:
-        budget = int(min(60000, max(4000, (span / gcell) * 40 * max(1.0, 0.25 / gcell))))
-        budget = min(budget, max_expansions)
-        dirs = _DIRS16 if gcell <= 0.3 else _DIRS8
-        sx, sy = _snap(start[0], gcell), _snap(start[1], gcell)
-        gx, gy = _snap(goal[0], gcell), _snap(goal[1], gcell)
-        start_key = (int(round(sx / gcell)), int(round(sy / gcell)))
-        goal_key = (int(round(gx / gcell)), int(round(gy / gcell)))
-
-        open_heap: list[tuple[float, float, tuple[int, int]]] = []
-        heapq.heappush(open_heap, (_dist((sx, sy), (gx, gy)), 0.0, start_key))
-        came: dict[tuple[int, int], tuple[int, int] | None] = {start_key: None}
-        gscore: dict[tuple[int, int], float] = {start_key: 0.0}
-        pos_of = {start_key: (sx, sy)}
-        expansions = 0
-
-        while open_heap and expansions < budget:
-            _f, gcost, key = heapq.heappop(open_heap)
-            expansions += 1
-            x, y = pos_of[key]
-            if key == goal_key or _dist((x, y), (gx, gy)) <= gcell * 1.6:
-                path_keys = [key]
-                cur = key
-                while came[cur] is not None:
-                    cur = came[cur]  # type: ignore[assignment]
-                    path_keys.append(cur)
-                path_keys.reverse()
-                path = [pos_of[k] for k in path_keys]
-                path[0] = start
-                path[-1] = goal
-                _set_method("astar")
-                return _rubberband(path, layer, net, om, width_mm=width_mm)
-
-            for ddx, ddy in dirs:
-                step = gcell * math.hypot(ddx, ddy)
-                nx = _snap(x + ddx * gcell, gcell)
-                ny = _snap(y + ddy * gcell, gcell)
-                if not om.in_bounds(nx, ny):
-                    continue
-                nkey = (int(round(nx / gcell)), int(round(ny / gcell)))
-                if nkey in gscore and gscore[nkey] <= gcost:
-                    continue
-                if _blocked(x, y, nx, ny):
-                    continue
-                ng = gcost + _edge_cost(x, y, nx, ny, step)
-                if ng + 1e-9 < gscore.get(nkey, float("inf")):
-                    gscore[nkey] = ng
-                    came[nkey] = key
-                    pos_of[nkey] = (nx, ny)
-                    heapq.heappush(
-                        open_heap, (ng + _dist((nx, ny), (gx, gy)), ng, nkey)
-                    )
-
-    return None
 
 
 def _rubberband(
@@ -782,29 +612,17 @@ def _rubberband(
     *,
     width_mm: float = 0.25,
 ) -> list[tuple[float, float]]:
+    """LOS shortcutting in the C++ core (Dayan/TopoR rubberband)."""
     if len(path) <= 2:
         return path
-    out: list[tuple[float, float]] = [path[0]]
-    i = 0
-    while i < len(path) - 1:
-        j = len(path) - 1
-        advanced = False
-        while j > i + 1:
-            x1, y1 = out[-1]
-            x2, y2 = path[j]
-            if not om.segment_blocked(x1, y1, x2, y2, layer, net, width_mm=width_mm):
-                out.append(path[j])
-                i = j
-                advanced = True
-                break
-            j -= 1
-        if not advanced:
-            i += 1
-            if i < len(path) and out[-1] != path[i]:
-                out.append(path[i])
-    if out[-1] != path[-1]:
-        out.append(path[-1])
-    return out
+    out = _native_core().rubberband_exact(
+        om._native,
+        [(float(x), float(y)) for x, y in path],
+        om._lid(layer),
+        om._nid(net),
+        width_mm=float(width_mm),
+    )
+    return [(float(x), float(y)) for x, y in out]
 
 
 def _net_width(config: PlacementConfig | None, net: str) -> float:
@@ -1681,7 +1499,6 @@ def append_routes_to_kicad_pcb(
     When ``replace_previous`` is True, strips an earlier physicsRouter copper
     block so re-applying a different variant does not stack copper.
     """
-    from pathlib import Path
 
     src = Path(source_path)
     dest = Path(dest_path)

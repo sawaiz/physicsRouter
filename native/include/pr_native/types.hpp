@@ -42,7 +42,7 @@ struct NetSpec {
 
 struct RouteConfig {
   double x_min = 0, x_max = 100, y_min = 0, y_max = 100;
-  double grid_mm = 0.5;
+  double grid_mm = 0.1; // fine free-angle default (matches Python pipeline)
   double clearance_mm = 0.2;
   int num_layers = 2;
   int max_expansions = 4000;
@@ -51,7 +51,7 @@ struct RouteConfig {
   bool use_gpu = true;
   bool isotropic = true;     // any-angle detours (TopoR-style)
   bool post_rubberband = true;
-  bool via_minimize = true;
+  bool via_minimize = false; // connectivity/clearance beat via count
   int threads = 0; // 0 = auto
 };
 
