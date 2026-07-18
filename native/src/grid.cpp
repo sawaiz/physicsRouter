@@ -62,6 +62,49 @@ void GridMap::paint_rect(double cx, double cy, double w, double h, int layer, in
   }
 }
 
+void GridMap::paint_rotated_rect(double cx, double cy, double w, double h,
+                                 double rotation_deg, int layer, int net_id) {
+  if (layer < 0 || layer >= layers_)
+    return;
+  double normalized = std::fmod(rotation_deg, 180.0);
+  if (std::abs(normalized) < 1e-9) {
+    paint_rect(cx, cy, w, h, layer, net_id);
+    return;
+  }
+
+  constexpr double kPi = 3.14159265358979323846;
+  const double angle = rotation_deg * kPi / 180.0;
+  const double cosine = std::cos(angle);
+  const double sine = std::sin(angle);
+  const double aabb_w = std::abs(w * cosine) + std::abs(h * sine);
+  const double aabb_h = std::abs(w * sine) + std::abs(h * cosine);
+  int x0 = std::max(0, world_to_ix(cx - aabb_w * 0.5));
+  int x1 = std::min(w_ - 1, world_to_ix(cx + aabb_w * 0.5));
+  int y0 = std::max(0, world_to_iy(cy - aabb_h * 0.5));
+  int y1 = std::min(h_ - 1, world_to_iy(cy + aabb_h * 0.5));
+  const uint8_t val =
+      net_id < 0 ? 255 : static_cast<uint8_t>(std::min(254, net_id + 1));
+  const double half_w = w * 0.5;
+  const double half_h = h * 0.5;
+
+  for (int iy = y0; iy <= y1; ++iy) {
+    for (int ix = x0; ix <= x1; ++ix) {
+      const double dx = ix_to_world(ix) - cx;
+      const double dy = iy_to_world(iy) - cy;
+      // Inverse-rotate the grid-cell centre into pad-local coordinates.
+      const double local_x = dx * cosine + dy * sine;
+      const double local_y = -dx * sine + dy * cosine;
+      if (std::abs(local_x) > half_w || std::abs(local_y) > half_h)
+        continue;
+      auto &cell = cells_[static_cast<size_t>(idx(ix, iy, layer))];
+      if (cell == 0)
+        cell = val;
+      else if (cell != val)
+        cell = 255;
+    }
+  }
+}
+
 void GridMap::paint_trace(double x1, double y1, double x2, double y2, double width_mm,
                           int layer, int net_id) {
   double dx = x2 - x1, dy = y2 - y1;

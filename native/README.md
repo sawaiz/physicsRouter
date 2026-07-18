@@ -5,7 +5,7 @@ C++17 **isotropic free-angle** router — the **only** geometric router in physi
 - **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
 - **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
 
-Version: **1.5.0-native-clearance**
+Version: **1.7.0-pad-legal-bundle**
 
 ## Build
 
@@ -33,11 +33,15 @@ Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. 
 |--------|-----------|
 | Packed `uint8` grid | O(1) cell tests with clearance-correct centerline inflation |
 | Atomic full-net commit | Failed multipin trees never leak partial copper |
-| Pad/layer-aware obstacles | Real pad XY and copper layers; package bodies do not bury anchors |
+| Topology-safe rubberband | Two-pin chains shorten; multipin branches remain intact |
+| Oriented pad/layer-aware obstacles | Real pad XY, angle, net and copper layers; package bodies do not bury anchors |
+| Layer-reachable anchors | SMD pads start/end only on exposed copper; inner escapes use two vias |
+| Width-aware obstacle inflation | Physical pad/seed copper is inflated once for the widest bucket track |
 | Organic `CopperArea` | Rounded Edge.Cuts-bounded power zones, refilled by KiCad |
 | **Isotropic detours** | Perpendicular bulges + angled midpoints before A* (not H/V only) |
 | Multi-site vias + `reason` | Explainable layer transitions (mirrors Python UI) |
 | Post rubberband + via_minimize | Geometry polish after connectivity |
+| Parallel bucket bundles | Stable power/critical/matrix orders run concurrently; best zero-violation completion wins |
 | Batch then bounded recovery | Fast legal bucket route; small rejected nets retry individually |
 | OpenCL batch clearance | Parallel sample tests after/during validation |
 | pybind11 | Zero-copy-friendly lists of segments into Python |

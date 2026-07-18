@@ -28,7 +28,11 @@ from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules, load_design_rules
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
-from physics_router.regeometry import compute_topor_geometry_metrics, post_connect_regeometry
+from physics_router.native_bridge import info as native_info
+from physics_router.regeometry import (
+    compute_topor_geometry_metrics,
+    post_connect_regeometry,
+)
 from physics_router.router import (
     clearance_aware_route,
     native_drc_check,
@@ -101,7 +105,14 @@ def _draw_board_base(ax, board, cfg, *, show_outline=True, dim_parts=False):
     elif show_outline:
         # fallback circle for center-origin round boards
         ax.add_patch(
-            Circle((0, 0), 12, fill=True, facecolor="#143726", edgecolor="#D0D8E0", alpha=0.9)
+            Circle(
+                (0, 0),
+                12,
+                fill=True,
+                facecolor="#143726",
+                edgecolor="#D0D8E0",
+                alpha=0.9,
+            )
         )
     for ref, c in board.components.items():
         w, h = max(c.width_mm, 0.35), max(c.height_mm, 0.35)
@@ -123,7 +134,9 @@ def _draw_board_base(ax, board, cfg, *, show_outline=True, dim_parts=False):
             )
         )
         if not (ref.startswith("D") and ref[1:].isdigit()) and not dim_parts:
-            ax.text(c.x_mm, c.y_mm, ref, fontsize=5, ha="center", va="center", color="#eee")
+            ax.text(
+                c.x_mm, c.y_mm, ref, fontsize=5, ha="center", va="center", color="#eee"
+            )
     ax.set_facecolor("#0a1020")
     ax.tick_params(colors="#8899aa", labelsize=7)
     ax.xaxis.label.set_color("#8899aa")
@@ -166,7 +179,15 @@ def _draw_route(ax, route, cfg, *, alpha=0.9, by_layer=False):
             zorder=3,
         )
     for v in route.vias or []:
-        ax.plot(v.x, v.y, "o", color="#c0a060", markersize=4, markeredgecolor="#222", zorder=4)
+        ax.plot(
+            v.x,
+            v.y,
+            "o",
+            color="#c0a060",
+            markersize=4,
+            markeredgecolor="#222",
+            zorder=4,
+        )
 
 
 def _metrics_box(ax, text: str):
@@ -180,13 +201,23 @@ def _metrics_box(ax, text: str):
         fontsize=7,
         color="#e8eef7",
         family="monospace",
-        bbox=dict(boxstyle="round,pad=0.35", facecolor="#0a1020", edgecolor="#5b9fd4", alpha=0.88),
+        bbox=dict(
+            boxstyle="round,pad=0.35",
+            facecolor="#0a1020",
+            edgecolor="#5b9fd4",
+            alpha=0.88,
+        ),
     )
 
 
 def render_suite(board, cfg, rules, tag: str) -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
-    meta: dict = {"tag": tag, "timings_s": {}, "metrics": {}}
+    meta: dict = {
+        "tag": tag,
+        "native": native_info(),
+        "timings_s": {},
+        "metrics": {},
+    }
     n_comp = len(board.components)
     n_nets = len(board.nets)
 
@@ -247,6 +278,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
         soft_fallback=False,
         prefer_native=True,
         allow_vias=True,
+        style="hybrid",
+        design_rules=rules,
     )
     meta["timings_s"]["clearance_raw"] = round(time.perf_counter() - t0, 3)
     m_raw = compute_topor_geometry_metrics(raw)
@@ -254,8 +287,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
     _draw_route(ax, raw, cfg, alpha=0.9)
     ax.set_title(
-        "3 · Clearance-aware free-angle (raw connectivity)\n"
-        "grid=0.5 mm · soft_fallback=off · vias kept",
+        "3 · Native hybrid free-angle (raw connectivity)\n"
+        "power → critical → parallel matrix bundle → general",
         fontsize=10,
     )
     ax.set_xlabel("x (mm)")
@@ -313,9 +346,14 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     plt.close(fig)
 
     # --- 5 By layer ---
-    layers = sorted(
-        {s.layer for s in polished.segments} | {area.layer for area in polished.areas}
-    ) or list(board.copper_layers) or ["F.Cu"]
+    layers = (
+        sorted(
+            {s.layer for s in polished.segments}
+            | {area.layer for area in polished.areas}
+        )
+        or list(board.copper_layers)
+        or ["F.Cu"]
+    )
     n = max(1, len(layers))
     fig, axes = plt.subplots(1, n, figsize=(3.6 * n, 3.8), dpi=140)
     if n == 1:
@@ -475,7 +513,9 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--halo", action="store_true", help="Also render HALO-90 if PCB is present")
+    ap.add_argument(
+        "--halo", action="store_true", help="Also render HALO-90 if PCB is present"
+    )
     ap.add_argument("--halo-only", action="store_true", help="Only HALO-90")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -492,7 +532,10 @@ def main() -> None:
             cx, cy = board.width_mm / 2, board.height_mm / 2
             n = 48
             pts = [
-                [cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n)]
+                [
+                    cx + r * math.cos(2 * math.pi * i / n),
+                    cy + r * math.sin(2 * math.pi * i / n),
+                ]
                 for i in range(n)
             ]
             board.outline = [

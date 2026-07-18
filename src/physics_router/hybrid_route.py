@@ -32,8 +32,10 @@ from physics_router.router import (
 
 ProgressCallback = Callable[[int, int, str, str, dict], None]
 
-# Matrix (dense multipin) first so later power/critical see painted copper
-# Priority/weight first: power & critical before dense multipin matrix
+# Reserve the selected power plane/backbone first, then route constrained
+# sparse signals and rebuild the dense matrix bundle against the settled board.
+# HALO measurements show this schedule completes more full legal nets than
+# signal-first ordering; refill geometry remains deferred to KiCad.
 _STRATEGY_ORDER = ("power", "critical", "matrix", "general")
 
 
@@ -298,7 +300,12 @@ def _route_bucket(
         ),
     )
 
-    orders = _matrix_order_variants(order) if strategy == "matrix" else [order]
+    # Rebuild every contested phase from the same immutable seed. Matrix gets
+    # the full four-order bundle; smaller power/critical buckets get two or
+    # four bounded attempts so an early legal net does not permanently starve
+    # a more useful peer corridor.
+    variant_limit = 4 if strategy in ("matrix", "critical") else 2
+    orders = _matrix_order_variants(order, limit=variant_limit)
 
     def route_variant(variant_order: list[str]) -> RouteResult:
         return clearance_aware_route(
@@ -356,7 +363,7 @@ def _route_bucket(
             if report.net in nets and report.status == "ok"
         )
         r.notes.append(
-            f"matrix_bundle: selected order {best_index + 1}/{len(candidates)} "
+            f"{strategy}_bundle: selected order {best_index + 1}/{len(candidates)} "
             f"with {completed}/{len(nets)} complete nets"
         )
     r.notes.append(f"hybrid: {strategy} phase nets={len(nets)} cl={cl:.3f} grid={grid}")

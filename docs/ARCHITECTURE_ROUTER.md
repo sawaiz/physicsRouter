@@ -78,8 +78,9 @@ For each remaining bucket:
         · Edge.Cuts occupancy + clearance-correct inflation
         · LOS → isotropic detours → any-angle A*
         · full multipin tree commits only when every anchor connects
+    Power/critical/matrix buckets: bounded stable orders run concurrently
     Native exact DRC gate
-    Bounded individual recovery for small rejected buckets
+    Select most-complete legal variant; bounded recovery for small rejects
             │
             ▼
 Post-connect re-geometry only if exact DRC does not worsen
@@ -92,6 +93,7 @@ Report legal completion · preserve rejected nets as explicitly open
 |-------|------|
 | Native geometric core | `native/router.cpp`, exposed by `native_bridge.py` |
 | Atomic batch orchestration | `router._route_native_batch` / `hybrid_route.py` |
+| Parallel bucket bundles | `hybrid_route._matrix_order_variants` + native GIL-free workers |
 | Pad/layer-aware obstacles | `router._native_obstacle_map` |
 | Organic copper areas | Native `CopperArea` → `RouteResult.areas` → KiCad zones |
 | Isotropic free-angle | `router.free_angle_route` (`style=isotropic`) |
@@ -141,8 +143,10 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | SI + manufacturing score terms | **Done** (`si_mfg.py`) |
 | Explainable “why this via” UI | **Done** (via.reason + Route panel) |
 | Atomic native multipin transactions | **Done** (`RouteConfig.atomic_nets`) |
-| Pad/net/layer-aware native obstacles | **Done** |
+| Oriented pad/net/layer-aware native obstacles | **Done** |
+| SMD anchor layer reachability + two-via escape | **Done** |
 | Native organic power/ground areas | **Done** (refillable KiCad zones) |
+| Bounded bucket rebuild | **Done** (parallel power/critical/matrix variants) |
 | Concurrent dense CPX bundle solver | Roadmap — main HALO-90 completion blocker |
 | Incremental invalidation on component move | Roadmap |
 | End-to-end RL manager / PCBWorld | Roadmap |
@@ -159,10 +163,12 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 - Compare length / vias / unrouted / grade vs guide and FreeRouting SES when available
 - Optional: reproduce Eremex sample boards from [TopoR 6.0 examples](https://www.eremex.com/support/tutorials/topor6_0_examples/) as behavioral tests (completion, vias, topology)
 
-The checked-in v1.5 HALO-90 snapshot commits 15/23 nets (including two
-power/ground areas), leaves eight nets explicitly open, and reports zero
-native shorts, spacing hits, or Edge.Cuts escapes. Native area DRC covers the
-zone boundary; KiCad refill and DRC remain the fabrication authority for the
+The checked-in v1.7 HALO-90 snapshot commits 9/23 nets (including two CPX
+nets, 21 explicit vias, and one GND area), leaves 14 nets explicitly open,
+and reports zero native track/via shorts, spacing hits, or Edge.Cuts escapes.
+This replaces the invalid 17/23 result that treated inner-layer copper as
+connected directly to front-only SMD pads. Native area DRC covers the zone
+boundary; KiCad refill and DRC remain the fabrication authority for the
 filled polygon and thermals. See
 [`drc_report.json`](images/routing_process/drc_report.json).
 

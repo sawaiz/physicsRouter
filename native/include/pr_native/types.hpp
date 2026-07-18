@@ -12,6 +12,9 @@ struct Vec2 {
 
 struct RectObs {
   double cx = 0, cy = 0, w = 0, h = 0;
+  // Board-space orientation. Keeping the real pad angle avoids turning
+  // fine-pitch rotated pads into an artificial axis-aligned keepout wall.
+  double rotation_deg = 0;
   int net_id = -1; // -1 = blocks all
   std::vector<int> layers; // empty = all copper layers
 };
@@ -50,6 +53,9 @@ struct NetSpec {
   int net_id = 0;
   std::string name;
   std::vector<Vec2> anchors; // unique pin positions
+  // Copper layers physically reachable at each anchor (SMD pad vs plated hole).
+  // Empty outer vector or empty entry means all preferred layers.
+  std::vector<std::vector<int>> anchor_layers;
   double priority = 1.0;
   double width_mm = 0.25;
   std::vector<int> preferred_layers; // empty = all

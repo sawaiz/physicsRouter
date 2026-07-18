@@ -1060,6 +1060,37 @@ def _space_rip_candidates(
     return out
 
 
+def _unique_anchor_layers(
+    board: BoardModel, net: str
+) -> list[tuple[tuple[float, float], set[str]]]:
+    """Unique fanout anchors paired with the copper layers their pads expose."""
+    copper = set(board.copper_layers or ["F.Cu", "B.Cu"])
+    merged: dict[tuple[float, float], tuple[tuple[float, float], set[str]]] = {}
+    for ref, pad_num in board.nets.get(net) or []:
+        component = board.components.get(ref)
+        if component is None:
+            continue
+        anchor = fanout_anchor(board, ref, net, pad_num=str(pad_num))
+        pad = next(
+            (
+                value
+                for value in component.pads or []
+                if str(value.get("num")) == str(pad_num)
+            ),
+            {},
+        )
+        raw_layers = set(pad.get("layers") or [])
+        allowed = set(copper) if "*.Cu" in raw_layers else raw_layers & copper
+        if not allowed:
+            allowed = {(board.copper_layers or ["F.Cu"])[0]}
+        key = (round(anchor[0], 3), round(anchor[1], 3))
+        if key in merged:
+            merged[key][1].update(allowed)
+        else:
+            merged[key] = (anchor, set(allowed))
+    return list(merged.values())
+
+
 def _net_fully_connected(
     board: BoardModel,
     net: str,
@@ -1075,14 +1106,17 @@ def _net_fully_connected(
     via or pad anchor is present.  The previous XY-only test could certify two
     crossing, disconnected layers as a complete net.
     """
-    anchors = _unique_anchors(board, net)
+    anchor_info = _unique_anchor_layers(board, net)
+    anchors = [anchor for anchor, _layers in anchor_info]
     if len(anchors) < 2:
         return True
     for area in areas or []:
-        if (
-            area.net == net
-            and len(area.outline) >= 3
-            and all(point_in_polygon(x, y, area.outline) for x, y in anchors)
+        if area.net != net or len(area.outline) < 3:
+            continue
+        if all(
+            area.layer in allowed_layers
+            and point_in_polygon(anchor[0], anchor[1], area.outline)
+            for anchor, allowed_layers in anchor_info
         ):
             return True
     segs = [s for s in segments if s.net == net]
@@ -1143,12 +1177,14 @@ def _net_fully_connected(
         for node in touching[1:]:
             union(touching[0], node)
 
-    # A pad anchor may legally collect incident copper; away from anchors,
-    # cross-layer proximity never creates connectivity.
+    # A pad anchor collects only copper on a layer physically exposed by that
+    # pad. F.Cu SMD pads cannot silently connect an inner-layer branch.
     anchor_roots: list[int] = []
-    for ax, ay in anchors:
+    for (ax, ay), allowed_layers in anchor_info:
         touching: list[int] = []
         for i, seg in enumerate(segs):
+            if seg.layer not in allowed_layers:
+                continue
             pad_tol = tol_mm + seg.width_mm * 0.5
             if _point_seg_dist(ax, ay, seg.x1, seg.y1, seg.x2, seg.y2) <= pad_tol:
                 touching.append(i * 2)
@@ -1662,9 +1698,7 @@ def _native_sequential_zero_violation(
                 vias=list(seed_result.vias) + list(candidate.vias),
                 areas=list(seed_result.areas) + list(candidate.areas),
             )
-        batch_drc = native_drc_check(
-            combined, clearance_mm=clearance_mm, board=board
-        )
+        batch_drc = native_drc_check(combined, clearance_mm=clearance_mm, board=board)
         bad_nets: set[str] = set()
         for item in _drc_hard_items(batch_drc):
             for key in ("net_a", "net_b"):

@@ -188,7 +188,7 @@ std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
 
 } // namespace
 
-const char *native_version() { return "1.6.0-native-bundle"; }
+const char *native_version() { return "1.7.0-pad-legal-bundle"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -346,14 +346,23 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
 }
 
 static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, int net_id,
-                       const std::vector<int> &layers, double width,
+                       const std::vector<int> &layers,
+                       const std::vector<int> &start_allowed,
+                       const std::vector<int> &goal_allowed, double width,
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
                        std::string &method) {
   std::vector<int> blocked_layers;
   int alts = 0;
 
-  // try each preferred layer (isotropic free-angle)
+  auto allowed = [&](int layer, const std::vector<int> &physical) {
+    return physical.empty() ||
+           std::find(physical.begin(), physical.end(), layer) != physical.end();
+  };
+
+  // A same-layer edge is legal only when both physical pads expose that layer.
   for (int layer : layers) {
+    if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
+      continue;
     auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions, cfg.isotropic);
     ++alts;
     if (poly.size() >= 2) {
@@ -394,15 +403,11 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
 
   // Prefer primary layer to each other preferred layer (matrix/CPX striping)
   std::vector<std::pair<int, int>> layer_pairs;
-  if (layers.size() >= 2) {
-    for (size_t j = 1; j < layers.size(); ++j) {
-      layer_pairs.push_back({layers[0], layers[j]});
-      layer_pairs.push_back({layers[j], layers[0]});
-    }
-    if (layers.size() > 2) {
-      layer_pairs.push_back({layers[1], layers.back()});
-    }
-  }
+  for (int start_layer : layers)
+    if (allowed(start_layer, start_allowed))
+      for (int goal_layer : layers)
+        if (start_layer != goal_layer && allowed(goal_layer, goal_allowed))
+          layer_pairs.push_back({start_layer, goal_layer});
   int sites_tried = 0;
   int exp_budget = std::max(500, cfg.max_expansions / 2);
   for (const auto &lp : layer_pairs) {
@@ -441,6 +446,142 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         }
         out_vias.push_back(v);
         return true;
+      }
+    }
+  }
+
+  // Two-via escape: SMD pads at both ends may expose only F.Cu/B.Cu while a
+  // dense connection needs an inner-layer corridor. Keep both terminal stubs
+  // on their real pad layers and use a preferred routing layer between vias.
+  const double edge_len = std::max(dist(a, b), g);
+  const Vec2 unit{(b.x - a.x) / edge_len, (b.y - a.y) / edge_len};
+  const Vec2 perp{-unit.y, unit.x};
+  for (int terminal_layer : layers) {
+    if (!allowed(terminal_layer, start_allowed) ||
+        !allowed(terminal_layer, goal_allowed))
+      continue;
+    for (int route_layer : layers) {
+      if (route_layer == terminal_layer)
+        continue;
+      for (double along : {0.18, 0.28}) {
+        for (double offset_cells : {0.0, 2.0, -2.0, 5.0, -5.0}) {
+          const double offset = offset_cells * g;
+          Vec2 va{a.x + (b.x - a.x) * along + perp.x * offset,
+                  a.y + (b.y - a.y) * along + perp.y * offset};
+          Vec2 vb{b.x - (b.x - a.x) * along + perp.x * offset,
+                  b.y - (b.y - a.y) * along + perp.y * offset};
+          va.x = std::round(va.x / g) * g;
+          va.y = std::round(va.y / g) * g;
+          vb.x = std::round(vb.x / g) * g;
+          vb.y = std::round(vb.y / g) * g;
+          if (!grid.in_bounds(va.x, va.y) || !grid.in_bounds(vb.x, vb.y))
+            continue;
+          if (grid.point_blocked(va.x, va.y, terminal_layer, net_id) ||
+              grid.point_blocked(va.x, va.y, route_layer, net_id) ||
+              grid.point_blocked(vb.x, vb.y, terminal_layer, net_id) ||
+              grid.point_blocked(vb.x, vb.y, route_layer, net_id))
+            continue;
+          const int stub_budget = std::max(500, cfg.max_expansions / 3);
+          auto p0 = route_point(grid, a, va, terminal_layer, net_id,
+                                stub_budget, cfg.isotropic);
+          auto pm = route_point(grid, va, vb, route_layer, net_id,
+                                cfg.max_expansions, cfg.isotropic);
+          auto p1 = route_point(grid, vb, b, terminal_layer, net_id,
+                                stub_budget, cfg.isotropic);
+          if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
+            continue;
+          method = "two_via_escape";
+          emit_poly(p0, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p0, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          emit_poly(pm, route_layer, net_id, width, out_segs);
+          paint_poly(grid, pm, route_layer, net_id, width, cfg.clearance_mm);
+          emit_poly(p1, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p1, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          for (const auto &site : {va, vb}) {
+            Via via;
+            via.x = site.x;
+            via.y = site.y;
+            via.net_id = net_id;
+            via.layer_a = terminal_layer;
+            via.layer_b = route_layer;
+            via.alternatives_considered = alts + sites_tried;
+            via.reason = "Two-via SMD escape to preferred inner layer";
+            out_vias.push_back(via);
+          }
+          return true;
+        }
+      }
+
+      struct EscapePath {
+        Vec2 site;
+        std::vector<Vec2> stub;
+      };
+      auto local_escapes = [&](Vec2 anchor) {
+        std::vector<EscapePath> escapes;
+        static const int directions[8][2] = {
+            {1, 0},  {-1, 0}, {0, 1},  {0, -1},
+            {1, 1},  {-1, 1}, {1, -1}, {-1, -1},
+        };
+        for (double cells : {2.0, 3.5, 5.0, 7.0}) {
+          for (const auto &direction : directions) {
+            Vec2 site{anchor.x + direction[0] * cells * g,
+                      anchor.y + direction[1] * cells * g};
+            site.x = std::round(site.x / g) * g;
+            site.y = std::round(site.y / g) * g;
+            if (!grid.in_bounds(site.x, site.y) ||
+                grid.point_blocked(site.x, site.y, terminal_layer, net_id) ||
+                grid.point_blocked(site.x, site.y, route_layer, net_id))
+              continue;
+            auto stub = route_point(grid, anchor, site, terminal_layer, net_id,
+                                    std::max(500, cfg.max_expansions / 3),
+                                    cfg.isotropic);
+            if (stub.size() < 2)
+              continue;
+            escapes.push_back({site, std::move(stub)});
+            if (escapes.size() >= 8)
+              return escapes;
+          }
+        }
+        return escapes;
+      };
+
+      const auto start_escapes = local_escapes(a);
+      const auto goal_escapes = local_escapes(b);
+      for (const auto &start_escape : start_escapes) {
+        for (const auto &goal_escape : goal_escapes) {
+          auto middle = route_point(grid, start_escape.site,
+                                    goal_escape.site, route_layer, net_id,
+                                    cfg.max_expansions, cfg.isotropic);
+          if (middle.size() < 2)
+            continue;
+          method = "two_via_fanout";
+          emit_poly(start_escape.stub, terminal_layer, net_id, width,
+                    out_segs);
+          paint_poly(grid, start_escape.stub, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          emit_poly(middle, route_layer, net_id, width, out_segs);
+          paint_poly(grid, middle, route_layer, net_id, width,
+                     cfg.clearance_mm);
+          auto goal_stub = goal_escape.stub;
+          std::reverse(goal_stub.begin(), goal_stub.end());
+          emit_poly(goal_stub, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, goal_stub, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          for (const auto &site : {start_escape.site, goal_escape.site}) {
+            Via via;
+            via.x = site.x;
+            via.y = site.y;
+            via.net_id = net_id;
+            via.layer_a = terminal_layer;
+            via.layer_b = route_layer;
+            via.alternatives_considered = alts + sites_tried;
+            via.reason = "Two-via SMD fanout to preferred inner layer";
+            out_vias.push_back(via);
+          }
+          return true;
+        }
       }
     }
   }
@@ -651,6 +792,14 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
 
   GridMap grid(cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max, cfg.grid_mm, cfg.num_layers);
 
+  // RectObs stores physical copper dimensions. Inflate it for the widest
+  // centerline routed in this atomic bucket; using a hard-coded 0.25 mm made
+  // power tracks approach signal seeds too closely, while pre-inflating in
+  // Python double-counted clearance.
+  double obstacle_track_width = 0.25;
+  for (const auto &net : nets)
+    obstacle_track_width = std::max(obstacle_track_width, net.width_mm);
+
   if (cfg.board_outline.size() >= 3) {
     auto &cells = grid.data();
     for (int layer = 0; layer < grid.layers(); ++layer) {
@@ -678,19 +827,22 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     for (int ly : obstacle_layers) {
       if (ly < 0 || ly >= cfg.num_layers)
         continue;
-      grid.paint_rect(ob.cx, ob.cy, ob.w + cfg.clearance_mm * 2 + 0.25,
-                      ob.h + cfg.clearance_mm * 2 + 0.25, ly, ob.net_id);
+      grid.paint_rotated_rect(
+          ob.cx, ob.cy,
+          ob.w + cfg.clearance_mm * 2 + obstacle_track_width,
+          ob.h + cfg.clearance_mm * 2 + obstacle_track_width,
+          ob.rotation_deg, ly, ob.net_id);
     }
   }
 
-  // sort nets by priority desc, then fewer pins first
+  // Sort only by priority. The Python policy already supplies its preferred
+  // few-pin/default order, while stable equal-priority order is essential for
+  // deterministic whole-bucket rebuild variants.
   std::vector<int> order(nets.size());
   for (size_t i = 0; i < nets.size(); ++i)
     order[i] = static_cast<int>(i);
   std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
-    if (nets[a].priority != nets[b].priority)
-      return nets[a].priority > nets[b].priority;
-    return nets[a].anchors.size() < nets[b].anchors.size();
+    return nets[a].priority > nets[b].priority;
   });
 
   int total = static_cast<int>(order.size());
@@ -713,6 +865,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
       continue;
     }
 
+    std::vector<CopperArea> net_areas;
     if (net.use_copper_area) {
       CopperArea area;
       area.outline = organic_area(net.anchors, net.area_margin_mm, cfg);
@@ -727,19 +880,11 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
       area.min_thickness_mm = std::max(0.1, net.width_mm * 0.5);
       area.priority = net.area_priority;
       if (area.outline.size() >= 3) {
-        result.areas.push_back(std::move(area));
-        rep.status = "ok";
-        rep.method = "copper_area";
+        net_areas.push_back(std::move(area));
+        rep.method = "copper_area+tracks";
       } else {
-        rep.status = "unrouted";
-        rep.method = "area_failed";
-        result.unrouted.push_back(net.name);
+        rep.method = "area_failed+tracks";
       }
-      result.net_reports.push_back(rep);
-      ++done;
-      if (progress)
-        progress(done, total, net.name, rep.status);
-      continue;
     }
 
     std::vector<int> layers = net.preferred_layers;
@@ -784,15 +929,25 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         std::vector<Segment> edge_segments;
         std::vector<Via> edge_vias;
         std::string method;
+        static const std::vector<int> all_layers;
+        const auto &from_allowed =
+            candidate.from < net.anchor_layers.size()
+                ? net.anchor_layers[candidate.from]
+                : all_layers;
+        const auto &to_allowed =
+            candidate.to < net.anchor_layers.size()
+                ? net.anchor_layers[candidate.to]
+                : all_layers;
         bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
                              net.anchors[candidate.to], net.net_id, layers,
-                             net.width_mm, edge_segments, edge_vias, method);
+                             from_allowed, to_allowed, net.width_mm,
+                             edge_segments, edge_vias, method);
         if (!ok)
           continue;
         in[candidate.to] = 1;
         ++in_count;
         connected = true;
-        last_method = method;
+        last_method = rep.method.empty() ? method : rep.method + "+" + method;
         net_segments.insert(net_segments.end(), edge_segments.begin(),
                             edge_segments.end());
         for (const auto &v : edge_vias) {
@@ -836,6 +991,8 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     const bool commit = complete || !cfg.atomic_nets || cfg.soft_fallback;
     if (commit) {
       grid = std::move(net_grid);
+      result.areas.insert(result.areas.end(), net_areas.begin(),
+                          net_areas.end());
       for (const auto &s : net_segments) {
         result.segments.push_back(s);
         double length = dist({s.x1, s.y1}, {s.x2, s.y2});

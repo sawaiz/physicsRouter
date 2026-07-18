@@ -14,6 +14,8 @@ public:
 
   void clear();
   void paint_rect(double cx, double cy, double w, double h, int layer, int net_id);
+  void paint_rotated_rect(double cx, double cy, double w, double h,
+                          double rotation_deg, int layer, int net_id);
   void paint_trace(double x1, double y1, double x2, double y2, double width_mm, int layer,
                    int net_id);
 

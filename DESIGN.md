@@ -98,12 +98,12 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 **Decision:** All clearance queries and path search run in the C++ core. `ExactMap` is the exact authority; the whole-board `GridMap` fast path uses clearance-correct centerline inflation, layer-aware pads, true Edge.Cuts occupancy, and atomic full-net transactions. Python selects buckets and validates the native result but does not implement a second geometry search. `pr_native` is required — the router raises with build instructions if missing.
 
-**Why:** Two parallel router implementations drifted. The batch-first native policy routes the documented HALO snapshot in about 2.5 seconds and leaves rejected dense nets open; the prior retry loop spent 150–280 seconds without improving legal completion.
+**Why:** Two parallel router implementations drifted. Native v1.7 evaluates bounded bucket orders concurrently and routes the documented HALO snapshot in about 3.2 seconds. Under strict pad-layer reachability it completes 9/23 nets with zero native DRC violations. The earlier 17/23 native number was invalid because inner-layer tracks at front-only SMD pads were counted as connected without vias; the Python multipin experiment reached 19/23 under its older model but took 625 seconds.
 ### 6. Multi-net IC keepouts are not solid discs
 
-**Decision:** Obstacles are built from real pad XY, size, net ownership, and copper layers. Multi-pin package bodies do not become net-agnostic copper blocks.
+**Decision:** Obstacles are built from real pad XY, oriented size, net ownership, and copper layers. Track-width and clearance inflation happen once in C++. Multi-pin package bodies do not become net-agnostic copper blocks.
 
-**Why:** A solid keepout at U1 covered its own escape anchors and made every signal impossible. Pad ownership lets the attached net enter while foreign nets keep the required clearance; F.Cu SMD pads no longer block inner layers.
+**Why:** A solid keepout at U1 covered its own escape anchors and made every signal impossible. Axis-aligned boxes also joined diagonal fine-pitch pads into a false wall. Oriented pad ownership lets the attached net fan out while foreign nets keep clearance; F.Cu SMD pads no longer block inner layers, and any inner-layer escape now requires explicit vias.
 
 ### 6a. Power and ground may use refillable copper areas
 
@@ -130,8 +130,8 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 | Path | Typical cost | Mitigation |
 |------|----------------|------------|
 | Python A\* + rect obstacles | High on dense boards | C++ `GridMap` + `pr_native` |
-| Multi-net paint order | Native atomic bucket | Exact DRC gate, then bounded recovery |
-| Full HALO clearance | ~2.5 s documented run | Coarse dense batch; no retry thrash |
+| Multi-net paint order | Parallel native bundle variants | Exact DRC gate; select most legal completion |
+| Full HALO clearance | ~3.2 s documented run | Bounded bucket orders on up to four C++ workers |
 | GLB export | Seconds (kicad-cli) | Cache under `viewer/assets/` |
 | OpenCL batch clearance | Validation / samples | Optional; CPU fallback always |
 
@@ -145,7 +145,7 @@ Prioritized by impact on **legal, manufacturable** boards for HALO-class density
 
 ### Near term
 
-1. **CPX concurrent bundle** — route charlieplex as a multi-commodity/ring group with length match; this is the main HALO completion blocker.
+1. **True CPX concurrent topology** — replace order variants with a multi-commodity/bundle group and length matching; eight HALO matrix nets remain open.
 2. **Filled-zone import** — read KiCad's refilled polygons back into native exact DRC and SI/current-density analysis.
 3. **DRC-driven local rip-up** — parse filled-copper violations and re-route only the offending topology cluster.
 4. **Push-aside geometry** — move neighboring legal traces together instead of discarding a full dense net.
