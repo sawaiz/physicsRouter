@@ -291,9 +291,9 @@ fixed:
   - ref: S1
     x_mm: -4.25
     y_mm: 0.0
-    rotation_deg: 0.0
+    rotation_deg: -90.0
     locked: true
-    notes: "KXT3 tactile — edge placement for nail actuation."
+    notes: "KXT3 tactile — edge placement for nail actuation (matches halo-90.kicad_pcb at -4.25 0 -90)."
 
   - ref: MK1
     x_mm: 0.0

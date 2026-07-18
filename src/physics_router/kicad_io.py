@@ -151,11 +151,12 @@ def load_board_from_kicad_pcb(
                 rot = _as_float(at[3])
         fp_name = fp[1] if len(fp) > 1 and isinstance(fp[1], str) else ""
         w, h = _estimate_size(fp)
+        # Pose always comes from the .kicad_pcb (at x y [rot]) — YAML fixed
+        # placements must not override geometry (they only mark lock flags).
         locked = False
         if config:
             for fix in config.fixed:
                 if fix.ref == ref and fix.locked:
-                    x, y, rot = fix.x_mm, fix.y_mm, fix.rotation_deg
                     locked = True
         pads: list[dict[str, Any]] = []
         for pad in _find_all(fp, "pad"):
@@ -182,8 +183,8 @@ def load_board_from_kicad_pcb(
         for fix in config.fixed:
             if fix.ref in components:
                 c = components[fix.ref]
-                c.x_mm, c.y_mm, c.rotation_deg = fix.x_mm, fix.y_mm, fix.rotation_deg
-                c.locked = fix.locked
+                # Keep PCB x/y/rot; only propagate lock flag from YAML
+                c.locked = bool(fix.locked or c.locked)
         # Prefix locks (e.g. HALO LED ring D1–D90) — keep PCB coordinates, mark immovable
         prefixes = [p for p in (config.lock_ref_prefixes or []) if p]
         if prefixes:

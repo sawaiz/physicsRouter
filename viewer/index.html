@@ -678,10 +678,10 @@
         } else {
           unitNote += ' · already XY';
         }
-        // In-plane 180° to match 2D / KiCad hook-at-top (viewXY)
-        if (VIEW_ROT_180) {
-          root.rotation.z += Math.PI;
-          unitNote += ' · 180°';
+        // Y-flip to match 2D: hook (H1 at y=-13) at top, keep X (switch left)
+        if (VIEW_FLIP_Y) {
+          root.scale.y *= -1;
+          unitNote += ' · Y-flip';
         }
 
         root.updateMatrixWorld(true);
@@ -1422,20 +1422,23 @@
     'B.Fab': '#606080',
   };
 
-  // Match KiCad on-screen orientation for HALO (hook at top). File coords stay
-  // unchanged for routing; only the 2D/3D *view* is rotated 180°.
-  const VIEW_ROT_180 = true;
+  // HALO-90 view: match KiCad file so switch (S1, x<0) is on the LEFT and
+  // hook (H1, y=-13) is at the TOP. File coords stay unchanged for routing.
+  // Transform is Y-flip only — NOT 180° (which mirrored left/right).
+  //   view: (x, y) → (x, -y)  then canvas maps +Y-up via py = oy - scale*vy
+  const VIEW_FLIP_Y = true;
 
   /** Map KiCad board XY (mm) into view XY before screen projection. */
   function viewXY(x, y) {
-    if (VIEW_ROT_180) return [-x, -y];
+    if (VIEW_FLIP_Y) return [x, -y];
     return [x, y];
   }
 
-  /** Footprint rotation (deg, KiCad CCW) in the view frame. */
+  /** Footprint rotation (deg, KiCad CCW) in the view frame.
+   *  A pure Y-flip reverses orientation sense → negate θ. */
   function viewRotDeg(deg) {
     const r = Number(deg) || 0;
-    return VIEW_ROT_180 ? r + 180 : r;
+    return VIEW_FLIP_Y ? -r : r;
   }
 
   function ensureKicadLayerToggles() {
@@ -1512,7 +1515,7 @@
     const scale = 0.94 * Math.min(cssW / bw, cssH / bh);
     const ox = cssW / 2 - scale * (minX + maxX) / 2;
     const oy = cssH / 2 + scale * (minY + maxY) / 2;
-    // Y-flip: board +Y up → canvas up. viewXY already applied 180° if enabled.
+    // viewXY may flip Y (hook at top); canvas still needs +Y board-view up → py decrease.
     const tx = (x, y) => {
       const [vx, vy] = viewXY(x, y);
       return [ox + scale * vx, oy - scale * vy];
