@@ -1,23 +1,20 @@
-"""Multi-strategy hybrid routing with auto region/net detection.
+"""Multi-strategy hybrid routing with auto net classification (no ring geometry).
 
-Different nets (and board regions) can use different algorithms while sharing
-one painted obstacle map so **clearance, track width, layer policy, and net
-weights** stay consistent with design rules.
+Nets are bucketed into free-angle strategies that share one painted obstacle map
+so clearance, track width, layer policy, and weights stay consistent.
 
 Strategies
 ----------
-- ``ring``     — concentric polar tracks (charlieplex LED rings / halo.js)
 - ``power``    — wider copper, plane-preferring free-angle / native
 - ``critical`` — high-weight / high-speed / clock / RF free-angle with vias
+- ``matrix``   — dense multipin buses (e.g. CPX-*) with layer striping + vias
 - ``general``  — remaining signals free-angle isotropic
 
-Detection is automatic from geometry (LED ring), net names (CPX-*), and
-PlacementConfig net classes / weights. See docs/HYBRID_ROUTING.md.
+See docs/HYBRID_ROUTING.md.
 """
 
 from __future__ import annotations
 
-import copy
 import math
 import re
 from dataclasses import dataclass, field
@@ -35,8 +32,8 @@ from physics_router.router import (
 
 ProgressCallback = Callable[[int, int, str, str, dict], None]
 
-# Paint order: densest / most geometric first, then power, then critical, then rest
-_STRATEGY_ORDER = ("ring", "power", "critical", "general")
+# Matrix (dense multipin) first so later power/critical see painted copper
+_STRATEGY_ORDER = ("matrix", "power", "critical", "general")
 
 
 @dataclass
@@ -48,14 +45,12 @@ class NetAssignment:
     clearance_mm: float
     layers: list[str] = field(default_factory=list)
     weight: float = 1.0
-    region: str = "board"  # ring | core | board
+    region: str = "board"
 
 
 @dataclass
 class HybridPlan:
     assignments: list[NetAssignment]
-    has_ring: bool = False
-    ring_summary: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     def nets_for(self, strategy: str) -> list[str]:
@@ -72,8 +67,6 @@ class HybridPlan:
         for a in self.assignments:
             by.setdefault(a.strategy, []).append(a.net)
         return {
-            "has_ring": self.has_ring,
-            "ring": self.ring_summary,
             "by_strategy": {k: sorted(v) for k, v in by.items()},
             "counts": {k: len(v) for k, v in by.items()},
             "assignments": [
@@ -93,37 +86,9 @@ class HybridPlan:
         }
 
 
-def _cpx_name(net: str) -> bool:
-    return bool(re.match(r"^CPX[-_]?\d+$", net.upper()))
-
-
-def _net_region(
-    board: BoardModel,
-    net: str,
-    *,
-    ring_cx: float,
-    ring_cy: float,
-    ring_r: float,
-) -> str:
-    """Classify where net pins live: ring annulus, core, or mixed board."""
-    pins = board.nets.get(net) or []
-    if not pins:
-        return "board"
-    rs: list[float] = []
-    for ref, _pad in pins:
-        c = board.components.get(ref)
-        if c is None:
-            continue
-        rs.append(math.hypot(c.x_mm - ring_cx, c.y_mm - ring_cy))
-    if not rs:
-        return "board"
-    on_ring = sum(1 for r in rs if abs(r - ring_r) < 0.15 * max(ring_r, 1.0))
-    in_core = sum(1 for r in rs if r < 0.55 * ring_r)
-    if on_ring >= max(1, int(0.5 * len(rs))):
-        return "ring"
-    if in_core >= max(1, int(0.5 * len(rs))):
-        return "core"
-    return "board"
+def _matrix_name(net: str) -> bool:
+    u = net.upper()
+    return bool(re.match(r"^CPX[-_]?\d+$", u)) or u.startswith("MATRIX")
 
 
 def classify_board(
@@ -131,32 +96,12 @@ def classify_board(
     config: PlacementConfig | None = None,
     rules: DesignRules | None = None,
 ) -> HybridPlan:
-    """Auto-assign each net to a routing strategy + geometry constraints."""
+    """Auto-assign each net to a free-angle routing strategy + constraints."""
     rules = rules or default_design_rules()
-    # Prefer board copper order
     if board.copper_layers:
         rules = rules.model_copy(update={"copper_layers": list(board.copper_layers)})
 
-    ring = None
-    try:
-        from physics_router.halo_ring import detect_led_ring
-
-        ring = detect_led_ring(board)
-    except Exception:
-        ring = None
-
-    plan = HybridPlan(assignments=[], has_ring=ring is not None)
-    if ring is not None:
-        plan.ring_summary = {
-            "cx": ring.cx,
-            "cy": ring.cy,
-            "radius": ring.radius,
-            "leds": len(ring.led_refs),
-        }
-        plan.notes.append(
-            f"region: LED ring R≈{ring.radius:.2f}mm n={len(ring.led_refs)} "
-            f"@({ring.cx:.2f},{ring.cy:.2f})"
-        )
+    plan = HybridPlan(assignments=[])
 
     for net in sorted(board.nets.keys()):
         lab = config.net_by_name().get(net) if config else None
@@ -164,59 +109,44 @@ def classify_board(
         cl = rules.clearance_for_net(net, config)
         layers = rules.layers_for_net(net, config)
         weight = config.weight_for_net(net) if config else 1.0
-        region = "board"
-        if ring is not None:
-            region = _net_region(
-                board, net, ring_cx=ring.cx, ring_cy=ring.cy, ring_r=ring.radius
-            )
+        pins = len(board.nets.get(net) or [])
 
         strategy = "general"
         reason = "default free-angle"
+        nu = net.upper()
 
-        # 1) Charlieplex matrix on LED ring → concentric polar tracks
-        if ring is not None and _cpx_name(net):
-            strategy = "ring"
-            reason = "charlieplex/LED-ring geometry (concentric tracks)"
-            # halo.js-like thin matrix copper unless rules force wider
-            w = min(w, max(rules.constraints.min_track_width_mm, 0.128))
-            cl = min(cl, max(rules.constraints.min_clearance_mm, 0.128))
-
-        # 2) Power / ground
-        if strategy == "general" and lab and lab.net_class in (
-            NetClass.POWER,
-            NetClass.GROUND,
-        ):
+        # Power / ground first (even if multipin) — wider copper, plane layers
+        if lab and lab.net_class in (NetClass.POWER, NetClass.GROUND):
             strategy = "power"
-            reason = f"net_class={lab.net_class.value} → wide/plane-prefer"
+            reason = f"net_class={lab.net_class.value}"
+            w = max(w, 0.4 if lab.net_class == NetClass.POWER else 0.3)
+        elif any(k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS", "PGND")):
+            strategy = "power"
+            reason = "name heuristic power/gnd"
             w = max(w, 0.3)
-
-        # 3) Critical / HS / RF / weighted
-        if strategy == "general" and lab:
-            if lab.critical or lab.net_class in (
+        elif _matrix_name(net) or (pins >= 12 and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))):
+            strategy = "matrix"
+            reason = f"dense multipin bus pins={pins}" if pins >= 12 else "charlieplex/matrix name"
+            w = min(w, max(rules.constraints.min_track_width_mm, 0.2))
+        elif lab and (
+            lab.critical
+            or lab.net_class
+            in (
                 NetClass.HIGH_SPEED,
                 NetClass.DIFFERENTIAL,
                 NetClass.CLOCK,
                 NetClass.RF,
                 NetClass.ANALOG,
-            ):
-                strategy = "critical"
-                reason = (
-                    f"critical/HS class={lab.net_class.value} weight={weight:.2f}"
-                )
-            elif weight >= 2.0:
-                strategy = "critical"
-                reason = f"high weight={weight:.2f}"
-
-        # Name heuristics when no labels
-        if strategy == "general":
-            nu = net.upper()
-            if any(k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS")):
-                strategy = "power"
-                reason = "name heuristic power/gnd"
-                w = max(w, 0.3)
-            elif any(k in nu for k in ("CLK", "XTAL", "USB", "DIFF", "RF", "ANT")):
-                strategy = "critical"
-                reason = "name heuristic critical"
+            )
+        ):
+            strategy = "critical"
+            reason = f"critical/HS class={lab.net_class.value} weight={weight:.2f}"
+        elif lab and weight >= 2.0:
+            strategy = "critical"
+            reason = f"high weight={weight:.2f}"
+        elif any(k in nu for k in ("CLK", "XTAL", "USB", "DIFF", "RF", "ANT")):
+            strategy = "critical"
+            reason = "name heuristic critical"
 
         plan.assignments.append(
             NetAssignment(
@@ -227,7 +157,6 @@ def classify_board(
                 clearance_mm=round(cl, 4),
                 layers=list(layers),
                 weight=weight,
-                region=region,
             )
         )
 
@@ -274,7 +203,6 @@ def _route_bucket(
     phase_i: int,
     phase_n: int,
 ) -> RouteResult:
-    """Route one strategy bucket; seed prior copper as obstacles."""
     if not nets:
         return RouteResult()
 
@@ -290,36 +218,37 @@ def _route_bucket(
         except Exception:
             pass
 
-    # Global clearance floor for this bucket (per-net floors already in plan)
     clears = [
         plan.assignment(n).clearance_mm  # type: ignore[union-attr]
         for n in nets
         if plan.assignment(n) is not None
     ]
     cl = max(rules.constraints.min_clearance_mm, min(clears) if clears else 0.2)
-    # Per-net width override via temporary config is heavy; clearance_aware uses _net_width
-    # and design rules when we pass rules through — use max of design rule widths via config labels.
 
-    if strategy == "ring":
-        from physics_router.halo_ring import halo_ring_route
+    # matrix: finer grid + always allow vias for layer escapes
+    # power: coarser grid, wider via
+    # critical: fine grid
+    if strategy == "matrix":
+        grid = 0.15
+    elif strategy == "power":
+        grid = 0.25
+    elif strategy == "critical":
+        grid = 0.15
+    else:
+        grid = 0.2
 
-        # Only CPX / ring nets — halo_ring already filters CPX; restrict non-cpx
-        sub = copy.deepcopy(board)
-        sub.nets = {n: board.nets[n] for n in nets if n in board.nets}
-        r = halo_ring_route(
-            sub,
-            config,
-            clearance_mm=cl,
-            progress_cb=progress_cb,
-            route_non_cpx=False,
-        )
-        r.notes.append(f"hybrid: ring phase nets={len(nets)}")
-        return r
+    # Always prefer C++ core for the search hot path (phase-level progress only)
+    prefer_native = True
 
-    # Free-angle / native for power, critical, general
-    prefer_native = strategy in ("power", "general", "critical")
-    # Power: slightly coarser grid is fine; critical: finer
-    grid = 0.2 if strategy == "power" else 0.15 if strategy == "critical" else 0.2
+    # Within matrix, few-pin first within priority (less blockage early)
+    order = sorted(
+        nets,
+        key=lambda n: (
+            -plan.assignment(n).weight if plan.assignment(n) else 0,  # type: ignore[union-attr]
+            len(board.nets.get(n, [])),
+            n,
+        ),
+    )
 
     r = clearance_aware_route(
         board,
@@ -327,14 +256,15 @@ def _route_bucket(
         clearance_mm=cl,
         grid_mm=grid,
         soft_fallback=False,
-        prefer_native=prefer_native and progress_cb is None,
+        prefer_native=prefer_native,
         allow_vias=True,
-        net_order=nets,
+        net_order=order,
         nets_filter=nets,
         seed_result=seed,
-        style="isotropic",  # force isotropic bucket (no re-entry hybrid)
+        style="isotropic",
         design_rules=rules,
-        progress_cb=progress_cb,
+        # No per-net progress_cb so native C++ early path is not disabled
+        progress_cb=None,
         skip_hybrid=True,
     )
     r.notes.append(f"hybrid: {strategy} phase nets={len(nets)} cl={cl:.3f} grid={grid}")
@@ -350,23 +280,18 @@ def hybrid_route(
     progress_cb: ProgressCallback | None = None,
     plan: HybridPlan | None = None,
 ) -> RouteResult:
-    """Route the board with auto-selected algorithms per net/region.
-
-    Constraints (width, clearance, layers, weights) come from DesignRules +
-    PlacementConfig and are applied uniformly even when algorithms differ.
-    """
+    """Route with auto-selected free-angle strategies per net class."""
     rules = rules or default_design_rules()
     if board.copper_layers:
         rules = rules.model_copy(update={"copper_layers": list(board.copper_layers)})
     if clearance_mm is not None:
-        # Raise floor without shrinking per-net rules below board min
         c = rules.constraints.model_copy()
         c.min_clearance_mm = max(c.min_clearance_mm, float(clearance_mm))
         rules = rules.model_copy(update={"constraints": c})
 
     plan = plan or classify_board(board, config, rules)
     result = RouteResult()
-    result.notes.append("pipeline: hybrid multi-strategy")
+    result.notes.append("pipeline: hybrid multi-strategy (topological free-angle)")
     result.notes.extend(plan.notes)
 
     phases = [s for s in _STRATEGY_ORDER if plan.nets_for(s)]
@@ -376,8 +301,6 @@ def hybrid_route(
         nets = plan.nets_for(strategy)
         if not nets:
             continue
-        # Apply per-net widths onto a light config shim for _net_width fallback:
-        # Prefer design_rules path in clearance_aware.
         partial = _route_bucket(
             board,
             config,
@@ -396,10 +319,10 @@ def hybrid_route(
             f"+{partial.via_count} vias unrouted={len(partial.unrouted_nets)}"
         )
 
-    # Global repair with shared constraints
     cl_floor = rules.constraints.min_clearance_mm
     layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
     if result.segments:
+        # Lighter repair: fewer rounds for speed; still DRC-guarded
         result = repair_drc_conflicts(
             result,
             board,
@@ -408,7 +331,7 @@ def hybrid_route(
             grid_mm=0.2,
             layers=layers,
             allow_vias=True,
-            max_rounds=3,
+            max_rounds=2,
         )
         result = purge_shorting_copper(result, board, config, clearance_mm=cl_floor)
 
@@ -417,7 +340,6 @@ def hybrid_route(
     q = result.quality or {}
     q["pipeline"] = "hybrid"
     q["hybrid_plan"] = plan.to_dict()
-    # Annotate net reports with strategy
     strat_by_net = {a.net: a.strategy for a in plan.assignments}
     for rep in result.net_reports:
         rep.notes = list(rep.notes or [])
@@ -427,45 +349,4 @@ def hybrid_route(
                 rep.notes.append(tag)
     result.quality = q
     result.notes.append(q.get("summary", ""))
-    if progress_cb:
-        try:
-            progress_cb(
-                phase_n,
-                phase_n,
-                "hybrid",
-                "done",
-                {
-                    "partial": {
-                        "segments": [
-                            {
-                                "net": s.net,
-                                "x1": s.x1,
-                                "y1": s.y1,
-                                "x2": s.x2,
-                                "y2": s.y2,
-                                "layer": s.layer,
-                                "width_mm": s.width_mm,
-                            }
-                            for s in result.segments
-                        ],
-                        "vias": [
-                            {
-                                "net": v.net,
-                                "x": v.x,
-                                "y": v.y,
-                                "size_mm": v.size_mm,
-                                "drill_mm": v.drill_mm,
-                                "layers": list(v.layers),
-                            }
-                            for v in result.vias
-                        ],
-                        "total_length_mm": result.total_length_mm,
-                        "via_count": result.via_count,
-                        "unrouted_nets": list(result.unrouted_nets),
-                        "clearance_violations": result.clearance_violations,
-                    }
-                },
-            )
-        except Exception:
-            pass
     return result

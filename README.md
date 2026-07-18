@@ -10,8 +10,8 @@ Inspired by [TopoR](https://en.wikipedia.org/wiki/TopoR) / [Eremex TopoR](https:
 | **[RESEARCH.md](RESEARCH.md)** | Algorithm survey and bibliography |
 | **[docs/TOPOR.md](docs/TOPOR.md)** | Eremex TopoR product model, images, manuals, binary catalog |
 | **[docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md)** | Topology-first architecture (3 representations, congestion, roadmap) |
-| **[docs/HALO_RING_ROUTING.md](docs/HALO_RING_ROUTING.md)** | Charlieplex LED ring routing (halo.js concentric tracks) |
-| **[docs/HYBRID_ROUTING.md](docs/HYBRID_ROUTING.md)** | Auto multi-strategy routing (ring / power / critical / general) |
+| **[docs/HYBRID_ROUTING.md](docs/HYBRID_ROUTING.md)** | Auto multi-strategy free-angle (matrix / power / critical / general) |
+| **[docs/JLCPCB_4LAYER.md](docs/JLCPCB_4LAYER.md)** | JLCPCB 4-layer DRC/ERC floors and stackup defaults |
 | **[DATASETS.md](DATASETS.md)** | Training corpora and conversion paths |
 
 ### TopoR-style routing (what we implement)
@@ -20,7 +20,7 @@ Matches the reasoning in [docs/TOPOR.md](docs/TOPOR.md) and [Eremex TopoR autoro
 
 | Phase | Behavior |
 |-------|----------|
-| **Isotropic free-angle** | LOS → multi-bend detours (1–3 corners) + radar → hierarchical A\* (default grid **0.1 mm**) |
+| **Isotropic free-angle (C++)** | Native OpenMP/GPU core: LOS → detours → A\* (JLCPCB 4L DRC floors by default) |
 | **K-homotopy** | Up to K topologically distinct paths per connection (signature dedupe) |
 | **High-level planner** | Feature linear policy for net order + per-net K |
 | **CBS conflict clusters** | Conflict graph → small-component re-route; vias for connectivity |

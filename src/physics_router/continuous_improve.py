@@ -325,16 +325,8 @@ def _strategy_plan(cfg: ImproveConfig, board: BoardModel) -> list[dict[str, Any]
     """Ordered diversifying strategies cycled each round."""
     orders = _net_order_variants(board, None)
     plan: list[dict[str, Any]] = []
-    # Hybrid multi-strategy first (auto ring/power/critical/general)
+    # Hybrid multi-strategy free-angle first (matrix/power/critical/general)
     plan.append({"name": "hybrid", "kind": "hybrid", "grid_mm": cfg.grid_mm})
-    # Dedicated ring pass as diversifier when LED circle is present
-    try:
-        from physics_router.halo_ring import detect_led_ring
-
-        if detect_led_ring(board) is not None:
-            plan.append({"name": "halo_ring", "kind": "halo_ring", "grid_mm": cfg.grid_mm})
-    except Exception:
-        pass
     if cfg.prefer_native:
         plan.append(
             {
@@ -436,21 +428,12 @@ def _run_route(
     if strat.get("kind") == "hybrid":
         from physics_router.hybrid_route import hybrid_route
 
+        # No per-net progress into clearance_aware so native path stays fast
         return hybrid_route(
             board,
             config,
             clearance_mm=cl,
-            progress_cb=_net_prog if progress_cb else None,
-        )
-
-    if strat.get("kind") == "halo_ring":
-        from physics_router.halo_ring import halo_ring_route
-
-        return halo_ring_route(
-            board,
-            config,
-            clearance_mm=cl,
-            progress_cb=_net_prog if progress_cb else None,
+            progress_cb=None,
         )
 
     # Native C++ path is skipped when progress_cb is set (router early-return
