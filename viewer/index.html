@@ -1464,6 +1464,104 @@
     return new Set(boxes.filter(b => b.checked).map(b => b.dataset.kly));
   }
 
+  /** Draw footprint primitives in local mm (caller has set scale + Y flip). */
+  function drawFootprintGraphics(ctx, gfx, { showSilk = true, showCu = true } = {}) {
+    const silkOk = (ly) => !ly || /Silk|Fab|CrtYd/i.test(ly);
+    const cuOk = (ly) => !ly || /\.Cu|Front|Back/i.test(ly);
+    // Pads first (under silk)
+    for (const g of gfx) {
+      if (g.kind !== 'pad') continue;
+      if (!showCu && !cuOk(g.layer)) continue;
+      if (showCu === false) continue;
+      const col = (g.layer && g.layer.startsWith('B')) ? KICAD_LAYER['B.Cu'] : KICAD_LAYER['F.Cu'];
+      ctx.save();
+      ctx.translate(g.x || 0, g.y || 0);
+      ctx.rotate(((g.rot || 0) * Math.PI) / 180);
+      const w = g.w || 0.5, h = g.h || 0.5;
+      const shape = (g.shape || 'rect').toLowerCase();
+      ctx.fillStyle = col;
+      ctx.strokeStyle = '#5a2020';
+      ctx.lineWidth = 0.04;
+      if (shape.includes('circle') || shape === 'oval' && Math.abs(w - h) < 0.05) {
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (shape.includes('roundrect') || shape.includes('round')) {
+        const r = Math.min(w, h) * 0.2;
+        roundRectPath(ctx, -w / 2, -h / 2, w, h, r);
+        ctx.fill();
+      } else {
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+      }
+      // Drill hole
+      if (g.drill > 0.05) {
+        ctx.fillStyle = '#0a1020';
+        ctx.beginPath();
+        ctx.arc(0, 0, g.drill / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Cathode / pinfunction K mark
+      if (/^k$/i.test(g.pinfunction || '')) {
+        ctx.fillStyle = '#f0e080';
+        ctx.fillRect(w / 2 - w * 0.2, -h / 2, w * 0.2, h);
+      }
+      ctx.restore();
+    }
+    // Silk / fab lines & shapes
+    for (const g of gfx) {
+      if (g.kind === 'pad') continue;
+      const ly = g.layer || '';
+      if (/Silk|Fab|CrtYd/i.test(ly)) {
+        if (!showSilk) continue;
+      } else if (/\.Cu/i.test(ly)) {
+        if (!showCu) continue;
+      } else if (!showSilk) continue;
+
+      const isCrt = /CrtYd/i.test(ly);
+      const isFab = /Fab/i.test(ly);
+      ctx.strokeStyle = isCrt ? '#d040d088' : (isFab ? '#a0a0a0' : KICAD_LAYER['F.SilkS']);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = Math.max(0.05, g.width || 0.1);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (g.kind === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(g.x1, g.y1);
+        ctx.lineTo(g.x2, g.y2);
+        ctx.stroke();
+      } else if (g.kind === 'rect') {
+        const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2);
+        const w = Math.abs(g.x2 - g.x1), h = Math.abs(g.y2 - g.y1);
+        if (g.fill) ctx.fillRect(x, y, w, h);
+        else ctx.strokeRect(x, y, w, h);
+      } else if (g.kind === 'circle') {
+        ctx.beginPath();
+        ctx.arc(g.cx, g.cy, g.r || 0.2, 0, Math.PI * 2);
+        if (g.fill) ctx.fill();
+        else ctx.stroke();
+      } else if (g.kind === 'poly' && g.pts?.length) {
+        ctx.beginPath();
+        ctx.moveTo(g.pts[0][0], g.pts[0][1]);
+        for (let i = 1; i < g.pts.length; i++) ctx.lineTo(g.pts[i][0], g.pts[i][1]);
+        ctx.closePath();
+        if (g.fill) ctx.fill();
+        else ctx.stroke();
+      }
+    }
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
   function drawRoute2d() {
     // Prefer full-size main viz canvas; fall back to any legacy id
     const canvas = $('#main2d') || $('#route2d');
@@ -1534,21 +1632,21 @@
       }
     }
 
-    // Edge.Cuts — circular board when HALO-like, else rect
+    // Board substrate fill (from Edge.Cuts circle if present, else LED ring fit)
     const showEdge = !layersOn || layersOn.has('Edge.Cuts');
+    const outlineEarly = board?.outline || [];
     if (showEdge) {
-      const cx = (minX + maxX) / 2 + 0; // approx
-      // fit circle from component ring (LEDs)
-      const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
-      let rBoard = Math.max(bw, bh) / 2 - pad;
-      if (leds.length > 10) {
-        const rs = leds.map(c => Math.hypot(c.x, c.y));
-        rBoard = Math.max(...rs) + 1.2;
-      }
-      let cxB = 0, cyB = 0;
-      if (comps.length) {
-        cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
-        cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
+      let cxB = 0, cyB = 0, rBoard = Math.max(bw, bh) / 2 - pad;
+      const circ = outlineEarly.find(g => g.kind === 'circle');
+      if (circ) {
+        cxB = circ.cx; cyB = circ.cy; rBoard = circ.r || rBoard;
+      } else {
+        const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
+        if (leds.length > 10) rBoard = Math.max(...leds.map(c => Math.hypot(c.x, c.y))) + 1.2;
+        if (comps.length) {
+          cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
+          cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
+        }
       }
       const [bcx, bcy] = tx(cxB, cyB);
       if (!layersOn || layersOn.has('F.Mask') || layersOn.has('F.Cu')) {
@@ -1556,23 +1654,6 @@
         ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(20, 55, 40, 0.85)';
         ctx.fill();
-        if (!layersOn || layersOn.has('F.Mask')) {
-          ctx.fillStyle = 'rgba(90, 40, 140, 0.12)';
-          ctx.fill();
-        }
-      }
-      ctx.beginPath();
-      ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
-      ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      const hook = comps.find(c => c.ref === 'H1');
-      if (hook) {
-        const [hx, hy] = tx(hook.x, hook.y);
-        ctx.beginPath();
-        ctx.arc(hx, hy, Math.max(4, 2.2 * scale), 0, Math.PI * 2);
-        ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
-        ctx.stroke();
       }
     }
 
@@ -1619,84 +1700,63 @@
       }
     }
 
-    // Footprints — KiCad θ is CCW in board XY. viewRotDeg() already accounts for
-    // VIEW_FLIP_Y (negates θ); canvas then uses rotate(-viewθ). That undoes the
-    // old 180° view bug that reversed LED / switch orientation left-right.
-    // BL-HUB37A: pad 2 pinfunction K (cathode) is at local +X.
+      // Edge.Cuts stroke from PCB file
+    if (outlineEarly.length && showEdge) {
+      ctx.strokeStyle = KICAD_LAYER['Edge.Cuts'];
+      ctx.lineWidth = 1.4;
+      for (const g of outlineEarly) {
+        if (g.kind === 'line') {
+          const a = tx(g.x1, g.y1), b = tx(g.x2, g.y2);
+          ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        } else if (g.kind === 'circle') {
+          const [cx, cy] = tx(g.cx, g.cy);
+          ctx.beginPath(); ctx.arc(cx, cy, (g.r || 1) * scale, 0, Math.PI * 2); ctx.stroke();
+        } else if (g.kind === 'rect') {
+          const a = tx(g.x1, g.y1), b = tx(g.x2, g.y2);
+          ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]),
+            Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+        } else if (g.kind === 'arc' && g.mx != null) {
+          const a = tx(g.x1, g.y1), m = tx(g.mx, g.my), b = tx(g.x2, g.y2);
+          ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(m[0], m[1], b[0], b[1]); ctx.stroke();
+        }
+      }
+    }
+
+    // Footprints from .kicad_pcb (pads + silk/fab graphics)
     const showSilk = !layersOn || layersOn.has('F.SilkS') || layersOn.has('F.Silkscreen');
+    const showCu = !layersOn || layersOn.has('F.Cu') || layersOn.has('Front');
     for (const c of comps) {
       const [x, y] = tx(c.x, c.y);
-      const w = Math.max(1.5, (c.w || 0.8) * scale);
-      const h = Math.max(1.2, (c.h || 0.5) * scale);
       const rot = (viewRotDeg(c.rot) * Math.PI) / 180;
-      const isLed = /^D\d+$/i.test(c.ref);
-      const isPad = /^TP/i.test(c.ref) || /TestPoint/i.test(c.footprint || '');
-      const isMcu = c.ref === 'U1' || c.ref === 'U2';
-      const isBatt = c.ref === 'BT1';
+      const gfx = c.graphics;
+      const hasGfx = Array.isArray(gfx) && gfx.length > 0;
 
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(-rot);
+      // Local footprint: KiCad +Y up; after view Y-flip + canvas Y-down, flip local Y
+      ctx.scale(scale, -scale);
 
-      if (isLed) {
-        // Body along local X (pads at ±0.525); short axis = height
-        ctx.fillStyle = '#C83434';
-        ctx.strokeStyle = '#8B2020';
-        ctx.lineWidth = 0.8;
-        ctx.fillRect(-w / 2, -h / 2, w, h);
-        ctx.strokeRect(-w / 2, -h / 2, w, h);
-        // Cathode (K) on local +X — follows footprint rot after viewRotDeg fix
-        ctx.fillStyle = '#f0e080';
-        ctx.fillRect(w / 2 - w * 0.22, -h / 2, w * 0.22, h);
-        // polarity bar (silk-like)
-        ctx.strokeStyle = '#f0e080';
-        ctx.beginPath();
-        ctx.moveTo(w * 0.15, -h * 0.35);
-        ctx.lineTo(w * 0.15, h * 0.35);
-        ctx.stroke();
-        if (showSilk && scale > 10) {
-          ctx.fillStyle = KICAD_LAYER['F.SilkS'];
-          ctx.font = `${Math.max(5, 0.45 * scale)}px system-ui`;
-          ctx.textAlign = 'center';
-          ctx.fillText(c.ref, 0, -h / 2 - 1);
-        }
-      } else if (isPad) {
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(w, h) / 2, 0, Math.PI * 2);
-        ctx.fillStyle = '#C83434';
-        ctx.fill();
-        ctx.strokeStyle = KICAD_LAYER['F.SilkS'];
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      } else if (isBatt) {
-        ctx.fillStyle = 'rgba(60, 100, 160, 0.35)';
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(w, h) * 0.55, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = KICAD_LAYER['F.SilkS'];
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+      if (hasGfx) {
+        drawFootprintGraphics(ctx, gfx, { showSilk, showCu });
       } else {
-        ctx.fillStyle = isMcu ? '#2a2a32' : '#3a3a44';
+        const w = Math.max(0.4, c.w || 0.8);
+        const h = Math.max(0.3, c.h || 0.5);
+        ctx.fillStyle = '#3a3a44';
         ctx.strokeStyle = showSilk ? KICAD_LAYER['F.SilkS'] : '#666';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 0.08;
         ctx.fillRect(-w / 2, -h / 2, w, h);
         ctx.strokeRect(-w / 2, -h / 2, w, h);
-        if (isMcu) {
-          ctx.fillStyle = '#C83434';
-          ctx.beginPath();
-          ctx.arc(-w / 2 + 1.5, -h / 2 + 1.5, 1.2, 0, Math.PI * 2);
-          ctx.fill();
-        }
       }
       ctx.restore();
 
-      if (showSilk && !isLed) {
+      if (showSilk) {
         ctx.fillStyle = KICAD_LAYER['F.SilkS'];
-        ctx.font = `${Math.max(8, Math.min(11, 0.55 * scale))}px "IBM Plex Sans", system-ui`;
+        ctx.font = `${Math.max(7, Math.min(11, 0.5 * scale))}px "IBM Plex Sans", system-ui`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(c.ref, x, y - Math.max(h, 6) / 2 - 2);
+        const labelH = Math.max((c.h || 1) * scale * 0.5, 4);
+        ctx.fillText(c.ref, x, y - labelH - 2);
       }
     }
 

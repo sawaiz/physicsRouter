@@ -163,10 +163,12 @@ def load_board_from_kicad_pcb(
             # (pad "1" smd rect (at ...) (size w h) (nets 3 "NETNAME") )  OR (net 3 "NET")
             pad_num = str(pad[1]) if len(pad) > 1 else "?"
             net_name = _pad_net_name(pad)
-            pads.append({"num": pad_num, "net": net_name})
+            pad_geom = _pad_geometry(pad)
+            pads.append({"num": pad_num, "net": net_name, **pad_geom})
             if net_name:
                 nets.setdefault(net_name, []).append((ref, pad_num))
 
+        graphics = _footprint_graphics(fp)
         components[ref] = Component(
             ref=ref,
             footprint=fp_name,
@@ -177,6 +179,7 @@ def load_board_from_kicad_pcb(
             rotation_deg=rot,
             locked=locked,
             pads=pads,
+            graphics=graphics,
         )
 
     if config:
@@ -201,6 +204,8 @@ def load_board_from_kicad_pcb(
         copper_layers = list(dr.copper_layers) or copper_layers
         rules_dict = dr.summary()
 
+    outline = _board_outline_graphics(root)
+
     return BoardModel(
         width_mm=width,
         height_mm=height,
@@ -209,7 +214,250 @@ def load_board_from_kicad_pcb(
         source_path=str(path),
         design_rules=rules_dict,
         copper_layers=copper_layers,
+        outline=outline,
     )
+
+
+def _layer_name(node: list[Any]) -> str:
+    ly = _find_first(node, "layer")
+    if ly and len(ly) >= 2:
+        return str(ly[1])
+    # pads use (layers "F.Cu" "F.Paste" ...)
+    lys = _find_first(node, "layers")
+    if lys and len(lys) >= 2:
+        return str(lys[1])
+    return ""
+
+
+def _width_mm(node: list[Any], default: float = 0.1) -> float:
+    w = _find_first(node, "width")
+    if w and len(w) >= 2:
+        return abs(_as_float(w[1], default))
+    w = _find_first(node, "stroke")
+    if w:
+        ww = _find_first(w, "width")
+        if ww and len(ww) >= 2:
+            return abs(_as_float(ww[1], default))
+    return default
+
+
+def _pad_geometry(pad: list[Any]) -> dict[str, Any]:
+    """Local pad geometry for accurate 2D footprint rendering."""
+    shape = str(pad[2]) if len(pad) > 2 else "rect"
+    at = _find_first(pad, "at")
+    ax = ay = arot = 0.0
+    if at and len(at) >= 3:
+        ax, ay = _as_float(at[1]), _as_float(at[2])
+        if len(at) >= 4:
+            arot = _as_float(at[3])
+    size = _find_first(pad, "size")
+    sw = sh = 0.5
+    if size and len(size) >= 3:
+        sw, sh = abs(_as_float(size[1], 0.5)), abs(_as_float(size[2], 0.5))
+    drill = _find_first(pad, "drill")
+    drill_mm = 0.0
+    if drill and len(drill) >= 2:
+        # (drill 0.3) or (drill oval 0.3 0.4)
+        try:
+            drill_mm = abs(float(drill[1]))
+        except (TypeError, ValueError):
+            if len(drill) >= 3:
+                drill_mm = abs(_as_float(drill[2]))
+    layers: list[str] = []
+    lys = _find_first(pad, "layers")
+    if lys:
+        layers = [str(x) for x in lys[1:] if isinstance(x, str)]
+    pinfunction = ""
+    pf = _find_first(pad, "pinfunction")
+    if pf and len(pf) >= 2:
+        pinfunction = str(pf[1])
+    return {
+        "shape": shape,
+        "x": ax,
+        "y": ay,
+        "rot": arot,
+        "w": sw,
+        "h": sh,
+        "drill": drill_mm,
+        "layers": layers,
+        "pinfunction": pinfunction,
+    }
+
+
+def _footprint_graphics(fp: list[Any]) -> list[dict[str, Any]]:
+    """Extract local-coordinate silk/fab/copper outline graphics from a footprint."""
+    gfx: list[dict[str, Any]] = []
+    # Prefer silk + fab for body outline; include courtyard lightly
+    want_layers = (
+        "F.SilkS", "B.SilkS", "F.Fab", "B.Fab",
+        "F.CrtYd", "B.CrtYd", "F.Cu", "B.Cu",
+    )
+
+    for line in _find_all(fp, "fp_line"):
+        layer = _layer_name(line)
+        if layer and not any(w in layer for w in ("Silk", "Fab", "CrtYd", ".Cu")):
+            continue
+        st = _find_first(line, "start")
+        en = _find_first(line, "end")
+        if not st or not en or len(st) < 3 or len(en) < 3:
+            continue
+        gfx.append({
+            "kind": "line",
+            "layer": layer or "F.SilkS",
+            "x1": _as_float(st[1]), "y1": _as_float(st[2]),
+            "x2": _as_float(en[1]), "y2": _as_float(en[2]),
+            "width": _width_mm(line, 0.12),
+        })
+
+    for rect in _find_all(fp, "fp_rect"):
+        layer = _layer_name(rect)
+        if layer and not any(w in layer for w in ("Silk", "Fab", "CrtYd")):
+            continue
+        st = _find_first(rect, "start")
+        en = _find_first(rect, "end")
+        if not st or not en or len(st) < 3 or len(en) < 3:
+            continue
+        fill = _find_first(rect, "fill")
+        filled = bool(fill and len(fill) >= 2 and str(fill[1]) not in ("none", "no"))
+        gfx.append({
+            "kind": "rect",
+            "layer": layer or "F.SilkS",
+            "x1": _as_float(st[1]), "y1": _as_float(st[2]),
+            "x2": _as_float(en[1]), "y2": _as_float(en[2]),
+            "width": _width_mm(rect, 0.12),
+            "fill": filled,
+        })
+
+    for circ in _find_all(fp, "fp_circle"):
+        layer = _layer_name(circ)
+        if layer and not any(w in layer for w in ("Silk", "Fab", "CrtYd", ".Cu")):
+            continue
+        ctr = _find_first(circ, "center")
+        end = _find_first(circ, "end")
+        if not ctr or not end or len(ctr) < 3 or len(end) < 3:
+            continue
+        cx, cy = _as_float(ctr[1]), _as_float(ctr[2])
+        ex, ey = _as_float(end[1]), _as_float(end[2])
+        r = ((ex - cx) ** 2 + (ey - cy) ** 2) ** 0.5
+        fill = _find_first(circ, "fill")
+        filled = bool(fill and len(fill) >= 2 and str(fill[1]) not in ("none", "no"))
+        gfx.append({
+            "kind": "circle",
+            "layer": layer or "F.SilkS",
+            "cx": cx, "cy": cy, "r": r,
+            "width": _width_mm(circ, 0.12),
+            "fill": filled,
+        })
+
+    for poly in _find_all(fp, "fp_poly"):
+        layer = _layer_name(poly)
+        if layer and not any(w in layer for w in ("Silk", "Fab", "CrtYd", ".Cu")):
+            continue
+        pts_node = _find_first(poly, "pts")
+        pts: list[list[float]] = []
+        if pts_node:
+            for child in pts_node[1:]:
+                if isinstance(child, list) and child and child[0] == "xy" and len(child) >= 3:
+                    pts.append([_as_float(child[1]), _as_float(child[2])])
+        if len(pts) >= 2:
+            fill = _find_first(poly, "fill")
+            filled = bool(fill and len(fill) >= 2 and str(fill[1]) not in ("none", "no"))
+            gfx.append({
+                "kind": "poly",
+                "layer": layer or "F.SilkS",
+                "pts": pts,
+                "width": _width_mm(poly, 0.1),
+                "fill": filled,
+            })
+
+    # Pad copper as graphics so the viewer can draw real pad shapes
+    for pad in _find_all(fp, "pad"):
+        g = _pad_geometry(pad)
+        layers = g.get("layers") or ["F.Cu"]
+        copper_layers = [ly for ly in layers if ".Cu" in ly or ly in ("*.Cu", "F&B.Cu")]
+        if not copper_layers:
+            copper_layers = ["F.Cu"]
+        for ly in copper_layers[:2]:  # front + back enough for 2D
+            gfx.append({
+                "kind": "pad",
+                "layer": ly if ly != "*.Cu" else "F.Cu",
+                "shape": g["shape"],
+                "x": g["x"], "y": g["y"], "rot": g["rot"],
+                "w": g["w"], "h": g["h"],
+                "drill": g.get("drill") or 0.0,
+                "num": str(pad[1]) if len(pad) > 1 else "",
+                "pinfunction": g.get("pinfunction") or "",
+            })
+
+    # Cap size for huge footprints
+    if len(gfx) > 400:
+        gfx = gfx[:400]
+    return gfx
+
+
+def _board_outline_graphics(root: Any) -> list[dict[str, Any]]:
+    """Edge.Cuts lines/arcs/circles in board coordinates."""
+    out: list[dict[str, Any]] = []
+    for tag in ("gr_line", "gr_rect", "gr_circle", "gr_arc", "gr_poly"):
+        for gr in _find_all(root, tag):
+            layer = _layer_name(gr)
+            if "Edge.Cuts" not in layer and "Edge_Cuts" not in layer:
+                continue
+            if tag == "gr_line":
+                st = _find_first(gr, "start")
+                en = _find_first(gr, "end")
+                if st and en and len(st) >= 3 and len(en) >= 3:
+                    out.append({
+                        "kind": "line",
+                        "layer": "Edge.Cuts",
+                        "x1": _as_float(st[1]), "y1": _as_float(st[2]),
+                        "x2": _as_float(en[1]), "y2": _as_float(en[2]),
+                        "width": _width_mm(gr, 0.1),
+                    })
+            elif tag == "gr_circle":
+                ctr = _find_first(gr, "center")
+                end = _find_first(gr, "end")
+                if ctr and end and len(ctr) >= 3 and len(end) >= 3:
+                    cx, cy = _as_float(ctr[1]), _as_float(ctr[2])
+                    ex, ey = _as_float(end[1]), _as_float(end[2])
+                    r = ((ex - cx) ** 2 + (ey - cy) ** 2) ** 0.5
+                    out.append({
+                        "kind": "circle",
+                        "layer": "Edge.Cuts",
+                        "cx": cx, "cy": cy, "r": r,
+                        "width": _width_mm(gr, 0.1),
+                        "fill": False,
+                    })
+            elif tag == "gr_rect":
+                st = _find_first(gr, "start")
+                en = _find_first(gr, "end")
+                if st and en and len(st) >= 3 and len(en) >= 3:
+                    out.append({
+                        "kind": "rect",
+                        "layer": "Edge.Cuts",
+                        "x1": _as_float(st[1]), "y1": _as_float(st[2]),
+                        "x2": _as_float(en[1]), "y2": _as_float(en[2]),
+                        "width": _width_mm(gr, 0.1),
+                        "fill": False,
+                    })
+            elif tag == "gr_arc":
+                # KiCad 6+: (gr_arc (start x y) (mid x y) (end x y) ...)
+                st = _find_first(gr, "start")
+                mid = _find_first(gr, "mid")
+                en = _find_first(gr, "end")
+                if st and en and len(st) >= 3 and len(en) >= 3:
+                    item = {
+                        "kind": "arc",
+                        "layer": "Edge.Cuts",
+                        "x1": _as_float(st[1]), "y1": _as_float(st[2]),
+                        "x2": _as_float(en[1]), "y2": _as_float(en[2]),
+                        "width": _width_mm(gr, 0.1),
+                    }
+                    if mid and len(mid) >= 3:
+                        item["mx"] = _as_float(mid[1])
+                        item["my"] = _as_float(mid[2])
+                    out.append(item)
+    return out
 
 
 def _footprint_ref(fp: list[Any]) -> str | None:
