@@ -78,7 +78,8 @@ physics-router place \
   --candidates 2 --iterations 200 \
   --out-json examples/halo-90/placement_result.json
 
-# Route (use coarser grid; board is small but dense)
+# Route (build the native module first; there is no Python geometry fallback)
+bash scripts/build_native.sh
 physics-router route \
   --config examples/halo-90/placement_config.yaml \
   --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
@@ -92,9 +93,30 @@ physics-router export-openems \
   --out-dir examples/halo-90/openems_export
 ```
 
+## Current native-router snapshot
+
+The v1.5 documentation run uses the board-derived rules, atomic multipin
+transactions, pad/layer-aware obstacles, and native organic areas for GND and
++3V. It commits **15/23 nets**, 143 segments (436.1 mm), one via, and two
+areas in about 2.5 seconds. Exact native DRC reports zero shorts, spacing
+violations, and Edge.Cuts escapes. Eight nets remain honestly open:
+`CPX-1`, `CPX-2`, `CPX-5`–`CPX-9`, and `XL-INT1`.
+
+This is a legal partial route, not fabrication sign-off. Refill the exported
+zones and run KiCad DRC to validate the final filled polygons and thermals.
+The machine-readable result is
+[`../../docs/images/routing_process/drc_report.json`](../../docs/images/routing_process/drc_report.json).
+
 ## Checked-in results & figures
 
-Regenerate with `python scripts/generate_docs_images.py` from the repo root (needs `third_party/halo-90` + `matplotlib`).
+Regenerate the current process and DRC figures with:
+
+```bash
+bash scripts/build_native.sh
+PYTHONPATH=native/build:src python scripts/render_routing_process.py --halo
+```
+
+This needs `third_party/halo-90` and matplotlib.
 
 | File | Description |
 |------|-------------|
@@ -107,13 +129,13 @@ Regenerate with `python scripts/generate_docs_images.py` from the repo root (nee
 | `../../docs/images/score_breakdown.png` | Cost bar chart |
 | `../../docs/images/runtimes.png` | Timing bar chart |
 
-### Snapshot (last generate)
+### Legacy benchmark snapshot
 
 | Step | Time | Notes |
 |------|------|--------|
 | score | ~0.04 s | ngspice + EMI proxies |
 | route-guide | ~11 s | 207 segs, 854 mm |
-| route (grid 1 mm) | ~35 s | 208 segs, 4-layer DRC policy |
+| route (grid 1 mm) | ~35 s | 208 segs, pre-v1.5 route policy |
 
 ## KiCad DRC + official renders
 

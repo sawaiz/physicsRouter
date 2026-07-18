@@ -96,14 +96,20 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 ### 5. C++-only geometric router (no Python fallback)
 
-**Decision:** All clearance queries and path search run in the C++ core. `ExactMap` (spatial hash + exact Liang–Barsky segment/rect + continuous painted seg–seg distance) is the clearance authority; `free_angle_route_exact` implements LOS → isotropic detours (obstacle corners, bulges, angled offsets, radar scan) → 1/2/3-corner chains → hierarchical multi-grid A\* (16-dir on fine grids) → rubberband, with negotiated-congestion edge costs marshalled from Python. The Python `ObstacleMap`/`free_angle_route` are thin wrappers; the pure-Python implementation was removed after test parity (same 107-test suite). `pr_native` is required — the router raises with build instructions if missing.
+**Decision:** All clearance queries and path search run in the C++ core. `ExactMap` is the exact authority; the whole-board `GridMap` fast path uses clearance-correct centerline inflation, layer-aware pads, true Edge.Cuts occupancy, and atomic full-net transactions. Python selects buckets and validates the native result but does not implement a second geometry search. `pr_native` is required — the router raises with build instructions if missing.
 
-**Why:** Two parallel router implementations drifted and the Python hot path dominated wall time (HALO-90 core route: ~200 s Python → ~34 s native, same segment/via counts). KiCad I/O, K-homotopy, CBS, planner, elastic/regeometry polish, and SI/MFG scoring stay in Python where iteration speed matters more than throughput.
+**Why:** Two parallel router implementations drifted. The batch-first native policy routes the documented HALO snapshot in about 2.5 seconds and leaves rejected dense nets open; the prior retry loop spent 150–280 seconds without improving legal completion.
 ### 6. Multi-net IC keepouts are not solid discs
 
-**Decision:** Only single-net footprints get a pad keepout disc. Multi-pin ICs do not place a net-agnostic block at the origin.
+**Decision:** Obstacles are built from real pad XY, size, net ownership, and copper layers. Multi-pin package bodies do not become net-agnostic copper blocks.
 
-**Why:** A solid keepout at U1 blocked every net in the simplified pin model (all pads share the component center).
+**Why:** A solid keepout at U1 covered its own escape anchors and made every signal impossible. Pad ownership lets the attached net enter while foreign nets keep the required clearance; F.Cu SMD pads no longer block inner layers.
+
+### 6a. Power and ground may use refillable copper areas
+
+**Decision:** The native core can emit rounded, Edge.Cuts-bounded `CopperArea` polygons for power/ground nets. Export writes tagged KiCad zones; KiCad owns fill, clearances, thermals, and final zone DRC.
+
+**Why:** Organic boards need copper regions as well as centerline tracks. Treating planes as many wide traces wastes routing channels and still does not model thermal connections correctly.
 
 ### 7. Rubberband only on continuous polylines
 
@@ -124,8 +130,8 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 | Path | Typical cost | Mitigation |
 |------|----------------|------------|
 | Python A\* + rect obstacles | High on dense boards | C++ `GridMap` + `pr_native` |
-| Multi-net paint order | Sequential (correctness) | Priority order; better search later |
-| Full HALO clearance | Seconds–minutes | Coarser grid for UI; native backend |
+| Multi-net paint order | Native atomic bucket | Exact DRC gate, then bounded recovery |
+| Full HALO clearance | ~2.5 s documented run | Coarse dense batch; no retry thrash |
 | GLB export | Seconds (kicad-cli) | Cache under `viewer/assets/` |
 | OpenCL batch clearance | Validation / samples | Optional; CPU fallback always |
 
@@ -139,11 +145,11 @@ Prioritized by impact on **legal, manufacturable** boards for HALO-class density
 
 ### Near term
 
-1. **Stronger same-layer clearance** — continuous geometry (not only grid samples); push-aside cleanup.
-2. **CPX concurrent bundle** — route charlieplex as a multi-commodity group with length match.
-3. **Rip-up and reroute** — conflict learning: nets that fail get higher priority next pass.
-4. **Pad-accurate anchors** — use real pad offsets from KiCad, not component centers.
-5. **DRC-driven rip-up** — parse copper violations and locally re-route offenders.
+1. **CPX concurrent bundle** — route charlieplex as a multi-commodity/ring group with length match; this is the main HALO completion blocker.
+2. **Filled-zone import** — read KiCad's refilled polygons back into native exact DRC and SI/current-density analysis.
+3. **DRC-driven local rip-up** — parse filled-copper violations and re-route only the offending topology cluster.
+4. **Push-aside geometry** — move neighboring legal traces together instead of discarding a full dense net.
+5. **Pad layer legality** — distinguish SMD anchor layers from through-hole barrels in the connectivity proof.
 
 ### Medium term
 
