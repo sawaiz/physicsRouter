@@ -1,22 +1,20 @@
 {
-  "mode": "native_atomic_pad_aware",
-  "native_version": "1.5.0-native-clearance",
-  "time_s": 2.447,
-  "completed_nets": 15,
+  "mode": "native_parallel_matrix_bundle",
+  "native_version": "1.6.0-native-bundle",
+  "time_s": 6.891,
+  "completed_nets": 17,
   "total_nets": 23,
-  "segments": 143,
-  "vias": 1,
+  "segments": 164,
+  "vias": 0,
   "areas": 2,
-  "length_mm": 436.147,
+  "length_mm": 464.326,
   "unrouted": [
-    "CPX-1",
-    "CPX-2",
+    "CPX-3",
     "CPX-5",
     "CPX-6",
     "CPX-7",
     "CPX-8",
-    "CPX-9",
-    "XL-INT1"
+    "CPX-9"
   ],
   "drc": {
     "violations": 0,
@@ -27,9 +25,10 @@
     "areas_deferred_to_kicad": 2
   },
   "notes": [
-    "backend: native C++ atomic batch with bounded small-net recovery",
+    "backend: native C++ atomic batch with four parallel matrix order variants",
     "obstacles: pad XY, net ownership, copper-layer aware",
     "policy: incomplete multipin trees roll back; open is preferred to illegal copper",
+    "multipin native trees are preserved during chain-style rubberband",
     "GND and +3V use rounded native CopperArea polygons",
     "KiCad refill and DRC remain authoritative for filled-zone polygons and thermals"
   ],
