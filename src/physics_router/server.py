@@ -370,6 +370,8 @@ class AppState:
             "route_guide": self._job_route_topor,  # alias → single TopoR path
             "route_clearance": self._job_route_topor,
             "route_topor": self._job_route_topor,
+            "improve": self._job_improve,
+            "continuous_improve": self._job_improve,
             "pre_route": self._job_pre_route,
             "spice": self._job_spice,
             "openems": self._job_openems,
@@ -676,6 +678,215 @@ class AppState:
             "route": d,
             "validation": validation,
         }
+
+    def _job_improve(self, job: Job) -> dict[str, Any]:
+        """Continuous place+route improvement with live score until goal or timeout."""
+        from physics_router.continuous_improve import ImproveConfig, continuous_improve
+
+        p = job.params
+        timeout_s = float(p.get("timeout_s", p.get("timeout", 120)))
+        target_grade = str(p.get("target_grade", p.get("grade", "A"))).upper()[:1] or "A"
+        min_score = float(p.get("min_score", 0) or 0)
+        if min_score <= 0:
+            from physics_router.continuous_improve import min_score_for_grade
+
+            min_score = min_score_for_grade(target_grade)
+        require_drc = bool(p.get("require_drc_clean", True))
+        require_complete = bool(p.get("require_complete", True))
+        do_place = bool(p.get("do_place", p.get("place", True)))
+        do_route = bool(p.get("do_route", p.get("route", True)))
+        clearance = float(p.get("clearance_mm", 0.2))
+        grid = float(p.get("grid_mm", 0.25))
+        max_rounds = p.get("max_rounds")
+        if max_rounds is not None:
+            max_rounds = int(max_rounds)
+
+        icfg = ImproveConfig(
+            timeout_s=timeout_s,
+            min_score=min_score,
+            target_grade=target_grade,
+            require_drc_clean=require_drc,
+            require_complete=require_complete,
+            do_place=do_place,
+            do_route=do_route,
+            clearance_mm=clearance,
+            grid_mm=grid,
+            max_rounds=max_rounds,
+            place_candidates=int(p.get("place_candidates", 2)),
+            place_sa_iterations=int(p.get("place_sa_iterations", 200)),
+            prefer_native=bool(p.get("prefer_native", True)),
+            allow_topor_rounds=bool(p.get("allow_topor_rounds", True)),
+        )
+        self.set_progress(job, 1, "continuous improve")
+        self.log(
+            job,
+            f"Improve: timeout={timeout_s:.0f}s target={target_grade} "
+            f"min_score≥{min_score:.0f} drc_clean={require_drc} "
+            f"place={do_place} route={do_route}",
+        )
+        with self.lock:
+            board = copy.deepcopy(self.board())
+            cfg = copy.deepcopy(self.config)
+
+        last_pub = {"t": 0.0}
+
+        def on_progress(ev: dict[str, Any]) -> None:
+            event = ev.get("event")
+            elapsed = float(ev.get("elapsed_s") or 0)
+            # Map time to 5–95% of progress bar
+            frac = 5.0 + 90.0 * min(1.0, elapsed / max(timeout_s, 1.0))
+            best = ev.get("best") or {}
+            if event == "stage":
+                self.set_progress(
+                    job,
+                    frac,
+                    f"r{ev.get('round')} {ev.get('stage')} · {ev.get('strategy')}",
+                )
+            elif event == "snapshot":
+                self.set_progress(
+                    job,
+                    frac,
+                    f"r{ev.get('round')} {ev.get('grade')}/{ev.get('score')} "
+                    f"viol={ev.get('violations')} best="
+                    f"{(best or {}).get('grade', '—')}/{(best or {}).get('score', '—')}",
+                )
+                self.log(
+                    job,
+                    f"  r{ev.get('round')} [{ev.get('strategy')}] "
+                    f"grade={ev.get('grade')} score={ev.get('score')} "
+                    f"viol={ev.get('violations')} (S={ev.get('shorts')} "
+                    f"sp={ev.get('spacing')} out={ev.get('outline')}) "
+                    f"vias={ev.get('vias')} unrouted={ev.get('unrouted')}"
+                    + (" ★BEST" if ev.get("is_best") else ""),
+                )
+                # Live copper + score on session (throttle ~2/s)
+                now = time.time()
+                if now - last_pub["t"] >= 0.4:
+                    last_pub["t"] = now
+                    partial = ev.get("partial")
+                    if isinstance(partial, dict) and partial.get("segments") is not None:
+                        try:
+                            self._publish_live_route(partial, "topor")
+                        except Exception as e:
+                            self.log(job, f"  live preview skip: {e}")
+                    with self.lock:
+                        self.last_score = {
+                            "score": {
+                                "route_score": ev.get("score"),
+                                "grade": ev.get("grade"),
+                                "violations": ev.get("violations"),
+                                "vias": ev.get("vias"),
+                                "unrouted": ev.get("unrouted"),
+                            },
+                            "score_total": ev.get("score"),
+                            "notes": [
+                                f"live improve r{ev.get('round')}: "
+                                f"{ev.get('grade')}/{ev.get('score')} "
+                                f"viol={ev.get('violations')}"
+                            ],
+                            "improve_live": ev,
+                        }
+            elif event == "route_progress":
+                done_n = int(ev.get("done") or 0)
+                total = max(1, int(ev.get("total") or 1))
+                self.set_progress(
+                    job,
+                    frac,
+                    f"{ev.get('strategy')} nets {done_n}/{total} · {ev.get('net')}",
+                )
+                partial = ev.get("partial")
+                if isinstance(partial, dict) and partial.get("segments") is not None:
+                    now = time.time()
+                    if now - last_pub["t"] >= 0.5:
+                        last_pub["t"] = now
+                        try:
+                            self._publish_live_route(partial, "topor")
+                        except Exception:
+                            pass
+            elif event == "done":
+                self.set_progress(
+                    job,
+                    98,
+                    f"done · {ev.get('stop_reason')} · "
+                    f"best={(best or {}).get('grade')}/{(best or {}).get('score')}",
+                )
+
+        def cancel_cb() -> bool:
+            return job.status == "cancelled"
+
+        result = continuous_improve(
+            board,
+            cfg,
+            improve=icfg,
+            progress_cb=on_progress,
+            cancel_cb=cancel_cb,
+        )
+
+        route = result.route
+        out_payload = result.to_dict()
+        if route is not None:
+            d = route.to_dict()
+            q = route.quality or route.compute_quality()
+            with self.lock:
+                if result.placement_positions:
+                    apply_positions(self.board(), result.placement_positions)
+                self.routes = {"topor": route}
+                self.selected_route = "topor"
+                self.last_score = {
+                    "score": {
+                        "route_score": (result.best_snapshot.score if result.best_snapshot else None),
+                        "grade": (result.best_snapshot.grade if result.best_snapshot else None),
+                        "violations": (
+                            result.best_snapshot.violations if result.best_snapshot else None
+                        ),
+                    },
+                    "score_total": (
+                        result.best_snapshot.score if result.best_snapshot else None
+                    ),
+                    "notes": list(result.notes[-8:]),
+                    "improve": out_payload,
+                }
+                self._refresh_viewer()
+                outp = WORK_DIR / f"improve_{job.id}.json"
+                outp.write_text(
+                    json.dumps(
+                        {
+                            **out_payload,
+                            "route": d,
+                            "quality": q,
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            self.log(
+                job,
+                f"Improve finished: {result.stop_reason} met_goal={result.met_goal} "
+                f"best={(result.best_snapshot.summary if result.best_snapshot else '—')}",
+            )
+            for n in result.notes[-12:]:
+                self.log(job, f"  {n}")
+            out_payload.update(
+                {
+                    "total_length_mm": route.total_length_mm,
+                    "via_count": route.via_count,
+                    "clearance_violations": route.clearance_violations,
+                    "segments": len(route.segments),
+                    "unrouted": route.unrouted_nets,
+                    "quality": q,
+                    "artifact": str(outp.relative_to(ROOT)),
+                    "route": d,
+                }
+            )
+        else:
+            with self.lock:
+                if result.placement_positions:
+                    apply_positions(self.board(), result.placement_positions)
+                    self._refresh_viewer()
+            self.log(job, f"Improve finished without route: {result.stop_reason}")
+        self.set_progress(job, 100, "complete")
+        return out_payload
 
     def _job_pre_route(self, job: Job) -> dict[str, Any]:
         self.set_progress(job, 30, "pre-route analysis")
@@ -1309,6 +1520,12 @@ JOB_CATALOG = [
         "label": "TopoR free-angle route",
         "group": "route",
         "description": "Isotropic free-angle TopoR pipeline: multi-variant search, rubberband + via minimize, live 2D preview",
+    },
+    {
+        "id": "improve",
+        "label": "Continuous improve",
+        "group": "route",
+        "description": "Loop place+route with live score until timeout or target grade + full DRC pass",
     },
     {
         "id": "apply_route_pcb",

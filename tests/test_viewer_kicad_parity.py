@@ -125,6 +125,11 @@ def test_edge_cuts_teardrop_arc_chain():
 
 def test_render_viewer_2d_script_landmarks():
     """Headless PNG renderer landmarks (same transform as control plane)."""
+    import sys
+
+    # scripts/ is not a package; load via repo root on sys.path
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from scripts.render_viewer_2d import landmark_report, render_board
 
     _, _, bd, _ = _load_viewer_board()

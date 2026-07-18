@@ -884,11 +884,29 @@ def clearance_aware_route(
                         return _route_result_from_dict(raw)
                     # Legal path: light Python polish (elastic + SI/MFG)
                     try:
-                        return polish_native_with_python(
+                        result = polish_native_with_python(
                             board, config, raw, clearance_mm=float(clearance_mm)
                         )
                     except Exception:
-                        return _route_result_from_dict(raw)
+                        result = _route_result_from_dict(raw)
+                    # Same post-pass as Python path: rip-up/repair + honest DRC
+                    result = repair_drc_conflicts(
+                        result,
+                        board,
+                        config,
+                        clearance_mm=clearance_mm,
+                        grid_mm=grid,
+                        layers=layers,
+                        allow_vias=allow_vias,
+                        max_rounds=4,
+                    )
+                    result = purge_shorting_copper(
+                        result, board, config, clearance_mm=clearance_mm
+                    )
+                    attach_router_drc(result, clearance_mm=clearance_mm, board=board)
+                    result.compute_quality()
+                    result.notes.append(result.quality.get("summary", ""))
+                    return result
         except Exception:
             pass
 
@@ -955,7 +973,8 @@ def clearance_aware_route(
 
         width = _net_width(config, net_name)
         # Prefer preferred layers for power/ground (inner if available)
-        net_layers = list(layers)
+        # Charlieplex / matrix: stripe across copper layers to cut same-layer crossings
+        net_layers = _cpx_layer_order(net_name, layers)
         if config:
             lab = config.net_by_name().get(net_name)
             if lab is not None:
@@ -1135,12 +1154,465 @@ def clearance_aware_route(
         )
 
     if not guide_only:
+        # Rip-up nets that still short after sequential paint (dense CPX, etc.)
+        result = repair_drc_conflicts(
+            result,
+            board,
+            config,
+            clearance_mm=clearance_mm,
+            grid_mm=grid,
+            layers=layers,
+            allow_vias=allow_vias,
+            max_rounds=5,
+        )
+        # Last resort: drop lower-priority copper that still shorts (open > short)
+        result = purge_shorting_copper(
+            result, board, config, clearance_mm=clearance_mm
+        )
         # Built-in router DRC (always on): shorts / spacing / vias / outline
         attach_router_drc(result, clearance_mm=clearance_mm, board=board)
 
     result.compute_quality()
     result.notes.append(result.quality.get("summary", ""))
     return result
+
+
+def _cpx_layer_order(net: str, layers: list[str]) -> list[str]:
+    """Stripe charlieplex/matrix nets across copper layers to reduce crossings."""
+    if not layers:
+        return layers
+    if not net.upper().startswith("CPX") or len(layers) < 2:
+        return list(layers)
+    try:
+        idx = int("".join(ch for ch in net if ch.isdigit()) or "0")
+    except ValueError:
+        idx = abs(hash(net)) % len(layers)
+    primary = layers[idx % len(layers)]
+    return [primary] + [ly for ly in layers if ly != primary]
+
+
+def _rebuild_totals(r: RouteResult) -> None:
+    r.total_length_mm = sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in r.segments)
+    r.via_count = len(r.vias)
+
+
+def _reroute_net_into(
+    trial: RouteResult,
+    net: str,
+    board: BoardModel,
+    config: PlacementConfig | None,
+    *,
+    om: ObstacleMap,
+    layers: list[str],
+    grid_mm: float,
+    allow_vias: bool,
+    note: str = "repair",
+) -> None:
+    """MST re-route one net into trial, painting obstacles as we go."""
+    pins = board.nets.get(net) or []
+    anchors: list[tuple[float, float]] = []
+    for ref, pad in pins:
+        if ref in board.components:
+            anchors.append(fanout_anchor(board, ref, net, pad_num=str(pad)))
+    uniq: list[tuple[float, float]] = []
+    for a in anchors:
+        if not any(_dist(a, u) < 0.05 for u in uniq):
+            uniq.append(a)
+    anchors = uniq
+    if len(anchors) < 2:
+        return
+
+    width = _net_width(config, net)
+    net_layers = _cpx_layer_order(net, layers)
+    remaining = set(range(1, len(anchors)))
+    tree = {0}
+    net_len = 0.0
+    net_segs = 0
+    net_vias = 0
+    layer_set: set[str] = set()
+    methods: list[str] = []
+    # Slightly finer grid for repair to squeeze past dense copper
+    g = min(grid_mm, 0.2) if grid_mm > 0.15 else grid_mm
+    while remaining:
+        best_e: tuple[float, int, int] | None = None
+        for i in tree:
+            for j in remaining:
+                d = _dist(anchors[i], anchors[j])
+                if best_e is None or d < best_e[0]:
+                    best_e = (d, i, j)
+        assert best_e is not None
+        _, ia, ib = best_e
+        remaining.remove(ib)
+        tree.add(ib)
+        meth: list[str] = []
+        path, new_vias = _route_point_to_point(
+            anchors[ia],
+            anchors[ib],
+            net,
+            om,
+            layers=net_layers,
+            grid_mm=g,
+            allow_vias=allow_vias,
+            width_mm=width,
+            method_out=meth,
+            k_homotopy=1,
+        )
+        if path is None:
+            methods.append("unrouted_edge")
+            continue
+        methods.extend(meth)
+        for i in range(len(path) - 1):
+            x1, y1, ly1 = path[i]
+            x2, y2, ly2 = path[i + 1]
+            if ly1 != ly2:
+                continue
+            trial.segments.append(
+                RouteSegment(
+                    x1=x1, y1=y1, x2=x2, y2=y2, layer=ly1, net=net, width_mm=width
+                )
+            )
+            d = _dist((x1, y1), (x2, y2))
+            trial.total_length_mm += d
+            net_len += d
+            net_segs += 1
+            layer_set.add(ly1)
+            om.paint_trace(x1, y1, x2, y2, ly1, width, net)
+        for v in new_vias:
+            trial.vias.append(v)
+            trial.via_count += 1
+            net_vias += 1
+            for ly in layers:
+                om.add_rect(v.x, v.y, v.size_mm, v.size_mm, ly, net=net, inflate=True)
+
+    open_e = methods.count("unrouted_edge")
+    status = "ok"
+    if open_e and net_segs == 0:
+        status = "unrouted"
+        if net not in trial.unrouted_nets:
+            trial.unrouted_nets.append(net)
+    elif open_e:
+        status = "partial"
+    trial.net_reports.append(
+        NetRouteReport(
+            net=net,
+            pins=len(pins),
+            length_mm=net_len,
+            segments=net_segs,
+            vias=net_vias,
+            layers=sorted(layer_set),
+            status=status,
+            method="+".join(dict.fromkeys(methods)) if methods else note,
+            notes=[note],
+        )
+    )
+
+
+def repair_drc_conflicts(
+    result: RouteResult,
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    clearance_mm: float = 0.2,
+    grid_mm: float = 0.5,
+    layers: list[str] | None = None,
+    allow_vias: bool = True,
+    max_rounds: int = 5,
+) -> RouteResult:
+    """Rip-up & re-route nets that participate in shorts / hard spacing hits.
+
+    Strategy:
+    1. Multi-net batch rip of the worst conflict cluster, re-route high-priority first
+    2. Single-net rip for residual hits
+    Keeps better-of (lower DRC count) so score can only improve.
+    """
+    layers = layers or list(board.copper_layers) or ["F.Cu", "B.Cu"]
+    if not result.segments:
+        return result
+
+    def _viol_count(r: RouteResult) -> int:
+        return int(native_drc_check(r, clearance_mm=clearance_mm, board=board)["violations"])
+
+    def _strip_nets(base: RouteResult, nets: set[str]) -> RouteResult:
+        segs = [s for s in base.segments if s.net not in nets]
+        vias = [v for v in base.vias if v.net not in nets]
+        trial = RouteResult(
+            segments=list(segs),
+            vias=list(vias),
+            via_count=len(vias),
+            total_length_mm=sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in segs),
+            unrouted_nets=[u for u in base.unrouted_nets if u not in nets],
+            clearance_violations=base.clearance_violations,
+            notes=list(base.notes),
+            net_reports=[r for r in base.net_reports if r.net not in nets],
+            quality=dict(base.quality or {}),
+        )
+        return trial
+
+    def _paint_om(trial: RouteResult) -> ObstacleMap:
+        om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+        for s in trial.segments:
+            om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
+        for v in trial.vias:
+            for ly in layers:
+                om.add_rect(v.x, v.y, v.size_mm, v.size_mm, ly, net=v.net, inflate=True)
+        return om
+
+    best = result
+    best_v = _viol_count(best)
+    if best_v == 0:
+        return best
+
+    rounds = 0
+    while rounds < max_rounds and best_v > 0:
+        rounds += 1
+        rep = native_drc_check(best, clearance_mm=clearance_mm, board=board)
+        net_hits: dict[str, int] = {}
+        for item in rep.get("items") or []:
+            if item.get("kind") not in ("short", "spacing"):
+                continue
+            w = 3 if item.get("kind") == "short" else 1
+            for key in ("net_a", "net_b"):
+                n = item.get(key)
+                if n and n not in ("Edge.Cuts", "?"):
+                    net_hits[n] = net_hits.get(n, 0) + w
+        if not net_hits:
+            break
+
+        def _rip_key(n: str) -> tuple:
+            # Most hits first, then lowest priority (signals before power), fewer pins last
+            return (-net_hits[n], _net_priority(config, n), -len(board.nets.get(n, [])), n)
+
+        candidates = sorted(net_hits.keys(), key=_rip_key)
+        improved = False
+
+        # --- Batch: rip a conflict cluster and re-route high-priority first ---
+        batch = candidates[: max(3, min(8, len(candidates)))]
+        if len(batch) >= 2:
+            trial = _strip_nets(best, set(batch))
+            om = _paint_om(trial)
+            # Re-route high priority first (opposite of rip key's priority term)
+            order = sorted(batch, key=lambda n: (-_net_priority(config, n), len(board.nets.get(n, [])), n))
+            for net in order:
+                _reroute_net_into(
+                    trial,
+                    net,
+                    board,
+                    config,
+                    om=om,
+                    layers=layers,
+                    grid_mm=grid_mm,
+                    allow_vias=allow_vias,
+                    note=f"drc_repair_batch r{rounds}",
+                )
+            v_new = _viol_count(trial)
+            better = v_new < best_v or (
+                v_new == best_v and len(trial.unrouted_nets) < len(best.unrouted_nets)
+            )
+            if better:
+                best = trial
+                best_v = v_new
+                best.notes.append(
+                    f"drc_repair: batch {','.join(batch)} → violations {best_v} (round {rounds})"
+                )
+                improved = True
+                if best_v == 0:
+                    break
+
+        # --- Single-net residual rip ---
+        if best_v > 0:
+            rep = native_drc_check(best, clearance_mm=clearance_mm, board=board)
+            net_hits = {}
+            for item in rep.get("items") or []:
+                if item.get("kind") not in ("short", "spacing"):
+                    continue
+                w = 3 if item.get("kind") == "short" else 1
+                for key in ("net_a", "net_b"):
+                    n = item.get(key)
+                    if n and n not in ("Edge.Cuts", "?"):
+                        net_hits[n] = net_hits.get(n, 0) + w
+            singles = sorted(net_hits.keys(), key=_rip_key)[:4] if net_hits else []
+            for net in singles:
+                trial = _strip_nets(best, {net})
+                om = _paint_om(trial)
+                _reroute_net_into(
+                    trial,
+                    net,
+                    board,
+                    config,
+                    om=om,
+                    layers=layers,
+                    grid_mm=grid_mm,
+                    allow_vias=allow_vias,
+                    note=f"drc_repair r{rounds}",
+                )
+                v_new = _viol_count(trial)
+                better = v_new < best_v or (
+                    v_new == best_v and len(trial.unrouted_nets) < len(best.unrouted_nets)
+                )
+                if better:
+                    best = trial
+                    best_v = v_new
+                    best.notes.append(
+                        f"drc_repair: re-routed {net} → violations {best_v} (round {rounds})"
+                    )
+                    improved = True
+                    if best_v == 0:
+                        break
+
+        if not improved:
+            break
+
+    if rounds:
+        best.notes.append(f"drc_repair: {rounds} round(s), final violations={best_v}")
+    return best
+
+
+def purge_shorting_copper(
+    result: RouteResult,
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    clearance_mm: float = 0.2,
+    max_passes: int = 80,
+) -> RouteResult:
+    """Drop minimal copper that hard-shorts or escapes Edge.Cuts (open > illegal).
+
+    Per pass removes only the single closest segment of the lower-priority net
+    (or the outside segment for outline hits) so we do not nuke whole nets.
+    """
+    if not result.segments:
+        return result
+
+    trial = RouteResult(
+        segments=list(result.segments),
+        vias=list(result.vias),
+        via_count=result.via_count,
+        total_length_mm=result.total_length_mm,
+        unrouted_nets=list(result.unrouted_nets),
+        clearance_violations=result.clearance_violations,
+        notes=list(result.notes),
+        net_reports=list(result.net_reports),
+        quality=dict(result.quality or {}),
+    )
+    removed = 0
+
+    def _mark_victim(victim: str) -> None:
+        segs_left = sum(1 for s in trial.segments if s.net == victim)
+        for nr in trial.net_reports:
+            if nr.net != victim:
+                continue
+            nr.segments = segs_left
+            if segs_left == 0:
+                nr.status = "unrouted"
+                if victim not in trial.unrouted_nets:
+                    trial.unrouted_nets.append(victim)
+            else:
+                nr.status = "partial"
+                note = "purged illegal copper"
+                if note not in (nr.notes or []):
+                    nr.notes = list(nr.notes or []) + [note]
+            break
+
+    def _drop_index(i: int) -> bool:
+        nonlocal removed
+        if i < 0 or i >= len(trial.segments):
+            return False
+        victim = trial.segments[i].net
+        trial.segments.pop(i)
+        removed += 1
+        _rebuild_totals(trial)
+        _mark_victim(victim)
+        return True
+
+    for _ in range(max_passes):
+        rep = native_drc_check(trial, clearance_mm=clearance_mm, board=board)
+        items = rep.get("items") or []
+        # Prefer shorts first, then outline; leave pure spacing for repair
+        shorts = [it for it in items if it.get("kind") == "short"]
+        outlines = [it for it in items if it.get("kind") == "outline"]
+        it = shorts[0] if shorts else (outlines[0] if outlines else None)
+        if it is None:
+            break
+
+        if it.get("kind") == "outline":
+            victim = it.get("net_a") or ""
+            px, py = float(it.get("x") or 0), float(it.get("y") or 0)
+            layer = it.get("layer") or ""
+            best_i, best_d = -1, 1e9
+            for i, s in enumerate(trial.segments):
+                if victim and s.net != victim:
+                    continue
+                if layer and layer != "via" and s.layer != layer:
+                    continue
+                d = min(
+                    _dist((px, py), (s.x1, s.y1)),
+                    _dist((px, py), (s.x2, s.y2)),
+                    _point_seg_dist(px, py, s.x1, s.y1, s.x2, s.y2),
+                )
+                if d < best_d:
+                    best_d, best_i = d, i
+            if best_i < 0 or not _drop_index(best_i):
+                break
+            continue
+
+        na, nb = it.get("net_a") or "", it.get("net_b") or ""
+        if not na or not nb or na in ("Edge.Cuts", "?") or nb in ("Edge.Cuts", "?"):
+            break
+        pa, pb = _net_priority(config, na), _net_priority(config, nb)
+        # Lower priority loses; equal priority → fewer pins (easier to re-open)
+        if pa < pb:
+            victim = na
+        elif pb < pa:
+            victim = nb
+        else:
+            victim = na if len(board.nets.get(na, [])) <= len(board.nets.get(nb, [])) else nb
+        layer = it.get("layer") or ""
+        px, py = float(it.get("x") or 0), float(it.get("y") or 0)
+
+        best_i, best_d = -1, 1e9
+        for i, s in enumerate(trial.segments):
+            if s.net != victim:
+                continue
+            if layer and layer != "via" and s.layer != layer:
+                continue
+            d = min(
+                _dist((px, py), (s.x1, s.y1)),
+                _dist((px, py), (s.x2, s.y2)),
+                _point_seg_dist(px, py, s.x1, s.y1, s.x2, s.y2),
+            )
+            if d < best_d:
+                best_d, best_i = d, i
+        if best_i < 0:
+            # Via-only short — drop one victim via nearest the hit
+            best_vi, best_vd = -1, 1e9
+            for i, v in enumerate(trial.vias):
+                if v.net != victim:
+                    continue
+                d = _dist((px, py), (v.x, v.y))
+                if d < best_vd:
+                    best_vd, best_vi = d, i
+            if best_vi < 0:
+                break
+            trial.vias.pop(best_vi)
+            trial.via_count = len(trial.vias)
+            removed += 1
+            _mark_victim(victim)
+            continue
+        if not _drop_index(best_i):
+            break
+
+    if removed:
+        trial.notes.append(f"purge_illegal: removed {removed} segment/via piece(s)")
+        live_nets = {s.net for s in trial.segments}
+        keep_v = [v for v in trial.vias if v.net in live_nets]
+        if len(keep_v) != len(trial.vias):
+            trial.notes.append(
+                f"purge_illegal: dropped {len(trial.vias) - len(keep_v)} orphan via(s)"
+            )
+            trial.vias = keep_v
+            trial.via_count = len(keep_v)
+        _rebuild_totals(trial)
+    return trial
 
 
 def native_drc_check(
@@ -1401,7 +1873,23 @@ def _route_point_to_point(
     blocked_layers: list[str] = []
     alts_same = 0
 
-    # Prefer K-homotopy same-layer paths when k_homotopy > 1
+    def _path_legal(pts: list[tuple[float, float]], layer: str) -> bool:
+        if len(pts) < 2:
+            return False
+        for i in range(len(pts) - 1):
+            if om.segment_blocked(
+                pts[i][0],
+                pts[i][1],
+                pts[i + 1][0],
+                pts[i + 1][1],
+                layer,
+                net,
+                width_mm=width_mm,
+            ):
+                return False
+        return True
+
+    # Prefer K-homotopy same-layer paths when k_homotopy > 1 (must still pass DRC paint)
     if k_homotopy > 1:
         try:
             from physics_router.homotopy import k_homotopy_paths, pick_best_homotopy
@@ -1413,7 +1901,9 @@ def _route_point_to_point(
                     congestion=congestion,
                 )
                 alts_same += len(cands)
-                best = pick_best_homotopy(cands)
+                # Prefer legal candidates only (homotopy can return LOS that later nets collide)
+                legal = [c for c in cands if _path_legal(list(c.points), layer)]
+                best = pick_best_homotopy(legal) if legal else None
                 if best is not None:
                     if method_out is not None:
                         method_out.append(f"homotopy_{best.method}")
@@ -1493,11 +1983,13 @@ def _route_point_to_point(
 
     pairs: list[tuple[str, str]] = []
     if len(layers) >= 2:
-        pairs.append((layers[0], layers[-1]))
+        # Primary (first preferred) with every other layer — better CPX escape
+        for j in range(1, len(layers)):
+            pairs.append((layers[0], layers[j]))
+            pairs.append((layers[j], layers[0]))
         pairs.append((layers[-1], layers[0]))
         if len(layers) > 2:
-            pairs.append((layers[0], layers[1]))
-            pairs.append((layers[1], layers[0]))
+            pairs.append((layers[1], layers[2] if len(layers) > 2 else layers[-1]))
 
     sites_tried = 0
     for l0, l1 in pairs:
