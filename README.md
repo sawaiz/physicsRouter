@@ -39,15 +39,37 @@ Shape-based routers often leave **straight LOS sticks**. TopoR-style quality nee
 3. **Arc-approximate** sharp corners with free-angle chord samples (visual + packing)  
 4. Report **TopoR metrics**: bend count, multi-bend nets, min edge spacing, arc corners, length, vias  
 
-Implemented in `src/physics_router/regeometry.py`, wired into `topor_style_route` / `_apply_drc_geometry`.
+Implemented in `src/physics_router/regeometry.py`, wired into `topor_style_route` / `_apply_drc_geometry`. Routes also stay inside the **Edge.Cuts** outline polygon (not just the AABB) via `ObstacleMap` / native `ExactMap`.
+
+#### Routing process (HALO-90 renders)
+
+Regenerate with:
+
+```bash
+python scripts/render_routing_process.py --halo
+# → docs/images/routing_process/
+```
+
+| Stage | Figure |
+|-------|--------|
+| Placement + Edge.Cuts outline | ![placement](docs/images/routing_process/1_placement_outline.png) |
+| Guide / free-angle topology sketch | ![guide](docs/images/routing_process/2_guide_topology.png) |
+| Clearance-aware connectivity (raw) | ![raw](docs/images/routing_process/3_clearance_raw.png) |
+| Post-connect re-geometry (bends + arcs) | ![regeo](docs/images/routing_process/4_regeometry.png) |
+| Copper by layer | ![layers](docs/images/routing_process/5_by_layer.png) |
+
+**Pipeline strip** (placement → guide → clearance → re-geometry):
+
+![TopoR-style routing process](docs/images/routing_process/6_process_strip.png)
 
 ```bash
 # CLI — isotropic TopoR pipeline (auto multi-variant by net count)
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
   --out route.json --out-pcb routed.kicad_pcb --variants 2
 
-# Quality tests (bends, clearance, re-geometry metrics)
-pytest tests/test_routing_quality.py tests/test_regeometry.py tests/test_topor_style.py -q
+# Quality tests (bends, clearance, re-geometry, outline bounds)
+pytest tests/test_routing_quality.py tests/test_regeometry.py \
+  tests/test_outline_bounds.py tests/test_topor_style.py -q
 ```
 
 See [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) for the full three-representation design and literature map.

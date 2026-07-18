@@ -158,6 +158,9 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | `src/physics_router/topology.py` | Signatures, radar, congestion, Pareto scores |
 | `src/physics_router/router.py` | Free-angle search, rubberband, vias, apply-to-KiCad |
 | `src/physics_router/regeometry.py` | Post-connect free-angle reshape + TopoR geometry metrics |
+| `scripts/render_routing_process.py` | Doc renders: placement → guide → clearance → re-geometry strip |
+
+Process figures live under [`docs/images/routing_process/`](images/routing_process/) (see that folder’s README).
 | `src/physics_router/routing_strategies.py` | `topor_style_route` orchestration |
 | `src/physics_router/dsn_export.py` | Specctra DSN for external baselines |
 | `docs/TOPOR.md` | Commercial TopoR product reference + images |
