@@ -232,8 +232,18 @@ def test_connectivity_requires_via_between_layers():
         height_mm=10,
         copper_layers=["F.Cu", "B.Cu"],
         components={
-            "A": Component(ref="A", x_mm=0, y_mm=0),
-            "B": Component(ref="B", x_mm=10, y_mm=0),
+            "A": Component(
+                ref="A",
+                x_mm=0,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["F.Cu"]}],
+            ),
+            "B": Component(
+                ref="B",
+                x_mm=10,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["B.Cu"]}],
+            ),
         },
         nets={"N": [("A", "1"), ("B", "1")]},
     )
@@ -243,6 +253,26 @@ def test_connectivity_requires_via_between_layers():
     ]
     assert not _net_fully_connected(board, "N", segments, [])
     assert _net_fully_connected(board, "N", segments, [Via(5, 0, net="N")])
+
+
+def test_connectivity_rejects_inner_copper_at_front_smd_anchor():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["F.Cu", "In1.Cu"],
+        components={
+            ref: Component(
+                ref=ref,
+                x_mm=x,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["F.Cu"]}],
+            )
+            for ref, x in (("A", 0), ("B", 10))
+        },
+        nets={"N": [("A", "1"), ("B", "1")]},
+    )
+    inner_only = [RouteSegment(0, 0, 10, 0, "In1.Cu", "N", 0.25)]
+    assert not _net_fully_connected(board, "N", inner_only, [])
 
 
 def test_copper_area_connects_contained_anchors():

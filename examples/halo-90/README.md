@@ -95,17 +95,25 @@ physics-router export-openems \
 
 ## Current native-router snapshot
 
-The v1.5 documentation run uses the board-derived rules, atomic multipin
-transactions, pad/layer-aware obstacles, and native organic areas for GND and
-+3V. It commits **15/23 nets**, 143 segments (436.1 mm), one via, and two
-areas in about 2.5 seconds. Exact native DRC reports zero shorts, spacing
-violations, and Edge.Cuts escapes. Eight nets remain honestly open:
-`CPX-1`, `CPX-2`, `CPX-5`–`CPX-9`, and `XL-INT1`.
+The v1.7 documentation run uses the board-derived rules, atomic multipin
+transactions, oriented pad/layer-aware obstacles, width-aware seed inflation,
+topology-safe polish, parallel bucket orders, and a native organic GND area
+with a track/via backbone. It commits **9/23 nets**, 144 segments (265.1 mm),
+21 vias, and one area in about 3.2 seconds. Exact native track/via DRC reports
+zero shorts, spacing violations, and Edge.Cuts escapes. The completed CPX nets
+are `CPX-1` and `CPX-5`; 14 nets remain honestly open.
+
+This lower number is intentional and supersedes the old 17/23 snapshot. That
+result counted inner-layer segments as connected at front-only SMD pads even
+when no via existed. v1.7 checks every anchor's exposed copper layers and uses
+explicit two-via escape geometry when an inner-layer corridor is required.
 
 This is a legal partial route, not fabrication sign-off. Refill the exported
 zones and run KiCad DRC to validate the final filled polygons and thermals.
 The machine-readable result is
 [`../../docs/images/routing_process/drc_report.json`](../../docs/images/routing_process/drc_report.json).
+The slower 19/23 Python-orchestrated experiment is preserved separately in
+[`python_multipin_experiment.json`](python_multipin_experiment.json).
 
 ## Checked-in results & figures
 

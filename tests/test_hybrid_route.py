@@ -9,6 +9,7 @@ import pytest
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules
 from physics_router.hybrid_route import (
+    _STRATEGY_ORDER,
     _matrix_order_variants,
     classify_board,
     hybrid_route,
@@ -42,6 +43,17 @@ def test_matrix_order_variants_are_deterministic_and_complete():
         set(variant) == set(order) and len(variant) == len(order)
         for variant in variants
     )
+
+
+def test_small_bucket_variants_honor_limit():
+    order = ["A", "B", "C"]
+    variants = _matrix_order_variants(order, limit=2)
+    assert variants == [order, list(reversed(order))]
+
+
+def test_power_phase_reserves_plane_before_signal_buckets():
+    assert _STRATEGY_ORDER[0] == "power"
+    assert _STRATEGY_ORDER.index("critical") < _STRATEGY_ORDER.index("matrix")
 
 
 @pytest.mark.skipif(

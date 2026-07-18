@@ -24,6 +24,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("cy", &pr::RectObs::cy)
       .def_readwrite("w", &pr::RectObs::w)
       .def_readwrite("h", &pr::RectObs::h)
+      .def_readwrite("rotation_deg", &pr::RectObs::rotation_deg)
       .def_readwrite("net_id", &pr::RectObs::net_id)
       .def_readwrite("layers", &pr::RectObs::layers);
 
@@ -32,6 +33,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("net_id", &pr::NetSpec::net_id)
       .def_readwrite("name", &pr::NetSpec::name)
       .def_readwrite("anchors", &pr::NetSpec::anchors)
+      .def_readwrite("anchor_layers", &pr::NetSpec::anchor_layers)
       .def_readwrite("priority", &pr::NetSpec::priority)
       .def_readwrite("width_mm", &pr::NetSpec::width_mm)
       .def_readwrite("preferred_layers", &pr::NetSpec::preferred_layers)

@@ -1,20 +1,28 @@
 {
-  "mode": "native_parallel_matrix_bundle",
-  "native_version": "1.6.0-native-bundle",
-  "time_s": 6.891,
-  "completed_nets": 17,
+  "mode": "native_pad_legal_parallel_bucket_bundle",
+  "native_version": "1.7.0-pad-legal-bundle",
+  "time_s": 3.215,
+  "completed_nets": 9,
   "total_nets": 23,
-  "segments": 164,
-  "vias": 0,
-  "areas": 2,
-  "length_mm": 464.326,
+  "segments": 144,
+  "vias": 21,
+  "areas": 1,
+  "length_mm": 265.148,
   "unrouted": [
+    "+3V",
+    "SDA",
+    "MIC",
+    "SCL",
+    "Net-(TP2-Pad1)",
+    "TX",
     "CPX-3",
-    "CPX-5",
-    "CPX-6",
     "CPX-7",
-    "CPX-8",
-    "CPX-9"
+    "CPX-9",
+    "CPX-0",
+    "CPX-2",
+    "CPX-4",
+    "CPX-6",
+    "CPX-8"
   ],
   "drc": {
     "violations": 0,
@@ -22,14 +30,14 @@
     "spacing": 0,
     "outline_outside": 0,
     "area_outside": 0,
-    "areas_deferred_to_kicad": 2
+    "areas_deferred_to_kicad": 1
   },
   "notes": [
-    "backend: native C++ atomic batch with four parallel matrix order variants",
-    "obstacles: pad XY, net ownership, copper-layer aware",
+    "backend: native C++ atomic batches with parallel power, critical, and matrix order variants",
+    "obstacles: oriented pad geometry, net ownership, physical copper layers, width-aware inflation",
+    "connectivity: F.Cu-only SMD anchors require explicit vias before inner-layer routing",
     "policy: incomplete multipin trees roll back; open is preferred to illegal copper",
-    "multipin native trees are preserved during chain-style rubberband",
-    "GND and +3V use rounded native CopperArea polygons",
+    "GND uses a rounded native CopperArea polygon plus a pad-connected track/via backbone",
     "KiCad refill and DRC remain authoritative for filled-zone polygons and thermals"
   ],
   "source": "docs/images/routing_process/drc_report.json"

@@ -26,13 +26,17 @@ power → critical → matrix → general
 ```
 
 Power areas reserve the intended planes first. Each later phase routes only
-its nets and seeds prior tracks, vias, and areas as obstacles. The exact
-native DRC gate rejects a batch if it introduces shorts, spacing hits, or an
-Edge.Cuts escape; bounded individual retry is reserved for small buckets.
+its nets and seeds prior tracks and vias as physical-width obstacles; KiCad
+remains the area-fill authority. The exact native DRC gate rejects a batch if
+it introduces track/via shorts, spacing hits, or an Edge.Cuts escape. Power,
+critical, and matrix buckets compare deterministic whole-bucket rebuilds in
+parallel and keep the most-complete legal result.
 
-HALO-90's remaining CPX failures are intentionally open. Solving that dense
-charlieplex region needs a concurrent bundle/ring-topology search rather than
-more sequential retries.
+HALO-90 v1.7 legally completes two of ten CPX nets; eight remain intentionally
+open. Overall completion is 9/23 with 21 explicit vias and one GND area. This
+stricter result enforces the physical copper layers exposed by every pad; the
+previous 17/23 snapshot incorrectly accepted inner-layer endpoints at F.Cu-only
+SMD pads. Solving the rest needs a true concurrent bundle/topology search.
 
 ## Constraints
 

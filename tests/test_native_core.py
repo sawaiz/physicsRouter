@@ -27,7 +27,7 @@ def test_native_info():
     i = info()
     assert i["available"] is True
     assert "version" in i
-    assert "1.1" in str(i["version"]) or "native" in str(i["version"])
+    assert str(i["version"]).startswith("1.7.")
     assert "gpu" in i
     assert i.get("features", {}).get("isotropic") is True
 
@@ -171,7 +171,7 @@ def test_native_copper_area_emits_organic_zone_boundary():
     net.area_priority = 10
 
     result = pr_native.route_board([net], cfg, [])
-    assert result.segments == []
+    assert result.segments
     assert result.vias == []
     assert len(result.areas) == 1
     area = result.areas[0]
@@ -181,7 +181,7 @@ def test_native_copper_area_emits_organic_zone_boundary():
     assert len(area.outline) >= 12
     assert result.unrouted == []
     assert result.net_reports[0].status == "ok"
-    assert result.net_reports[0].method == "copper_area"
+    assert "copper_area" in result.net_reports[0].method
 
 
 def test_native_bridge_routes_power_as_copper_areas():
@@ -196,8 +196,37 @@ def test_native_bridge_routes_power_as_copper_areas():
     )
     assert raw is not None
     assert len(raw["areas"]) == 2
-    assert raw["segments"] == []
-    assert {report["method"] for report in raw["net_reports"]} == {"copper_area"}
+    assert raw["segments"]
+    assert all("copper_area" in report["method"] for report in raw["net_reports"])
+
+
+def test_native_bridge_exclusive_bucket_preserves_caller_order(monkeypatch):
+    """Hybrid rebuild variants must reach C++ without semantic re-sorting."""
+    import pr_native
+    from physics_router import native_bridge
+
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    order = list(reversed(list(board.nets)[:2]))
+    captured = {}
+
+    real_route_board = pr_native.route_board
+
+    def capture(nets, route_cfg, obstacles):
+        captured["names"] = [net.name for net in nets]
+        captured["priorities"] = [net.priority for net in nets]
+        return real_route_board(nets, route_cfg, obstacles)
+
+    monkeypatch.setattr(pr_native, "route_board", capture)
+    native_bridge.route_board_native(
+        board,
+        cfg,
+        net_order=order,
+        exclusive_nets=True,
+        use_gpu=False,
+    )
+    assert captured["names"] == order
+    assert len(set(captured["priorities"])) == 1
 
 
 def test_native_obstacle_is_layer_aware():
@@ -236,6 +265,52 @@ def test_native_obstacle_is_layer_aware():
     assert result.net_reports[0].status == "ok"
     assert result.segments
     assert {segment.layer for segment in result.segments} == {1}
+
+
+def test_native_oriented_pad_keeps_fine_pitch_fanout_open():
+    """A neighboring diagonal pad must not AABB-block an otherwise legal pin."""
+    import pr_native
+
+    cfg = pr_native.RouteConfig()
+    cfg.x_min = -5
+    cfg.x_max = 5
+    cfg.y_min = -5
+    cfg.y_max = 5
+    cfg.num_layers = 1
+    cfg.grid_mm = 0.1
+    cfg.clearance_mm = 0.127
+    cfg.allow_vias = False
+
+    net = pr_native.NetSpec()
+    net.net_id = 0
+    net.name = "FANOUT"
+    net.anchors = [pr_native.Vec2(0, 0), pr_native.Vec2(0, -4)]
+    net.anchor_layers = [[0], [0]]
+    net.preferred_layers = [0]
+    net.width_mm = 0.25
+
+    own_pad = pr_native.RectObs()
+    own_pad.cx = 0
+    own_pad.cy = 0
+    own_pad.w = 0.275
+    own_pad.h = 0.5
+    own_pad.rotation_deg = -45
+    own_pad.net_id = 0
+    own_pad.layers = [0]
+
+    neighbor = pr_native.RectObs()
+    neighbor.cx = -0.353553
+    neighbor.cy = 0.353553
+    neighbor.w = 0.275
+    neighbor.h = 0.5
+    neighbor.rotation_deg = -45
+    neighbor.net_id = -1
+    neighbor.layers = [0]
+
+    result = pr_native.route_board([net], cfg, [own_pad, neighbor])
+    assert result.unrouted == []
+    assert result.segments
+    assert result.net_reports[0].status == "ok"
 
 
 def test_native_rubberband_preserves_multipin_tree_anchors():
@@ -317,3 +392,51 @@ def test_native_equal_priority_order_is_stable_for_bundle_variants():
     reverse = pr_native.route_board([b, a], cfg, [])
     assert {segment.net_id for segment in forward.segments} == {1}
     assert {segment.net_id for segment in reverse.segments} == {2}
+
+
+def test_native_smd_anchors_use_two_vias_for_inner_escape():
+    """F.Cu-only pads may use an inner corridor only with explicit vias."""
+    import pr_native
+
+    cfg = pr_native.RouteConfig()
+    cfg.x_min = -6
+    cfg.x_max = 6
+    cfg.y_min = -4
+    cfg.y_max = 4
+    cfg.num_layers = 2
+    cfg.grid_mm = 0.2
+    cfg.clearance_mm = 0.2
+    cfg.allow_vias = True
+    cfg.post_rubberband = False
+
+    def point(x: float, y: float):
+        value = pr_native.Vec2()
+        value.x = x
+        value.y = y
+        return value
+
+    net = pr_native.NetSpec()
+    net.net_id = 4
+    net.name = "SMD_ESCAPE"
+    net.anchors = [point(-5, 0), point(5, 0)]
+    net.anchor_layers = [[0], [0]]
+    net.preferred_layers = [1, 0]
+
+    wall = pr_native.RectObs()
+    wall.cx = 0
+    wall.cy = 0
+    wall.w = 0.8
+    wall.h = 8
+    wall.net_id = -1
+    wall.layers = [0]
+
+    result = pr_native.route_board([net], cfg, [wall])
+    assert result.net_reports[0].status == "ok"
+    assert len(result.vias) == 2
+    assert any(segment.layer == 1 for segment in result.segments)
+    assert "two_via_escape" in result.net_reports[0].method
+
+    cfg.allow_vias = False
+    blocked = pr_native.route_board([net], cfg, [wall])
+    assert blocked.net_reports[0].status == "unrouted"
+    assert blocked.segments == []

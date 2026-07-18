@@ -2,13 +2,15 @@
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 
-Native v1.6: atomic layer/pad-aware routing, topology-safe multipin polish,
-organic copper areas, and bounded parallel matrix-bundle variants.
+Native v1.7: atomic layer-reachable routing, oriented pad obstacles,
+topology-safe multipin polish, organic copper areas, and bounded parallel
+bucket-rebuild variants.
 Python remains the TopoR policy/file-format host; C++ owns geometry.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 _native = None
@@ -51,6 +53,9 @@ def info() -> dict[str, Any]:
             "copper_areas": True,
             "topology_safe_rubberband": True,
             "matrix_bundle": True,
+            "oriented_pad_obstacles": True,
+            "anchor_layer_reachability": True,
+            "width_aware_obstacle_inflation": True,
         },
     }
 
@@ -134,28 +139,61 @@ def route_board_native(
     else:
         net_names = [n for n in net_names if n in board.nets]
     name_to_id = {n: i for i, n in enumerate(net_names)}
+    layer_to_id = {layer: index for index, layer in enumerate(layers)}
 
     nets = []
     for name in net_names:
         if name not in board.nets:
             continue
         anchors = []
-        seen: set[tuple[float, float]] = set()
+        anchor_layers: list[set[int]] = []
+        seen: dict[tuple[float, float], int] = {}
         for ref, _pad in board.nets[name]:
             if ref not in board.components:
                 continue
             # Real pad XY when available (matches Python path)
             ax, ay = fanout_anchor(board, ref, name, pad_num=str(_pad))
             key = (round(ax, 3), round(ay, 3))
+            component = board.components[ref]
+            pad_data = next(
+                (
+                    value
+                    for value in component.pads or []
+                    if str(value.get("num")) == str(_pad)
+                ),
+                {},
+            )
+            raw_layers = list(pad_data.get("layers") or [])
+            if "*.Cu" in raw_layers:
+                allowed = set(range(cfg.num_layers))
+            else:
+                allowed = {
+                    layer_to_id[layer] for layer in raw_layers if layer in layer_to_id
+                }
+            if not allowed:
+                # Missing pad metadata is kept compatible but conservative for
+                # the common front-SMD case.
+                allowed = {0}
             if key in seen:
+                anchor_layers[seen[key]].update(allowed)
                 continue
-            seen.add(key)
+            seen[key] = len(anchors)
             anchors.append(m.Vec2(ax, ay))
+            anchor_layers.append(set(allowed))
         ns = m.NetSpec()
         ns.net_id = name_to_id[name]
         ns.name = name
         ns.anchors = anchors
-        ns.priority = float(config.weight_for_net(name)) if config else 1.0
+        ns.anchor_layers = [sorted(value) for value in anchor_layers]
+        # An exclusive bucket's caller order is the routing policy (and may be
+        # a deliberate rebuild variant). Full-board calls still use semantic
+        # net weights. Keeping bucket priorities equal lets the C++ stable sort
+        # honor the exact supplied order.
+        ns.priority = (
+            1.0
+            if exclusive_nets and net_order is not None
+            else float(config.weight_for_net(name)) if config else 1.0
+        )
         lab = config.net_by_name().get(name) if config else None
         if lab is not None:
             nc = (
@@ -169,7 +207,7 @@ def route_board_native(
                 ns.width_mm = 0.2
             else:
                 ns.width_mm = 0.25
-            if lab.critical:
+            if lab.critical and not (exclusive_nets and net_order is not None):
                 ns.priority *= 1.5
         else:
             ns.width_mm = 0.25
@@ -207,20 +245,18 @@ def route_board_native(
                 ns.area_layer = cfg.num_layers - 1 if nc == "ground" else 0
             else:
                 ns.area_layer = 0
-            ns.preferred_layers = [ns.area_layer]
             ns.area_margin_mm = max(0.8, float(clearance_mm) * 3.0)
             ns.area_priority = 10 if nc == "ground" else 20
         nets.append(ns)
 
-    # Stable priority/pin sorting retains the caller's order for equal-weight
-    # matrix peers. The C++ core uses the same stable keys, which makes bounded
-    # bucket order variants meaningful and reproducible.
-    nets.sort(key=lambda n: (-n.priority, len(n.anchors)))
+    # Exclusive bucket calls carry an exact policy order, including rebuild
+    # variants. Full-board calls retain semantic priority/few-pin ordering.
+    if not (exclusive_nets and net_order is not None):
+        nets.sort(key=lambda n: (-n.priority, len(n.anchors)))
 
     from physics_router.kicad_io import local_to_board
 
     obstacles = []
-    layer_to_id = {layer: index for index, layer in enumerate(layers)}
     for _ref, component in board.components.items():
         # Pads are copper obstacles owned by their net. Package bodies are not
         # net-agnostic copper keepouts: painting a multi-pin IC body blocked the
@@ -247,27 +283,27 @@ def route_board_native(
                 continue
             ob = m.RectObs()
             ob.cx, ob.cy = x, y
-            # RectObs is axis-aligned; a square using the larger pad extent is
-            # conservative for rotated rectangular/roundrect pads.
-            extent = max(
-                float(pad.get("w") or 0.0),
-                float(pad.get("h") or 0.0),
-                0.2,
-            )
-            ob.w = extent
-            ob.h = extent
+            # KiCad's parsed pad rotation is already the board-space angle;
+            # preserve it in the native oriented obstacle. An AABB joins the
+            # clearance envelopes of diagonal fine-pitch pads into a false
+            # wall even though their outward fanout corridors are legal.
+            ob.w = max(float(pad.get("w") or 0.0), 0.2)
+            ob.h = max(float(pad.get("h") or 0.0), 0.2)
+            if hasattr(ob, "rotation_deg"):
+                ob.rotation_deg = -float(pad.get("rot") or 0.0)
             ob.net_id = name_to_id.get(pad_net, -1)
             ob.layers = copper_layer_ids
             obstacles.append(ob)
 
     # Seed prior hybrid-phase copper as net-aware keepouts (approx. along segments)
     if seed_segments:
-        import math
-
         for s in seed_segments:
             nid = name_to_id.get(getattr(s, "net", ""), -1)
-            # Unknown nets block everyone
-            w = float(getattr(s, "width_mm", 0.25) or 0.25) + float(clearance_mm)
+            # Seed samples describe physical copper width. The native grid adds
+            # the new track half-width plus clearance exactly once when it
+            # paints every RectObs; pre-inflating here double-counted clearance
+            # and starved later hybrid phases.
+            w = float(getattr(s, "width_mm", 0.25) or 0.25)
             x1, y1 = float(s.x1), float(s.y1)
             x2, y2 = float(s.x2), float(s.y2)
             length = math.hypot(x2 - x1, y2 - y1)
