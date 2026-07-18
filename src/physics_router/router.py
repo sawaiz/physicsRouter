@@ -349,6 +349,16 @@ def board_extent(board: BoardModel, margin_mm: float = 2.0) -> tuple[float, floa
     """Axis-aligned routing extent (supports center-origin boards like HALO-90)."""
     xs = [c.x_mm for c in board.components.values()]
     ys = [c.y_mm for c in board.components.values()]
+    # Include Edge.Cuts outline so AABB covers teardrop / non-rect boards
+    for g in board.outline or []:
+        if g.get("kind") == "circle":
+            cx, cy, r = float(g.get("cx") or 0), float(g.get("cy") or 0), float(g.get("r") or 0)
+            xs.extend([cx - r, cx + r])
+            ys.extend([cy - r, cy + r])
+        for p in g.get("pts") or []:
+            if len(p) >= 2:
+                xs.append(float(p[0]))
+                ys.append(float(p[1]))
     if not xs:
         return 0.0, board.width_mm, 0.0, board.height_mm
     x_min, x_max = min(xs), max(xs)
@@ -369,6 +379,124 @@ def board_extent(board: BoardModel, margin_mm: float = 2.0) -> tuple[float, floa
             max(board.height_mm, y_max) + margin_mm,
         )
     return cx - half_w, cx + half_w, cy - half_h, cy + half_h
+
+
+def outline_polygon_from_board(
+    board: BoardModel, *, circle_samples: int = 64
+) -> list[tuple[float, float]] | None:
+    """Build a closed Edge.Cuts polygon for routing bounds (or None).
+
+    Prefers stitching open Edge.Cuts arc polylines into one ring (HALO teardrop).
+    Falls back to sampling a disk circle when that is all we have.
+    """
+    outline = list(board.outline or [])
+    if not outline:
+        return None
+
+    def _close(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        if len(pts) < 3:
+            return pts
+        if _dist(pts[0], pts[-1]) > 1e-6:
+            pts = pts + [pts[0]]
+        return pts
+
+    # Closed polys first
+    closed_polys: list[list[tuple[float, float]]] = []
+    open_polys: list[list[tuple[float, float]]] = []
+    circles: list[dict] = []
+    for g in outline:
+        kind = g.get("kind")
+        if kind == "circle" and float(g.get("r") or 0) > 0.5:
+            circles.append(g)
+        elif kind == "poly" and g.get("pts"):
+            pts = [(float(p[0]), float(p[1])) for p in g["pts"] if len(p) >= 2]
+            if len(pts) < 2:
+                continue
+            if g.get("closed") or _dist(pts[0], pts[-1]) < 0.05:
+                closed_polys.append(_close(pts[:-1] if _dist(pts[0], pts[-1]) < 0.05 else pts))
+            else:
+                open_polys.append(pts)
+        elif kind == "line":
+            open_polys.append(
+                [(float(g["x1"]), float(g["y1"])), (float(g["x2"]), float(g["y2"]))]
+            )
+
+    # Stitch open polylines by endpoint proximity into rings
+    if open_polys:
+        unused = list(open_polys)
+        chains: list[list[tuple[float, float]]] = []
+        while unused:
+            chain = list(unused.pop(0))
+            progressed = True
+            while progressed:
+                progressed = False
+                for i, poly in enumerate(unused):
+                    tol = 0.08
+                    if _dist(chain[-1], poly[0]) < tol:
+                        chain.extend(poly[1:])
+                        unused.pop(i)
+                        progressed = True
+                        break
+                    if _dist(chain[-1], poly[-1]) < tol:
+                        chain.extend(reversed(poly[:-1]))
+                        unused.pop(i)
+                        progressed = True
+                        break
+                    if _dist(chain[0], poly[-1]) < tol:
+                        chain = poly[:-1] + chain
+                        unused.pop(i)
+                        progressed = True
+                        break
+                    if _dist(chain[0], poly[0]) < tol:
+                        chain = list(reversed(poly[1:])) + chain
+                        unused.pop(i)
+                        progressed = True
+                        break
+            chains.append(chain)
+        # Prefer closed chains (endpoints meet)
+        for ch in sorted(chains, key=len, reverse=True):
+            if len(ch) >= 8 and _dist(ch[0], ch[-1]) < 0.15:
+                return _close(ch)
+            if len(ch) >= 16:
+                # Near-closed HALO ring: force close
+                return _close(ch)
+
+    if closed_polys:
+        best = max(closed_polys, key=len)
+        if len(best) >= 3:
+            return best
+
+    if circles:
+        g = max(circles, key=lambda c: float(c.get("r") or 0))
+        cx, cy, r = float(g["cx"]), float(g["cy"]), float(g["r"])
+        n = max(16, circle_samples)
+        pts = [
+            (cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+            for i in range(n)
+        ]
+        return _close(pts)
+    return None
+
+
+def point_in_polygon(x: float, y: float, poly: list[tuple[float, float]]) -> bool:
+    """Even-odd point-in-polygon (poly may be open or closed)."""
+    if len(poly) < 3:
+        return True
+    pts = poly
+    if _dist(pts[0], pts[-1]) > 1e-9:
+        pts = list(pts) + [pts[0]]
+    inside = False
+    n = len(pts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if ((yi > y) != (yj > y)) and (
+            x < (xj - xi) * (y - yi) / ((yj - yi) + 1e-30) + xi
+        ):
+            inside = not inside
+        j = i
+    return inside
 
 
 @dataclass
@@ -393,6 +521,7 @@ class ObstacleMap:
         x_max: float | None = None,
         y_min: float | None = None,
         y_max: float | None = None,
+        outline: list[tuple[float, float]] | None = None,
     ) -> None:
         self.width_mm = width_mm
         self.height_mm = height_mm
@@ -402,6 +531,8 @@ class ObstacleMap:
         self.y_max = height_mm if y_max is None else y_max
         self.layers = layers or ["F.Cu", "B.Cu"]
         self.clearance_mm = clearance_mm
+        # Optional Edge.Cuts ring (board mm); rejects free-angle detours outside the PCB
+        self.outline: list[tuple[float, float]] | None = None
         # Python mirrors for topology/elastic/regeometry consumers; the C++
         # ExactMap is the clearance authority for every query.
         self.obstacles: dict[str, list[Obstacle]] = {ly: [] for ly in self.layers}
@@ -411,6 +542,19 @@ class ObstacleMap:
         self._native = _native_core().ExactMap(
             self.x_min, self.x_max, self.y_min, self.y_max, clearance_mm, len(self.layers)
         )
+        if outline:
+            self.set_outline(outline)
+
+    def set_outline(self, pts: list[tuple[float, float]] | None) -> None:
+        """Set Edge.Cuts polygon (closed ring). Empty/None clears."""
+        if not pts or len(pts) < 3:
+            self.outline = None
+            if hasattr(self._native, "set_outline"):
+                self._native.set_outline([])
+            return
+        self.outline = [(float(p[0]), float(p[1])) for p in pts]
+        if hasattr(self._native, "set_outline"):
+            self._native.set_outline(self.outline)
 
     def _lid(self, layer: str) -> int:
         lid = self._layer_ids.get(layer)
@@ -448,7 +592,14 @@ class ObstacleMap:
         self._native.add_rect(ob.cx, ob.cy, ob.w, ob.h, lid, self._nid(net))
 
     def in_bounds(self, x: float, y: float) -> bool:
-        return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
+        """AABB + optional Edge.Cuts outline (delegates to native when present)."""
+        if hasattr(self._native, "in_bounds"):
+            return bool(self._native.in_bounds(x, y))
+        if not (self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max):
+            return False
+        if self.outline and not point_in_polygon(x, y, self.outline):
+            return False
+        return True
 
     def blocked(self, x: float, y: float, layer: str, net: str) -> bool:
         return bool(self._native.blocked(x, y, self._lid(layer), self._nid(net)))
@@ -504,9 +655,14 @@ def build_obstacle_map(
     clearance_mm: float = 0.2,
     layers: list[str] | None = None,
 ) -> ObstacleMap:
-    """Obstacles from pads (per-net), not full courtyards — allows free-angle escape."""
+    """Obstacles from pads (per-net), not full courtyards — allows free-angle escape.
+
+    When ``board.outline`` is present (Edge.Cuts), the map also enforces
+    point/segment-in-polygon bounds so routes cannot leave the PCB silhouette.
+    """
     layers = layers or list(board.copper_layers) or ["F.Cu", "B.Cu"]
     x0, x1, y0, y1 = board_extent(board)
+    poly = outline_polygon_from_board(board)
     om = ObstacleMap(
         board.width_mm,
         board.height_mm,
@@ -516,6 +672,7 @@ def build_obstacle_map(
         x_max=x1,
         y_min=y0,
         y_max=y1,
+        outline=poly,
     )
     for c in board.components.values():
         # Simplified model has no pad offsets — only single-net footprints get a
@@ -978,15 +1135,90 @@ def clearance_aware_route(
         )
 
     if not guide_only:
-        audit = audit_same_layer_clearance(result, clearance_mm=clearance_mm)
-        result.clearance_violations += int(audit.get("near_miss_pairs", 0))
-        if audit.get("notes"):
-            result.notes.extend(audit["notes"][:8])
-        result.quality = {**(result.quality or {}), "clearance_audit": audit}
+        # Built-in router DRC (always on): exact shorts / spacing / via clearance
+        attach_router_drc(result, clearance_mm=clearance_mm)
 
     result.compute_quality()
     result.notes.append(result.quality.get("summary", ""))
     return result
+
+
+def native_drc_check(
+    result: RouteResult,
+    *,
+    clearance_mm: float = 0.2,
+    max_violations: int = 200,
+) -> dict[str, Any]:
+    """Exact copper DRC in the C++ core: foreign-net shorts, spacing, vias.
+
+    Returns {violations, shorts, spacing, items:[{kind, net_a, net_b, layer,
+    x, y, dist_mm, need_mm}, ...]}.
+    """
+    n = _native_core()
+    net_ids: dict[str, int] = {}
+    layer_ids: dict[str, int] = {}
+
+    def _nid(name: str) -> int:
+        return net_ids.setdefault(name, len(net_ids))
+
+    def _lid(name: str) -> int:
+        return layer_ids.setdefault(name, len(layer_ids))
+
+    segs = [
+        (s.x1, s.y1, s.x2, s.y2, s.width_mm, _lid(s.layer), _nid(s.net))
+        for s in result.segments
+    ]
+    vias = [(v.x, v.y, v.size_mm, _nid(v.net)) for v in result.vias]
+    raw = n.drc_check(
+        segs, vias, clearance_mm=float(clearance_mm), max_violations=int(max_violations)
+    )
+    id2net = {v: k for k, v in net_ids.items()}
+    id2layer = {v: k for k, v in layer_ids.items()}
+    items = [
+        {
+            "kind": str(v["kind"]),
+            "net_a": id2net.get(v["net_a"], "?"),
+            "net_b": id2net.get(v["net_b"], "?"),
+            "layer": id2layer.get(v["layer"], "via"),
+            "x": round(float(v["x"]), 3),
+            "y": round(float(v["y"]), 3),
+            "dist_mm": round(float(v["dist"]), 4),
+            "need_mm": round(float(v["need"]), 4),
+        }
+        for v in raw
+    ]
+    shorts = sum(1 for v in items if v["kind"] == "short")
+    return {
+        "violations": len(items),
+        "shorts": shorts,
+        "spacing": len(items) - shorts,
+        "items": items,
+    }
+
+
+def attach_router_drc(result: RouteResult, *, clearance_mm: float = 0.2) -> dict[str, Any]:
+    """Run the built-in DRC and record it on the result (authoritative count)."""
+    rep = native_drc_check(result, clearance_mm=clearance_mm)
+    result.clearance_violations = int(rep["violations"])
+    samples = [
+        f"{v['layer']}: {v['net_a']}×{v['net_b']} {v['kind']} "
+        f"d={v['dist_mm']}<{v['need_mm']} @({v['x']},{v['y']})"
+        for v in rep["items"][:8]
+    ]
+    result.quality = {
+        **(result.quality or {}),
+        "drc": {
+            "violations": rep["violations"],
+            "shorts": rep["shorts"],
+            "spacing": rep["spacing"],
+            "samples": samples,
+        },
+    }
+    result.notes.append(
+        f"router_drc: {rep['violations']} violation(s) "
+        f"({rep['shorts']} short, {rep['spacing']} spacing) @ clearance {clearance_mm}mm"
+    )
+    return rep
 
 
 def audit_same_layer_clearance(

@@ -49,6 +49,18 @@ public:
   void add_painted(double x1, double y1, double x2, double y2, int layer, double width,
                    int net);
 
+  /**
+   * Optional Edge.Cuts outline (board coords, CCW or CW closed ring).
+   * When set, in_bounds / blocked / segment_blocked also reject geometry
+   * outside the polygon (point-in-polygon + segment edge crossings).
+   * Pass empty to clear.
+   */
+  void set_outline(const std::vector<Vec2> &poly);
+  bool has_outline() const { return outline_.size() >= 3; }
+  bool point_in_outline(double x, double y) const;
+  /** True if endpoints outside or segment properly crosses the outline. */
+  bool segment_outside_outline(double x1, double y1, double x2, double y2) const;
+
   bool in_bounds(double x, double y) const;
   bool blocked(double x, double y, int layer, int net) const;
   bool segment_blocked(double x1, double y1, double x2, double y2, int layer, int net,
@@ -73,7 +85,40 @@ private:
   // + realistic query widths, so cell-local queries stay exact)
   std::vector<std::unordered_map<int64_t, std::vector<int32_t>>> pcells_;
   std::vector<ExRect> empty_rects_;
+  /** Closed outline ring (first point repeated at end optional). */
+  std::vector<Vec2> outline_;
 };
+
+// ---------------------------------------------------------------------------
+// Built-in DRC: exact copper-vs-copper checks, always run by the router.
+// ---------------------------------------------------------------------------
+
+struct DrcSeg {
+  double x1, y1, x2, y2;
+  double width = 0.25;
+  int layer = 0;
+  int net = 0;
+};
+
+struct DrcVia {
+  double x, y;
+  double size = 0.8;
+  int net = 0; // through vias: checked on every layer
+};
+
+struct DrcViolation {
+  int kind = 0; // 0 = spacing, 1 = short (copper overlap)
+  int net_a = 0, net_b = 0;
+  int layer = 0; // -1 for via-via
+  double x = 0, y = 0;
+  double dist = 0, need = 0;
+};
+
+/** Exact DRC over routed copper: same-layer foreign seg–seg spacing/shorts,
+ * via–seg and via–via clearance. Spatially hashed; stops at max_violations. */
+std::vector<DrcViolation> drc_check(const std::vector<DrcSeg> &segs,
+                                    const std::vector<DrcVia> &vias, double clearance_mm,
+                                    int max_violations);
 
 /** Line-of-sight shortcutting against the exact map (Python _rubberband). */
 std::vector<Vec2> rubberband_exact(const ExactMap &m, const std::vector<Vec2> &path,
