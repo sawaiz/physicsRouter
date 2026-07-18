@@ -18,11 +18,13 @@ Matches the reasoning in [docs/TOPOR.md](docs/TOPOR.md) — **not** a reimplemen
 
 | Phase | Behavior |
 |-------|----------|
-| **Isotropic free-angle** | No preferred H/V; LOS → isotropic detours + radar free-space scan → A\* |
-| **Topology → geometry** | Homotopy signatures + clearance paths first; rubberband shortens after |
-| **Multi-variant + Pareto** | Net-order variants; score vectors; non-dominated front then winner |
-| **Negotiated congestion** | Present + historical cell costs push nets into alternate channels |
-| **Via minimize** | Drop redundant vias when same-layer stubs are legal |
+| **Isotropic free-angle** | LOS → isotropic detours + radar scan → A\* |
+| **K-homotopy** | Up to K topologically distinct paths per connection (signature dedupe) |
+| **High-level planner** | Feature linear policy for net order + per-net K |
+| **CBS conflict clusters** | Conflict graph → small-component re-route; optional CP-SAT vias |
+| **Elastic geometry** | Continuous shortening + obstacle repulsion after topology fixed |
+| **SI / MFG costs** | Crosstalk parallel-run, return path, acute angles, via-near-pad, … |
+| **Why this via** | Each via stores blocked layers + alternatives; UI explain panel |
 | **Honesty policy** | Soft illegal copper **off** — open edges beat overlaps |
 | **UX** | Live **2D** copper while routing; **3D EMS** only on Simulate |
 
@@ -143,7 +145,9 @@ PYTHONPATH=native/build:src python -c "from physics_router.native_bridge import 
 | `models` / `config_io` | Net labels, physics weights, YAML |
 | `kicad_io` / `design_rules` | Footprints, stackup, DRC floors |
 | `placement` / `physics` | SA placement + multi-objective scores |
-| `router` / `routing_strategies` / `topology` | Isotropic free-angle, signatures, radar scan, congestion, multi-variant Pareto |
+| `router` / `routing_strategies` / `topology` | Free-angle core, signatures, congestion |
+| `homotopy` / `planner` / `conflict_cbs` | K-homotopy, net-order policy, CBS/CP-SAT repair |
+| `elastic` / `si_mfg` | Continuous forces; SI + manufacturing cost terms |
 | `native_bridge` | Optional C++/OpenCL backend |
 | `kicad_tools` | DRC, ERC, STEP/GLB, renders |
 | `server` / `viewer` | HTTP API + three.js / 2D UI |

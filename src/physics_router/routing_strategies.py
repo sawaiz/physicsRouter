@@ -43,6 +43,10 @@ from physics_router.topology import (
     score_vector_from_route,
     signatures_from_route,
 )
+from physics_router.planner import plan_route_order
+from physics_router.si_mfg import evaluate_si_mfg
+from physics_router.elastic import elastic_optimize_route
+from physics_router.conflict_cbs import repair_route_conflicts
 
 
 @dataclass
@@ -266,21 +270,24 @@ def topor_style_route(
     guide_only: bool = False,
     num_variants: int | None = None,
     negotiate_iters: int | None = None,
+    k_homotopy: int | None = None,
+    use_planner: bool = True,
+    use_cbs: bool = True,
+    use_elastic: bool = True,
     progress_cb=None,
 ) -> RouteResult:
-    """TopoR-inspired pipeline (docs/TOPOR.md + docs/ARCHITECTURE_ROUTER.md).
+    """Full topology-first pipeline (docs/ARCHITECTURE_ROUTER.md).
 
     Phases
     ------
-    A. Instant topology — free-angle connectivity under clearance (no illegal soft copper).
-    B. Multi-variant + negotiated congestion — alternate net orders; raise historical
-       cost of crowded cells so later iterations spread into other homotopy classes.
-    C. Geometry polish — rubberband shorten + redundant via removal.
-    D. DRC floors — track/via sizes from KiCad design rules.
-    E. Topology signatures — record obstacle-side classes for explainability.
+    0. High-level planner — feature linear policy for net order + per-net K
+    A. Isotropic free-angle with K-homotopy alternatives per connection
+    B. Multi-variant + negotiated congestion
+    C. Conflict-cluster CBS (+ optional CP-SAT via polish)
+    D. Rubberband + elastic continuous forces + via minimize
+    E. SI/MFG score vector + topology signatures + via explanations
 
-    Style is **isotropic** (no preferred H/V layer directions). Soft fallback stays
-    off so open edges beat overlapping copper.
+    Soft fallback stays off so open edges beat illegal copper.
     """
     rules = rules or default_design_rules()
     if guide_only:
@@ -298,7 +305,20 @@ def topor_style_route(
 
     copper = list(rules.copper_layers) or list(board.copper_layers) or ["F.Cu", "B.Cu"]
     n_nets = len(board.nets)
-    # Auto variant budget: dense boards stay single-pass for interactive UI latency
+
+    # --- Phase 0: learned-style high-level planner ---
+    plan = plan_route_order(board, config, k_homotopy_default=k_homotopy or 2) if use_planner else None
+    plan_order = plan.net_order if plan else None
+    kh_map: dict[str, int] = dict(plan.homotopy_k) if plan else {}
+    if k_homotopy is not None:
+        for n in board.nets:
+            kh_map[n] = int(k_homotopy)
+    # Cap K on large boards for interactive latency
+    if n_nets > 40:
+        kh_map = {n: min(kh_map.get(n, 1), 1) for n in board.nets}
+    elif n_nets > 20:
+        kh_map = {n: min(kh_map.get(n, 2), 2) for n in board.nets}
+
     if num_variants is None:
         if n_nets > 40:
             num_variants = 1
@@ -308,30 +328,42 @@ def topor_style_route(
             num_variants = 3
     num_variants = max(1, min(4, int(num_variants)))
 
-    # Negotiated congestion iterations (route → measure → raise historical cost).
-    # Default 1 for interactive latency; CLI/batch can pass negotiate_iters=2–3.
     if negotiate_iters is None:
         negotiate_iters = 1
     negotiate_iters = max(1, min(3, int(negotiate_iters)))
 
-    orders = _net_order_variants(board, config)[:num_variants]
+    orders = _net_order_variants(board, config)
+    # Prepend planner order as primary variant
     variant_specs: list[dict] = []
+    if plan_order:
+        variant_specs.append({
+            "name": "planner",
+            "net_order": plan_order,
+            "allow_vias": allow_vias,
+            "grid_mm": grid,
+            "k_homotopy": kh_map,
+        })
     for name, order in orders:
-        variant_specs.append(
-            {
-                "name": name,
-                "net_order": order,
-                "allow_vias": allow_vias,
-                "grid_mm": grid,
-            }
-        )
-    if num_variants >= 2 and allow_vias:
-        variant_specs[-1] = {
-            "name": "via_averse",
-            "net_order": orders[0][1],
-            "allow_vias": True,
-            "grid_mm": max(0.15, grid * 0.85),
-        }
+        if len(variant_specs) >= num_variants:
+            break
+        if plan_order and name == "priority" and plan_order:
+            continue  # planner supersedes classic priority
+        variant_specs.append({
+            "name": name,
+            "net_order": order,
+            "allow_vias": allow_vias,
+            "grid_mm": grid,
+            "k_homotopy": kh_map if name in ("priority", "small_first") else {n: 1 for n in board.nets},
+        })
+    if not variant_specs:
+        variant_specs.append({
+            "name": "priority",
+            "net_order": orders[0][1] if orders else list(board.nets.keys()),
+            "allow_vias": allow_vias,
+            "grid_mm": grid,
+            "k_homotopy": kh_map,
+        })
+    variant_specs = variant_specs[:num_variants]
 
     cong = CongestionMap(cell_mm=max(0.5, grid))
     candidates: list[tuple[str, RouteResult]] = []
@@ -344,10 +376,7 @@ def topor_style_route(
             if progress_cb and not (vi == 0 and ni == 0):
                 try:
                     progress_cb(
-                        0,
-                        1,
-                        label,
-                        "variant",
+                        0, 1, label, "variant",
                         {"variant": label, "index": vi, "negotiate": ni},
                     )
                 except Exception:
@@ -366,42 +395,72 @@ def topor_style_route(
                 net_order=list(spec["net_order"]),
                 style="isotropic",
                 congestion=cong,
+                k_homotopy=spec.get("k_homotopy") or 1,
             )
             polished = _apply_drc_geometry(raw, board, config, rules, cl)
             polished.notes.append(f"topor_variant: {label}")
-            # Present congestion from this solution (for negotiation + scoring)
             cong.clear_present()
             cong.paint_route(polished)
+            # SI/MFG into score vector
+            si = evaluate_si_mfg(polished, board, config, clearance_mm=cl)
             sv = score_vector_from_route(polished, cong)
+            # Fold SI/MFG into ranking via extended quality
             polished.quality = {
                 **(polished.quality or {}),
                 "variant": label,
                 "pipeline": "topor_style",
                 "score_vector": sv.to_dict(),
+                "si_mfg": si.to_dict(),
                 "negotiate_iter": ni,
             }
+            # Penalize scalar score used by _variant_score via quality.score adjustment
+            q = polished.compute_quality()
+            q["score"] = round(max(0.0, float(q.get("score") or 0) - min(25.0, si.total() * 0.4)), 1)
+            polished.quality = {**q, **{k: polished.quality[k] for k in ("variant", "pipeline", "score_vector", "si_mfg", "negotiate_iter") if k in polished.quality}}
             candidates.append((label, polished))
             scored.append((label, polished, sv))
-        # Feed geometric crowding back into historical costs (next iteration)
         if ni + 1 < negotiate_iters:
             cong.negotiate()
-            if progress_cb:
-                try:
-                    progress_cb(0, 1, "negotiate", "congestion", {"iter": ni})
-                except Exception:
-                    pass
 
-    # Pareto front of complete-board variants, then pick best scalar among front
     front = pareto_front(scored)  # type: ignore[arg-type]
     best_name, best, best_sv = max(front, key=lambda t: _variant_score(t[1]))
+
+    # --- Conflict-cluster CBS ---
+    if use_cbs and n_nets <= 80:
+        if progress_cb:
+            try:
+                progress_cb(0, 1, "cbs", "conflict_repair", {})
+            except Exception:
+                pass
+        best, cbs_report = repair_route_conflicts(
+            best, board, config, clearance_mm=cl, grid_mm=grid,
+        )
+        best = _apply_drc_geometry(best, board, config, rules, cl)
+
+    # --- Elastic continuous forces ---
+    if use_elastic and best.segments and n_nets <= 60:
+        if progress_cb:
+            try:
+                progress_cb(0, 1, "elastic", "geometry", {})
+            except Exception:
+                pass
+        best = elastic_optimize_route(best, board, clearance_mm=cl, iterations=16)
+        best = _apply_drc_geometry(best, board, config, rules, cl)
+
+    # Final SI/MFG
+    si_final = evaluate_si_mfg(best, board, config, clearance_mm=cl)
+    for n in si_final.notes:
+        best.notes.append(n)
+
     best.notes.insert(
         0,
-        f"topor_pipeline: isotropic free-angle · {len(candidates)} candidate(s) · "
-        f"negotiate_iters={negotiate_iters} · winner={best_name} · "
-        f"pareto={len(front)}",
+        f"topor_pipeline: K-homotopy+CBS+elastic+SI/MFG · "
+        f"{len(candidates)} candidate(s) · winner={best_name}",
     )
+    if plan:
+        best.notes.extend(plan.notes[:3])
 
-    # Topology signatures for explainability
+    # Topology signatures
     try:
         om = build_obstacle_map(board, clearance_mm=cl, layers=copper)
         for s in best.segments:
@@ -411,6 +470,20 @@ def topor_style_route(
         best.notes.append(f"topology_signatures: {len(sigs)} net class(es) recorded")
     except Exception as exc:
         best.notes.append(f"topology_signatures: skipped ({exc})")
+
+    # Via explanations aggregate
+    via_explain = [
+        {
+            "net": v.net,
+            "x": round(v.x, 3),
+            "y": round(v.y, 3),
+            "layers": list(v.layers),
+            "reason": v.reason or "Layer transition required (no recorded detail).",
+            "alternatives_considered": v.alternatives_considered,
+            "blocked_same_layer": list(v.blocked_same_layer or []),
+        }
+        for v in best.vias
+    ]
 
     ranking = sorted(
         (
@@ -422,7 +495,7 @@ def topor_style_route(
                 "vias": r.via_count,
                 "unrouted": len(r.unrouted_nets),
                 "violations": r.clearance_violations,
-                "score_vector": (r.quality or {}).get("score_vector"),
+                "si_mfg": (r.quality or {}).get("si_mfg", {}).get("combined"),
                 "pareto": any(n == f[0] for f in front),
             }
             for n, r in candidates
@@ -440,9 +513,23 @@ def topor_style_route(
     best.compute_quality()
     best.quality["variants_ranked"] = ranking
     best.quality["winner"] = best_name
-    best.quality["pipeline"] = "topor_style"
+    best.quality["pipeline"] = "topor_style_full"
     best.quality["pareto_front"] = [f[0] for f in front]
     best.quality["score_vector"] = best_sv.to_dict() if hasattr(best_sv, "to_dict") else {}
+    best.quality["si_mfg"] = si_final.to_dict()
+    best.quality["planner"] = plan.to_dict() if plan else None
+    best.quality["explanations"] = {
+        "vias": via_explain,
+        "summary": (
+            f"{len(via_explain)} via(s). "
+            + (
+                "Click a via row for why it was inserted."
+                if via_explain
+                else "No vias — all connections same-layer."
+            )
+        ),
+    }
+    best.quality["k_homotopy"] = kh_map
     return best
 
 

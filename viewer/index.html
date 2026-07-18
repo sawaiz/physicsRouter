@@ -1101,11 +1101,14 @@
       <div id="routeLiveBar" class="sim-chip" style="margin:0.45rem 0">Idle — start TopoR to see live copper on 2D</div>
       <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Live 2D preview updates as nets complete.</p>
       <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run TopoR</div>
+      <div id="siMfgBox" class="sim-chip" style="margin:0.35rem 0;display:none"></div>
       <div class="actions">
         <button type="button" class="btn primary" id="btnApplyRoute">Apply to KiCad PCB</button>
         <button type="button" class="btn good" id="btnGoSim">Next: 3D EMS sim →</button>
       </div>
       <p class="muted" id="routeApplyStatus" style="font-size:0.72rem">After apply, open Simulate for 3D OpenEMS visualization.</p>
+      <h3 style="font-size:0.78rem;margin:0.65rem 0 0.25rem;color:var(--muted)">Why this via?</h3>
+      <div id="viaExplain" class="sim-chip" style="margin:0 0 0.45rem;font-size:0.72rem;max-height:120px;overflow:auto">Run route to see via explanations.</div>
       <div id="netReportTable" style="margin-top:0.5rem;max-height:200px;overflow:auto"></div>`;
   }
 
@@ -1378,6 +1381,8 @@
         qEl.textContent = `TopoR: ${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} viol`;
       }
     }
+    fillSiMfg(prefer);
+    fillViaExplain(prefer);
     fillNetReports(prefer);
     // Routing UX is 2D-only — do not rebuild 3D while routing
     updateRouteSelect();
@@ -1738,6 +1743,67 @@
       </tr>`
     ).join('');
     el.innerHTML = `<table class="compact"><thead><tr><th>Net</th><th>Status</th><th>mm</th><th>Vias</th><th>Method</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function fillSiMfg(route) {
+    const box = $('#siMfgBox');
+    if (!box) return;
+    const si = route?.quality?.si_mfg;
+    if (!si) {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = 'block';
+    const s = si.si || {}, m = si.mfg || {};
+    box.innerHTML = `<strong>SI / MFG</strong> · combined ${fmt(si.combined, 1)}`
+      + ` · SI ${fmt(s.total, 1)} (parallel ${fmt(s.parallel_run_mm, 1)} mm, hops ${fmt(s.layer_hop_penalty, 1)}, skew ${fmt(s.pair_skew_mm, 2)})`
+      + ` · MFG ${fmt(m.total, 1)} (acute ${m.acute_angle_count ?? 0}, via@pad ${m.via_near_pad_count ?? 0})`;
+  }
+
+  function fillViaExplain(route) {
+    const el = $('#viaExplain');
+    if (!el) return;
+    const vias = route?.quality?.explanations?.vias
+      || (route?.vias || []).filter(v => v.reason).map(v => ({
+        net: v.net, x: v.x, y: v.y, layers: v.layers, reason: v.reason,
+        alternatives_considered: v.alternatives_considered,
+        blocked_same_layer: v.blocked_same_layer,
+      }));
+    const summary = route?.quality?.explanations?.summary || '';
+    if (!vias?.length) {
+      el.innerHTML = summary
+        ? esc(summary)
+        : (route?.via_count
+          ? 'Vias present but no explanation payload — re-run TopoR route.'
+          : 'No vias — all connections stayed same-layer.');
+      return;
+    }
+    el.innerHTML = `<div class="muted" style="margin-bottom:0.35rem">${esc(summary || vias.length + ' via(s)')}</div>`
+      + vias.slice(0, 12).map((v, i) =>
+        `<div class="job" data-via="${i}" style="cursor:pointer;margin-bottom:0.25rem">
+          <div class="top"><strong>${esc(v.net)}</strong>
+            <span class="muted">${esc((v.layers || []).join('→'))} @ (${fmt(v.x, 2)}, ${fmt(v.y, 2)})</span>
+          </div>
+          <div class="muted" style="font-size:0.68rem;margin-top:0.2rem">${esc(v.reason || '')}</div>
+          ${v.blocked_same_layer?.length
+            ? `<div class="muted" style="font-size:0.65rem">Blocked layers: ${esc(v.blocked_same_layer.join(', '))}</div>`
+            : ''}
+          ${v.alternatives_considered
+            ? `<div class="muted" style="font-size:0.65rem">Alternatives considered: ${v.alternatives_considered}</div>`
+            : ''}
+        </div>`
+      ).join('');
+    $$('[data-via]', el).forEach(node => {
+      node.onclick = () => {
+        const v = vias[+node.dataset.via];
+        if (!v) return;
+        $('#logBox').textContent =
+          `Why this via?\n\nNet: ${v.net}\nLayers: ${(v.layers || []).join(' → ')}\n`
+          + `At: (${v.x}, ${v.y}) mm\n\n${v.reason || ''}\n\n`
+          + `Blocked same-layer: ${(v.blocked_same_layer || []).join(', ') || '—'}\n`
+          + `Alternatives considered: ${v.alternatives_considered ?? '—'}`;
+      };
+    });
   }
 
   // ---------- Jobs dock ----------

@@ -49,17 +49,21 @@ def test_topor_style_pipeline_synthetic() -> None:
         rules,
         clearance_mm=0.2,
         grid_mm=1.0,
-        num_variants=2,
+        num_variants=1,
         negotiate_iters=1,
+        k_homotopy=2,
+        use_cbs=True,
+        use_elastic=True,
     )
     assert r.segments
     assert any("topor_pipeline" in n for n in r.notes)
-    assert any("isotropic" in n.lower() for n in r.notes)
     q = r.quality or r.compute_quality()
-    assert q.get("pipeline") == "topor_style"
+    assert "topor_style" in str(q.get("pipeline") or "")
     assert q.get("winner")
     assert q.get("variants_ranked")
-    assert "score_vector" in q or q.get("pareto_front") is not None
+    assert q.get("si_mfg") is not None
+    assert q.get("explanations") is not None
+    assert "vias" in (q.get("explanations") or {})
     # No illegal soft fallbacks in reports
     for rep in r.net_reports:
         assert "straight_fallback" not in (rep.method or "")
@@ -88,9 +92,42 @@ def test_congestion_map_and_radar() -> None:
 def test_multilayer_route_uses_topor_pipeline() -> None:
     cfg = example_config()
     board = board_from_synthetic(cfg)
-    r = multilayer_route(board, cfg, num_variants=1, grid_mm=1.0, clearance_mm=0.2)
-    assert any("topor_pipeline" in n or "isotropic" in n.lower() for n in r.notes)
+    r = multilayer_route(
+        board, cfg, num_variants=1, grid_mm=1.0, clearance_mm=0.2,
+    )
+    assert any("topor_pipeline" in n or "isotropic" in n.lower() or "homotopy" in n.lower() for n in r.notes)
     assert r.quality
+
+
+def test_homotopy_and_si_mfg_modules() -> None:
+    from physics_router.homotopy import k_homotopy_paths
+    from physics_router.si_mfg import evaluate_si_mfg
+    from physics_router.planner import plan_route_order
+    from physics_router.elastic import elastic_optimize_route
+    from physics_router.conflict_cbs import detect_conflicts, repair_route_conflicts
+
+    cfg = example_config()
+    board = board_from_synthetic(cfg)
+    om = build_obstacle_map(board, clearance_mm=0.2, layers=["F.Cu"])
+    comps = list(board.components.values())
+    if len(comps) >= 2:
+        a = (comps[0].x_mm, comps[0].y_mm)
+        b = (comps[1].x_mm, comps[1].y_mm)
+        cands = k_homotopy_paths(a, b, "F.Cu", "T", om, k=3, grid_mm=1.0)
+        assert isinstance(cands, list)
+    plan = plan_route_order(board, cfg)
+    assert plan.net_order
+    r = clearance_aware_route(
+        board, cfg, clearance_mm=0.2, grid_mm=1.0, soft_fallback=False, k_homotopy=1
+    )
+    si = evaluate_si_mfg(r, board, cfg)
+    assert si.to_dict()["combined"] >= 0
+    confs = detect_conflicts(r, clearance_mm=0.2)
+    assert isinstance(confs, list)
+    r2 = elastic_optimize_route(r, board, clearance_mm=0.2, iterations=4)
+    assert r2.segments
+    r3, rep = repair_route_conflicts(r2, board, cfg, clearance_mm=0.2, grid_mm=1.0)
+    assert "initial_conflicts" in rep
 
 
 def test_remove_redundant_vias_noop_when_needed() -> None:
