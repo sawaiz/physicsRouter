@@ -91,6 +91,19 @@ def route_board_native(
         cfg.post_rubberband = bool(post_rubberband)
     if hasattr(cfg, "via_minimize"):
         cfg.via_minimize = bool(via_minimize)
+    # Auto ring mode for HALO-style LED circles (polar arcs before free-angle)
+    if hasattr(cfg, "ring_mode"):
+        try:
+            from physics_router.halo_ring import detect_led_ring
+
+            ring = detect_led_ring(board)
+            if ring is not None:
+                cfg.ring_mode = True
+                cfg.ring_cx = float(ring.cx)
+                cfg.ring_cy = float(ring.cy)
+                cfg.ring_track_r = 0.0  # auto mid-radius per edge
+        except Exception:
+            pass
 
     net_names = list(net_order) if net_order else list(board.nets.keys())
     # append any missing nets

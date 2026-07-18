@@ -160,8 +160,14 @@ def run_drc(
     refill_zones: bool = False,
     schematic_parity: bool = False,
     timeout_s: float = 300,
+    all_track_errors: bool = True,
 ) -> DrcReport:
-    """Run KiCad DRC via kicad-cli; return structured report."""
+    """Run official KiCad DRC engine via ``kicad-cli pcb drc``.
+
+    This is the real KiCad DRC (same engine as the PCB editor), not a reimplementation.
+    We intentionally do **not** vendor GPL KiCad sources; calling kicad-cli keeps
+    licensing clean and always matches the installed KiCad version.
+    """
     cli = find_kicad_cli()
     if cli is None:
         raise FileNotFoundError(
@@ -171,6 +177,7 @@ def run_drc(
     if out_json is None:
         out_json = pcb_path.with_suffix(".drc.json")
     out_json = Path(out_json)
+    out_json.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         str(cli),
@@ -189,6 +196,8 @@ def run_drc(
         cmd.append("--refill-zones")
     if schematic_parity:
         cmd.append("--schematic-parity")
+    if all_track_errors:
+        cmd.append("--all-track-errors")
     cmd.append(str(pcb_path))
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
@@ -214,8 +223,158 @@ def run_drc(
                 items=list(v.get("items") or []),
             )
         )
-    report.unconnected = list(data.get("unconnected_items") or [])
+    report.unconnected = list(
+        data.get("unconnected_items") or data.get("unconnected") or []
+    )
     return report
+
+
+def kicad_drc_route(
+    source_pcb: str | Path,
+    route: Any,
+    *,
+    work_dir: str | Path | None = None,
+    timeout_s: float = 180,
+    keep_files: bool = False,
+) -> dict[str, Any]:
+    """Write ``route`` copper onto a copy of ``source_pcb`` and run KiCad DRC.
+
+    Returns a dict compatible with router quality / improve snapshots::
+
+        {
+          "available": True,
+          "passed": bool,           # zero error-level violations
+          "copper_passed": bool,    # zero copper-class violations
+          "error_count": int,
+          "copper_violation_count": int,
+          "unconnected_count": int,
+          "by_type": {...},
+          "samples": [...],
+          "pcb_path": str,
+          "report_path": str | None,
+          "kicad_version": str,
+        }
+
+    Optimized for the improve loop: one temp PCB + one kicad-cli invocation.
+    """
+    from physics_router.router import append_routes_to_kicad_pcb
+
+    source_pcb = Path(source_pcb).resolve()
+    if not source_pcb.is_file():
+        return {
+            "available": False,
+            "error": f"PCB not found: {source_pcb}",
+            "passed": False,
+            "copper_passed": False,
+            "error_count": 0,
+            "copper_violation_count": 0,
+            "unconnected_count": 0,
+        }
+    if find_kicad_cli() is None:
+        return {
+            "available": False,
+            "error": "kicad-cli not found",
+            "passed": False,
+            "copper_passed": False,
+            "error_count": 0,
+            "copper_violation_count": 0,
+            "unconnected_count": 0,
+        }
+
+    if work_dir is None:
+        tmp = tempfile.mkdtemp(prefix="pr_kicad_drc_")
+        work = Path(tmp)
+        cleanup = not keep_files
+    else:
+        work = Path(work_dir)
+        work.mkdir(parents=True, exist_ok=True)
+        cleanup = False
+
+    try:
+        routed = work / "routed.kicad_pcb"
+        report_json = work / "drc.json"
+        # Clear pre-existing tracks so DRC measures autorouter copper only
+        append_routes_to_kicad_pcb(
+            str(source_pcb),
+            str(routed),
+            route,
+            replace_previous=True,
+            clear_existing_copper=True,
+        )
+        rep = run_drc(
+            routed,
+            report_json,
+            severity_all=True,
+            all_track_errors=True,
+            timeout_s=timeout_s,
+        )
+        d = rep.to_dict()
+        # Copper / connectivity classes that autorouter must fix (ignore silk/lib noise)
+        hard_types = {
+            "shorting_items",
+            "tracks_crossing",
+            "clearance",
+            "copper_edge_clearance",
+            "hole_clearance",
+            "track_width",
+            "via_dangling",
+            "track_dangling",
+            "annular_width",
+            "drill_out_of_range",
+            "zones_intersect",
+            "connection_width",
+            "starved_thermal",
+            "solder_mask_bridge",
+        }
+        copper_items = [
+            v
+            for v in rep.violations
+            if v.type in hard_types
+            or "short" in v.type
+            or "track" in v.type
+            or "via" in v.type
+            or (v.type == "clearance" or "copper" in v.type)
+        ]
+        copper_errors = [v for v in copper_items if v.severity == "error"]
+        copper_n = max(len(copper_items), int(d.get("copper_violation_count") or 0))
+        copper_err_n = len(copper_errors)
+        samples = []
+        for v in copper_errors[:12] or copper_items[:12]:
+            samples.append(f"{v.severity}:{v.type}: {v.description[:120]}")
+        return {
+            "available": True,
+            "passed": bool(rep.passed),
+            # Copper pass ignores silk/text/lib footprint issues on the donor board
+            "copper_passed": copper_err_n == 0,
+            "error_count": rep.error_count,
+            "copper_error_count": copper_err_n,
+            "warning_count": rep.warning_count,
+            "copper_violation_count": copper_n,
+            "unconnected_count": len(rep.unconnected),
+            "violation_count": len(rep.violations),
+            "by_type": d.get("by_type") or {},
+            "samples": samples,
+            "pcb_path": str(routed),
+            "report_path": str(report_json) if report_json.exists() else None,
+            "kicad_version": rep.kicad_version,
+            "exit_code": rep.exit_code,
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": f"{type(e).__name__}: {e}",
+            "passed": False,
+            "copper_passed": False,
+            "error_count": 0,
+            "copper_violation_count": 0,
+            "unconnected_count": 0,
+        }
+    finally:
+        if cleanup:
+            try:
+                shutil.rmtree(work, ignore_errors=True)
+            except Exception:
+                pass
 
 
 def export_svg_layers(

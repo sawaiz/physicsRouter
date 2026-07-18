@@ -843,6 +843,9 @@ def clearance_aware_route(
     (leave edge unrouted instead of illegal copper); True only for guide_only.
 
     ``style``: ``isotropic`` (default) — any-angle paths, no preferred H/V.
+    ``ring`` / ``halo`` — concentric track + radial routing for charlieplex LED
+    rings (see docs/HALO_RING_ROUTING.md). Auto-selected when style is
+    ``auto`` and an LED ring is detected.
     ``net_order``: optional explicit paint order (multi-variant search).
 
     When the C++ extension ``pr_native`` is built, uses the OpenMP/GPU core unless
@@ -854,6 +857,24 @@ def clearance_aware_route(
         clearance_mm = 0.0
     if soft_fallback is None:
         soft_fallback = bool(guide_only)
+
+    # HALO / charlieplex ring: concentric tracks beat free-angle chords
+    style_l = (style or "isotropic").lower()
+    if not guide_only and style_l in ("ring", "halo", "halo_ring", "auto"):
+        try:
+            from physics_router.halo_ring import detect_led_ring, halo_ring_route
+
+            ring = detect_led_ring(board)
+            if style_l != "auto" or ring is not None:
+                if ring is not None:
+                    return halo_ring_route(
+                        board,
+                        config,
+                        clearance_mm=float(clearance_mm),
+                        progress_cb=progress_cb,
+                    )
+        except Exception:
+            pass
 
     # Native C++ isotropic core (v1.1): free-angle detours, multi-site vias,
     # post-rubberband, via minimize. Use when prefer_native and no live progress.
@@ -2259,25 +2280,64 @@ def remove_redundant_vias(
     return out
 
 
-_PR_BEGIN = "  (generator_add physics_router_topor)\n"
-_PR_END = "  (generator_add physics_router_topor_end)\n"
-
-
 def strip_physics_router_copper(text: str) -> str:
-    """Remove a previous physicsRouter segment/via block if present."""
-    begin = text.find(_PR_BEGIN.strip())
-    end_marker = "physics_router_topor_end"
-    if begin < 0:
-        # legacy: only begin marker without end — drop from begin to last via/segment we can't safely strip
-        return text
-    end = text.find(end_marker, begin)
-    if end < 0:
-        return text
-    # find end of that s-expr line
-    line_end = text.find("\n", end)
-    if line_end < 0:
-        line_end = len(text)
-    return text[:begin] + text[line_end + 1 :]
+    """Remove legacy physicsRouter marker blocks if present."""
+    for begin_tok, end_tok in (
+        ("(physics_router_copper begin)", "physics_router_copper end"),
+        ("generator_add physics_router_topor)", "physics_router_topor_end"),
+    ):
+        begin = text.find(begin_tok)
+        if begin < 0:
+            continue
+        begin = text.rfind("\n", 0, begin) + 1
+        end = text.find(end_tok, begin)
+        if end < 0:
+            continue
+        line_end = text.find("\n", end)
+        if line_end < 0:
+            line_end = len(text)
+        text = text[:begin] + text[line_end + 1 :]
+    return text
+
+
+def strip_board_tracks_and_vias(text: str) -> str:
+    """Remove board-level ``(segment …)`` / ``(via …)`` lines.
+
+    Footprints, nets, zones, and Edge.Cuts stay. Used so KiCad DRC / re-apply
+    sees only autorouter copper (not stacked on prior tracks).
+    """
+    import re
+
+    text = re.sub(r"^[ \t]*\(segment\b.*\)\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^[ \t]*\(via\b.*\)\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text
+
+
+def parse_kicad_net_map(pcb_text: str) -> dict[str, int]:
+    """Map net name → KiCad net code from ``(net N "NAME")`` declarations.
+
+    Without correct codes, exported copper is written as net 0 and KiCad DRC
+    cannot see foreign-net shorts (everything looks like the same/no net).
+    """
+    import re
+
+    out: dict[str, int] = {}
+    # Top-level board net table entries: (net 3 "CPX-0")
+    for m in re.finditer(r'\(net\s+(\d+)\s+"([^"]*)"\)', pcb_text):
+        code = int(m.group(1))
+        name = m.group(2)
+        if name == "":
+            continue
+        # Prefer first (board table) occurrence; pad-level repeats same code
+        if name not in out:
+            out[name] = code
+    return out
+
+
+def _tstamp_token(seed: int) -> str:
+    hex32 = f"{abs(seed) % (16**32):032x}"
+    return f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
 
 
 def append_routes_to_kicad_pcb(
@@ -2286,48 +2346,47 @@ def append_routes_to_kicad_pcb(
     result: RouteResult,
     *,
     replace_previous: bool = True,
+    clear_existing_copper: bool = False,
 ) -> Path:
     """Append segment and via S-expressions before the final closing paren.
 
-    When ``replace_previous`` is True, strips an earlier physicsRouter copper
-    block so re-applying a different variant does not stack copper.
+    When ``replace_previous`` is True, clears board tracks/vias and legacy
+    physicsRouter blocks so re-apply does not stack copper.
+
+    Format matches HALO/pcbnew dialect (kicad-cli loadable)::
+
+        (segment (start x y) (end x y) (width w) (layer "F.Cu") (net N) (tstamp …))
     """
 
     src = Path(source_path)
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     text = src.read_text(encoding="utf-8", errors="replace")
-    if replace_previous:
-        text = strip_physics_router_copper(text)
+    text = strip_physics_router_copper(text)
+    if replace_previous or clear_existing_copper:
+        text = strip_board_tracks_and_vias(text)
+    net_map = parse_kicad_net_map(text)
     stripped = text.rstrip()
     if not stripped.endswith(")"):
         raise ValueError("Invalid kicad_pcb: expected trailing ')'")
     body = stripped[:-1]
-    chunks = ["\n", _PR_BEGIN]
+    chunks = ["\n"]
     for s in result.segments:
+        code = int(net_map.get(s.net, 0))
+        ts = _tstamp_token(hash((s.x1, s.y1, s.x2, s.y2, s.net, s.layer)))
         chunks.append(
-            f'  (segment (start {s.x1:.4f} {s.y1:.4f}) (end {s.x2:.4f} {s.y2:.4f}) '
-            f'(width {s.width_mm:.4f}) (layer "{s.layer}") (net 0) '
-            f"(uuid {_fake_uuid(s)}) )\n"
+            f'  (segment (start {s.x1:.6f} {s.y1:.6f}) (end {s.x2:.6f} {s.y2:.6f}) '
+            f'(width {s.width_mm:.4f}) (layer "{s.layer}") (net {code}) '
+            f"(tstamp {ts}))\n"
         )
     for v in result.vias:
+        code = int(net_map.get(v.net, 0))
+        ts = _tstamp_token(hash((v.x, v.y, v.net, v.size_mm)))
+        la, lb = v.layers[0], v.layers[1]
         chunks.append(
-            f'  (via (at {v.x:.4f} {v.y:.4f}) (size {v.size_mm:.4f}) '
-            f'(drill {v.drill_mm:.4f}) (layers "{v.layers[0]}" "{v.layers[1]}") '
-            f"(net 0) (uuid {_fake_uuid_via(v)}) )\n"
+            f'  (via (at {v.x:.6f} {v.y:.6f}) (size {v.size_mm:.4f}) '
+            f'(drill {v.drill_mm:.4f}) (layers "{la}" "{lb}") '
+            f"(net {code}) (tstamp {ts}))\n"
         )
-    chunks.append(_PR_END)
     dest.write_text(body + "".join(chunks) + ")\n", encoding="utf-8")
     return dest
-
-
-def _fake_uuid(s: RouteSegment) -> str:
-    h = abs(hash((s.x1, s.y1, s.x2, s.y2, s.net, s.layer))) % (16**32)
-    hex32 = f"{h:032x}"
-    return f'"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"'
-
-
-def _fake_uuid_via(v: Via) -> str:
-    h = abs(hash((v.x, v.y, v.net))) % (16**32)
-    hex32 = f"{h:032x}"
-    return f'"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"'
