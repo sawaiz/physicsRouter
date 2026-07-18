@@ -119,6 +119,37 @@ physics-router serve --host 127.0.0.1 --port 8765
 
 Assets: `viewer/` (UI), `viewer/assets/*.glb` (regenerated locally; large files gitignored).
 
+### 2D viewer ↔ KiCad parity
+
+The control-plane canvas matches KiCad board orientation and footprints:
+
+| Landmark | File / view |
+|----------|-------------|
+| Hook **H1** | Board `y = −13` → **top** after Y-flip `(x, −y)` |
+| Switch **S1** | Board `x = −4.25`, PCB rot `−90°` → **left** of U1 |
+| LED ring | `+4°` board step reads **clockwise** on screen after Y-flip |
+| Edge.Cuts | Classic `gr_arc` (center + start + CCW angle) → teardrop outline |
+| Front pads | B.Cu-only / large pour pads hidden or outline-only |
+
+```bash
+# Install kicad-cli on PATH (macOS example)
+ln -sf /Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli /opt/homebrew/bin/kicad-cli
+
+# Official KiCad layer plots → docs/images/viewer_compare/kicad_ref/
+kicad-cli pcb export svg -o docs/images/viewer_compare/kicad_ref \
+  --mode-multi --layers F.Cu,B.Cu,F.SilkS,Edge.Cuts,F.Fab \
+  third_party/halo-90/pcb/halo-90.kicad_pcb
+# PNG via scripts/generate_kicad_renders.py or rsvg-convert
+
+# Headless 2D render (same transforms as viewer/index.html)
+python scripts/render_viewer_2d.py -o docs/images/viewer_compare/viewer_2d.png
+
+# Automated landmarks + footprint/outline checks
+pytest tests/test_viewer_kicad_parity.py -v
+```
+
+Compare assets live under [`docs/images/viewer_compare/`](docs/images/viewer_compare/).
+
 ---
 
 ## Native C++ core (optional, v1.1 isotropic)

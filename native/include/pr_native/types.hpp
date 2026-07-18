@@ -27,6 +27,8 @@ struct Via {
   int net_id = 0;
   double size_mm = 0.8;
   int layer_a = 0, layer_b = 1;
+  std::string reason; // explainable: why this via was inserted
+  int alternatives_considered = 0;
 };
 
 struct NetSpec {
@@ -47,6 +49,9 @@ struct RouteConfig {
   bool soft_fallback = false;
   bool allow_vias = true;
   bool use_gpu = true;
+  bool isotropic = true;     // any-angle detours (TopoR-style)
+  bool post_rubberband = true;
+  bool via_minimize = true;
   int threads = 0; // 0 = auto
 };
 

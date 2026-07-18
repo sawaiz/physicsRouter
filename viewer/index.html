@@ -1503,53 +1503,68 @@
 
   /** Draw footprint primitives in local mm (caller has set scale + Y flip). */
   function drawFootprintGraphics(ctx, gfx, { showSilk = true, showCu = true, layersOn = null } = {}) {
-    const copperAlpha = 0.72;
-    // Pads first (under silk) — respect copper layer visibility + transparency
+    const copperAlpha = 0.70;
+    // Pads — front view skips pure B.Cu (e.g. battery 12mm ground pad); V-flip shows B.
     for (const g of gfx) {
       if (g.kind !== 'pad') continue;
-      const ly = g.layer || 'F.Cu';
-      if (layersOn && !layerVisible(ly, layersOn) && !layerVisible('F.Cu', layersOn)) continue;
       if (!showCu) continue;
+      const ly = g.layer || 'F.Cu';
       const isBack = /^B\.|Back/i.test(ly);
-      if (viewFlipBoard && !isBack && !/\*/.test(ly)) {
-        // when flipped, prefer back pads
+      const isFront = /^F\.|Front/i.test(ly) || ly === '*.Cu';
+      if (!viewFlipBoard && isBack && !isFront) continue; // don't paint B-only on front
+      if (viewFlipBoard && isFront && !isBack && ly !== '*.Cu') continue;
+      if (layersOn) {
+        if (isBack && !layerVisible('B.Cu', layersOn) && !layerVisible(ly, layersOn)) continue;
+        if (isFront && !layerVisible('F.Cu', layersOn) && !layerVisible(ly, layersOn) && ly !== '*.Cu') continue;
       }
-      const col = layerColor(isBack ? 'B.Cu' : 'F.Cu', copperAlpha);
+      // Large copper pours/pads: outline-only at low alpha so they don't hide the design
+      const w = g.w || 0.5, h = g.h || 0.5;
+      const large = Math.max(w, h) > 4.0;
+      const alpha = large ? 0.22 : copperAlpha;
+      const col = layerColor(isBack ? 'B.Cu' : 'F.Cu', alpha);
       ctx.save();
       ctx.translate(g.x || 0, g.y || 0);
       ctx.rotate(((g.rot || 0) * Math.PI) / 180);
-      const w = g.w || 0.5, h = g.h || 0.5;
       const shape = (g.shape || 'rect').toLowerCase();
       ctx.fillStyle = col;
-      ctx.strokeStyle = layerColor(isBack ? 'B.Cu' : 'F.Cu', Math.min(1, copperAlpha + 0.15));
-      ctx.lineWidth = 0.04;
-      if (shape.includes('circle') || (shape === 'oval' && Math.abs(w - h) < 0.05)) {
-        ctx.beginPath();
-        ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (shape.includes('roundrect') || shape.includes('round')) {
-        const r = Math.min(w, h) * 0.2;
-        roundRectPath(ctx, -w / 2, -h / 2, w, h, r);
-        ctx.fill();
-      } else {
-        ctx.fillRect(-w / 2, -h / 2, w, h);
-      }
+      ctx.strokeStyle = layerColor(isBack ? 'B.Cu' : 'F.Cu', Math.min(1, alpha + 0.25));
+      ctx.lineWidth = large ? 0.08 : 0.04;
+      const drawPad = () => {
+        if (shape.includes('circle') || (shape === 'oval' && Math.abs(w - h) < 0.05)) {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+          if (large) ctx.stroke(); else ctx.fill();
+        } else if (shape.includes('roundrect') || shape.includes('round')) {
+          const r = Math.min(w, h) * 0.2;
+          roundRectPath(ctx, -w / 2, -h / 2, w, h, r);
+          if (large) ctx.stroke(); else ctx.fill();
+        } else {
+          // rect / smd default
+          if (large) ctx.strokeRect(-w / 2, -h / 2, w, h);
+          else ctx.fillRect(-w / 2, -h / 2, w, h);
+        }
+      };
+      drawPad();
       if (g.drill > 0.05) {
         ctx.fillStyle = '#0a1020';
         ctx.beginPath();
         ctx.arc(0, 0, g.drill / 2, 0, Math.PI * 2);
         ctx.fill();
       }
-      if (/^k$/i.test(g.pinfunction || '')) {
+      if (!large && /^k$/i.test(g.pinfunction || '')) {
         ctx.fillStyle = 'rgba(240,224,128,0.95)';
         ctx.fillRect(w / 2 - w * 0.2, -h / 2, w * 0.2, h);
       }
       ctx.restore();
     }
-    // Silk / fab — slightly transparent so copper shows through
+    // Silk / fab — prefer F.* on front, B.* when flipped
     for (const g of gfx) {
       if (g.kind === 'pad') continue;
       const ly = g.layer || '';
+      const isBackGfx = /^B\./i.test(ly);
+      if (!viewFlipBoard && isBackGfx) continue;
+      if (viewFlipBoard && /^F\./i.test(ly) && !/Edge/i.test(ly)) continue;
+
       if (/Silk|Fab|CrtYd/i.test(ly)) {
         if (!showSilk) continue;
         if (layersOn && /Silk/i.test(ly) && !layerVisible('F.SilkS', layersOn) && !layerVisible(ly, layersOn))
@@ -1562,11 +1577,12 @@
       const isCrt = /CrtYd/i.test(ly);
       const isFab = /Fab/i.test(ly);
       const isCu = /\.Cu/i.test(ly);
+      // Courtyard: always outline, never fill
       if (isCu) {
         ctx.strokeStyle = layerColor(ly.startsWith('B') ? 'B.Cu' : 'F.Cu', copperAlpha);
         ctx.fillStyle = ctx.strokeStyle;
       } else {
-        ctx.strokeStyle = isCrt ? 'rgba(208,64,208,0.45)' : (isFab ? 'rgba(160,160,160,0.7)' : 'rgba(232,208,96,0.85)');
+        ctx.strokeStyle = isCrt ? 'rgba(208,64,208,0.4)' : (isFab ? 'rgba(160,160,160,0.65)' : 'rgba(232,208,96,0.9)');
         ctx.fillStyle = ctx.strokeStyle;
       }
       ctx.lineWidth = Math.max(0.05, g.width || 0.1);
@@ -1581,19 +1597,19 @@
       } else if (g.kind === 'rect') {
         const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2);
         const w = Math.abs(g.x2 - g.x1), h = Math.abs(g.y2 - g.y1);
-        if (g.fill) ctx.fillRect(x, y, w, h);
+        if (g.fill && !isCrt) ctx.fillRect(x, y, w, h);
         else ctx.strokeRect(x, y, w, h);
       } else if (g.kind === 'circle') {
         ctx.beginPath();
         ctx.arc(g.cx, g.cy, g.r || 0.2, 0, Math.PI * 2);
-        if (g.fill) ctx.fill();
+        if (g.fill && !isCrt) ctx.fill();
         else ctx.stroke();
       } else if (g.kind === 'poly' && g.pts?.length) {
         ctx.beginPath();
         ctx.moveTo(g.pts[0][0], g.pts[0][1]);
         for (let i = 1; i < g.pts.length; i++) ctx.lineTo(g.pts[i][0], g.pts[i][1]);
         if (g.closed !== false) ctx.closePath();
-        if (g.fill) ctx.fill();
+        if (g.fill && !isCrt) ctx.fill();
         else ctx.stroke();
       }
     }
@@ -1715,10 +1731,13 @@
       ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(20, 55, 40, 0.88)';
       ctx.fill();
-      // Always stroke outline circle as fallback so Edge.Cuts is visible
-      ctx.strokeStyle = 'rgba(208, 216, 224, 0.9)';
-      ctx.lineWidth = 1.8;
-      ctx.stroke();
+      // Stroke full circle only when no arc polylines (teardrop uses polys)
+      const hasOutlinePolys = outlineEarly.some(g => g.kind === 'poly' && g.pts?.length);
+      if (!hasOutlinePolys) {
+        ctx.strokeStyle = 'rgba(208, 216, 224, 0.9)';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
     }
 
     // Route copper: back under front, semi-transparent like KiCad
@@ -1764,11 +1783,14 @@
       ctx.lineWidth = 2.0;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      const outlineHasPolys = outlineEarly.some(g => g.kind === 'poly' && g.pts?.length);
       for (const g of outlineEarly) {
         if (g.kind === 'line') {
           const a = tx(g.x1, g.y1), b = tx(g.x2, g.y2);
           ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
         } else if (g.kind === 'circle') {
+          // Synthetic disk circle is for substrate fill only when arc polys exist
+          if (outlineHasPolys) continue;
           const [cx, cy] = tx(g.cx, g.cy);
           ctx.beginPath(); ctx.arc(cx, cy, (g.r || 1) * scale, 0, Math.PI * 2); ctx.stroke();
         } else if (g.kind === 'rect') {
