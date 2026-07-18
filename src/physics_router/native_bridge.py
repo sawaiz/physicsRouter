@@ -133,7 +133,18 @@ def route_board_native(
                 ns.priority *= 1.5
         else:
             ns.width_mm = 0.25
-        ns.preferred_layers = list(range(cfg.num_layers))
+        # Stripe CPX/matrix nets across layers (matches Python clearance_aware_route)
+        if name.upper().startswith("CPX") and cfg.num_layers >= 2:
+            try:
+                idx = int("".join(ch for ch in name if ch.isdigit()) or "0")
+            except ValueError:
+                idx = abs(hash(name)) % cfg.num_layers
+            primary = idx % cfg.num_layers
+            ns.preferred_layers = [primary] + [
+                i for i in range(cfg.num_layers) if i != primary
+            ]
+        else:
+            ns.preferred_layers = list(range(cfg.num_layers))
         nets.append(ns)
 
     # Sort nets for native by priority (already handled in C++ too)

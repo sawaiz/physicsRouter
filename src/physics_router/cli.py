@@ -264,6 +264,85 @@ def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
     click.echo(json.dumps({**report.to_dict(), "via_budget": budget, "escape_hints": hints}, indent=2))
 
 
+@main.command("improve")
+@click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--out-json", type=click.Path(path_type=Path), default=Path("improve_result.json"))
+@click.option("--timeout", "timeout_s", type=float, default=120.0, help="Seconds to keep trying")
+@click.option("--grade", "target_grade", type=click.Choice(["A", "B", "C", "D"], case_sensitive=False), default="A")
+@click.option("--min-score", type=float, default=None, help="Override min score (default from grade)")
+@click.option("--clearance", type=float, default=0.2)
+@click.option("--grid", type=float, default=0.25)
+@click.option("--no-place", is_flag=True, help="Route only (skip placement reseeds)")
+@click.option("--max-rounds", type=int, default=None)
+@click.option("--allow-drc-fail", is_flag=True, help="Do not require zero DRC violations for goal")
+def improve_cmd(
+    config_path: Path,
+    pcb_path: Path | None,
+    out_json: Path,
+    timeout_s: float,
+    target_grade: str,
+    min_score: float | None,
+    clearance: float,
+    grid: float,
+    no_place: bool,
+    max_rounds: int | None,
+    allow_drc_fail: bool,
+) -> None:
+    """Continuously improve place+route until timeout or grade + full DRC pass."""
+    from physics_router.continuous_improve import ImproveConfig, continuous_improve, min_score_for_grade
+
+    config = load_config(config_path)
+    board = load_board_from_kicad_pcb(pcb_path, config) if pcb_path else board_from_synthetic(config)
+    ms = float(min_score) if min_score is not None else min_score_for_grade(target_grade)
+    icfg = ImproveConfig(
+        timeout_s=timeout_s,
+        min_score=ms,
+        target_grade=target_grade.upper(),
+        require_drc_clean=not allow_drc_fail,
+        require_complete=True,
+        do_place=not no_place,
+        do_route=True,
+        clearance_mm=clearance,
+        grid_mm=grid,
+        max_rounds=max_rounds,
+    )
+
+    def on_prog(ev: dict) -> None:
+        if ev.get("event") == "snapshot":
+            click.echo(
+                f"  r{ev.get('round')} {ev.get('strategy')}: "
+                f"{ev.get('grade')}/{ev.get('score')} viol={ev.get('violations')} "
+                f"vias={ev.get('vias')} unrouted={ev.get('unrouted')}"
+                + (" ★" if ev.get("is_best") else ""),
+                err=True,
+            )
+        elif ev.get("event") == "stage":
+            click.echo(
+                f"r{ev.get('round')} {ev.get('stage')} · {ev.get('strategy')} "
+                f"t={ev.get('elapsed_s', 0):.0f}s",
+                err=True,
+            )
+
+    click.echo(
+        f"Improve timeout={timeout_s:.0f}s target={target_grade} min_score≥{ms:.0f} "
+        f"drc_clean={not allow_drc_fail} place={not no_place}"
+    )
+    result = continuous_improve(board, config, improve=icfg, progress_cb=on_prog)
+    payload = result.to_dict()
+    if result.route is not None:
+        payload["route"] = result.route.to_dict()
+        payload["quality"] = result.route.quality
+    out_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    best = result.best_snapshot
+    click.echo(
+        f"stop={result.stop_reason} met_goal={result.met_goal} "
+        f"best={best.grade if best else '—'}/{best.score if best else '—'} "
+        f"viol={best.violations if best else '—'} rounds={len(result.history)}"
+    )
+    click.echo(f"Wrote {out_json}")
+
+
 @main.command("route")
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None)

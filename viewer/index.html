@@ -92,7 +92,12 @@
     #metrics { padding: 0.7rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
     #metrics .total-row { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.4rem; }
     #metrics .big { font-size: 1.55rem; font-weight: 700; color: var(--good); }
-    #scoreChartWrap { height: 140px; position: relative; }
+    #scoreChartWrap { height: 100px; position: relative; }
+    #scoreTotal { letter-spacing: -0.02em; }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '▸ '; color: var(--muted); }
+    details[open] > summary::before { content: '▾ '; }
     #simStrip { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; margin-top: 0.45rem; }
     .sim-chip {
       background: #0f1419; border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.45rem;
@@ -199,19 +204,19 @@
 
     <nav id="steps">
       <button type="button" class="step active" data-step="0">
-        <span class="n">1</span><span class="t">Setup</span><span class="d">HALO-90 default</span>
+        <span class="n">1</span><span class="t">Board</span><span class="d">Load preset</span>
       </button>
       <button type="button" class="step" data-step="1">
-        <span class="n">2</span><span class="t">Place</span><span class="d">Free parts only</span>
+        <span class="n">2</span><span class="t">Place</span><span class="d">Optional</span>
       </button>
       <button type="button" class="step" data-step="2">
-        <span class="n">3</span><span class="t">Route</span><span class="d">2D free-angle</span>
+        <span class="n">3</span><span class="t">Route</span><span class="d">Auto · improve</span>
       </button>
       <button type="button" class="step" data-step="3">
-        <span class="n">4</span><span class="t">Simulate</span><span class="d">3D · OpenEMS</span>
+        <span class="n">4</span><span class="t">3D</span><span class="d">View · EMS</span>
       </button>
       <button type="button" class="step" data-step="4">
-        <span class="n">5</span><span class="t">Validate</span><span class="d">DRC · tests</span>
+        <span class="n">5</span><span class="t">Check</span><span class="d">DRC · tests</span>
       </button>
     </nav>
 
@@ -226,18 +231,18 @@
         </div>
         <!-- 3D only after routing — EMS / OpenEMS simulation visualization -->
         <div id="vizHeader3d">
-          <strong style="font-size:0.78rem">3D · EMS simulation</strong>
+          <strong style="font-size:0.78rem">3D view</strong>
           <label>Route <select id="routeSel"><option value="">—</option></select></label>
-          <label><input type="checkbox" id="showKicad" checked/> KiCad 3D (STEP+mask+silk)</label>
-          <label><input type="checkbox" id="showComps"/> Box parts</label>
-          <label><input type="checkbox" id="showRoutes" checked/> Route overlay</label>
-          <label><input type="checkbox" id="showVias" checked/> Route vias</label>
-          <label><input type="checkbox" id="showEMI" checked/> EMI volumes</label>
-          <label><input type="checkbox" id="showLabels"/> Labels</label>
-          <label><input type="checkbox" id="showBoard"/> Simple substrate</label>
-          <button type="button" class="btn ghost" id="btnExport3d" style="padding:0.25rem 0.5rem;font-size:0.72rem">Rebuild 3D</button>
-          <span id="layerToggles" style="display:flex;flex-wrap:wrap;gap:0.35rem"></span>
-          <button type="button" class="btn ghost" id="btnResetCam" style="padding:0.25rem 0.5rem;font-size:0.72rem">Reset cam</button>
+          <label><input type="checkbox" id="showKicad" checked/> Board 3D</label>
+          <label><input type="checkbox" id="showRoutes" checked/> Copper</label>
+          <label><input type="checkbox" id="showVias" checked/> Vias</label>
+          <label><input type="checkbox" id="showEMI" checked/> EMI</label>
+          <label class="muted" style="opacity:0.85"><input type="checkbox" id="showComps"/> Boxes</label>
+          <label class="muted" style="opacity:0.85"><input type="checkbox" id="showLabels"/> Labels</label>
+          <label class="muted" style="opacity:0.85"><input type="checkbox" id="showBoard"/> Substrate</label>
+          <button type="button" class="btn ghost" id="btnExport3d" style="padding:0.25rem 0.5rem;font-size:0.72rem">Rebuild</button>
+          <button type="button" class="btn ghost" id="btnResetCam" style="padding:0.25rem 0.5rem;font-size:0.72rem">Reset</button>
+          <span id="layerToggles" style="display:none"></span>
         </div>
         <div id="c2dHost" class="active">
           <canvas id="main2d" width="900" height="640"></canvas>
@@ -266,17 +271,17 @@
         <div id="metrics">
           <div class="total-row">
             <div>
-              <div class="muted" style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em">Physics cost</div>
+              <div class="muted" style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em" id="scoreLabel">Route grade</div>
               <div class="big" id="scoreTotal">—</div>
             </div>
-            <div class="muted" style="font-size:0.72rem;line-height:1.35" id="scoreMeta">Load HALO-90 to begin</div>
+            <div class="muted" style="font-size:0.72rem;line-height:1.35" id="scoreMeta">Load a board, then Route → Improve</div>
           </div>
-          <div id="scoreChartWrap"><canvas id="scoreChart"></canvas></div>
+          <div id="scoreChartWrap" style="height:100px"><canvas id="scoreChart"></canvas></div>
           <div id="simStrip">
-            <div class="sim-chip">IR / loop L<strong id="mIr">—</strong></div>
-            <div class="sim-chip">Spice · OpenEMS<strong id="mSim">—</strong></div>
-            <div class="sim-chip">Route length<strong id="mLen">—</strong></div>
-            <div class="sim-chip">Vias · viol.<strong id="mVia">—</strong></div>
+            <div class="sim-chip">Length<strong id="mLen">—</strong></div>
+            <div class="sim-chip">Vias · DRC<strong id="mVia">—</strong></div>
+            <div class="sim-chip">Physics cost<strong id="mIr">—</strong></div>
+            <div class="sim-chip">Spice · EMS<strong id="mSim">—</strong></div>
           </div>
         </div>
         <div id="stepPanel"></div>
@@ -307,11 +312,11 @@
   };
 
   const STEPS = [
-    { title: '1 · Setup', hint: 'HALO-90 is the default. All D1–D90 LEDs are locked with mechanicals; only free parts would move under Place.' },
-    { title: '2 · Place', hint: 'Score physics, then SA on unlocked footprints only (LED ring stays fixed). 2D board preview on the left.' },
-    { title: '3 · Route', hint: 'Isotropic TopoR free-angle: topology → multi-variant optimize → rubberband geometry on the 2D canvas. No 3D during routing — apply, then Simulate for EMS.' },
-    { title: '4 · Simulate', hint: '3D board + OpenEMS EMI volumes. Rebuild GLB after apply, run spice/OpenEMS, inspect field geometry.' },
-    { title: '5 · Validate', hint: 'pytest, CI regression, and KiCad DRC close the manufacturability loop.' },
+    { title: 'Board', hint: 'Pick a preset. The 2D viewer shows footprints and outline. HALO-90 locks the LED ring.' },
+    { title: 'Place', hint: 'Optional. Moves only unlocked parts. Skip if the layout is already fixed.' },
+    { title: 'Route', hint: 'Auto-route on the 2D board. Improve keeps trying until the grade and DRC goal (or timeout).' },
+    { title: '3D', hint: 'Inspect the board in 3D after routing. Optional OpenEMS / EMI volumes.' },
+    { title: 'Check', hint: 'Run tests and KiCad DRC when you want a manufacturability check.' },
   ];
 
   /** Steps that use the main 2D board (routing UX has no 3D). */
@@ -1040,22 +1045,21 @@
     const presets = state.snap?.presets || [{ id: 'halo-90', label: 'HALO-90' }];
     const sess = state.snap?.session || {};
     return `
-      <label class="field">Board preset</label>
+      <label class="field">Preset</label>
       <select id="presetSel">
-        ${presets.map(p => `<option value="${p.id}" ${p.id === (state.snap?.preset || 'halo-90') ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? ' · PCB' : ''}</option>`).join('')}
+        ${presets.map(p => `<option value="${p.id}" ${p.id === (state.snap?.preset || 'halo-90') ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? '' : ' (no PCB)'}</option>`).join('')}
       </select>
       <div class="actions">
-        <button type="button" class="btn primary" id="btnLoadPreset">Load preset</button>
+        <button type="button" class="btn primary" id="btnLoadPreset">Load board</button>
+        <button type="button" class="btn good" id="btnGoRoute">Route →</button>
       </div>
       <table class="compact">
-        <tr><th>Project</th><td>${esc(state.snap?.config?.project_name || '—')}</td></tr>
-        <tr><th>Parts</th><td>${sess.components ?? '—'} · <strong>${sess.movable ?? '—'}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
-        <tr><th>Nets / layers</th><td>${sess.nets ?? '—'} · ${(sess.copper_layers || []).join(', ') || '—'}</td></tr>
-        <tr><th>LED lock</th><td>prefixes: ${(state.snap?.config?.lock_ref_prefixes || []).join(', ') || '—'}</td></tr>
-        <tr><th>PCB</th><td style="word-break:break-all;font-size:0.7rem">${esc(state.snap?.pcb_path || '—')}</td></tr>
+        <tr><th>Parts</th><td>${sess.components ?? '—'} · <strong>${sess.movable ?? 0}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
+        <tr><th>Nets</th><td>${sess.nets ?? '—'} · ${(sess.copper_layers || []).slice(0, 4).join(', ') || '—'}</td></tr>
+        <tr><th>File</th><td style="word-break:break-all;font-size:0.7rem">${esc((state.snap?.pcb_path || '—').split('/').slice(-2).join('/') || '—')}</td></tr>
       </table>
       <details style="margin-top:0.65rem">
-        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced YAML</summary>
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced · YAML config</summary>
         <textarea id="yamlEditor" style="margin-top:0.35rem">${esc(state.snap?.config_text || '')}</textarea>
         <button type="button" class="btn" id="btnApplyYaml" style="margin-top:0.35rem">Apply YAML</button>
       </details>`;
@@ -1063,93 +1067,115 @@
 
   function panelPlace() {
     const cfg = state.snap?.config || {};
+    const movable = state.snap?.session?.movable ?? 0;
     return `
-      <div class="row2">
-        <div><label class="field">Candidates</label><input type="number" id="rtCand" min="1" max="16" value="${Math.min(cfg.num_candidates ?? 4, 8)}"/></div>
-        <div><label class="field">SA iterations</label><input type="number" id="rtSa" min="100" value="${Math.min(cfg.sa_iterations || 600, 1500)}"/></div>
-      </div>
+      <p class="hint">${movable > 0
+        ? `${movable} unlocked part(s) can move. LEDs/mechanicals stay fixed.`
+        : 'Nothing free to place on this board — skip to Route.'}</p>
       <div class="actions">
-        <button type="button" class="btn" data-job="score">1. Score</button>
-        <button type="button" class="btn primary" data-job="place">2. Place free</button>
+        <button type="button" class="btn" data-job="score">Score layout</button>
+        <button type="button" class="btn primary" data-job="place" ${movable > 0 ? '' : 'disabled'}>Place free parts</button>
       </div>
-      <p class="hint">On HALO-90, LEDs + mechanicals are locked — Place re-scores geometry with nothing free, or unlock passives in YAML first.</p>
       <details>
-        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Physics weights</summary>
-        <div id="weightBox" style="margin-top:0.35rem"></div>
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Options</summary>
+        <div class="row2" style="margin-top:0.35rem">
+          <div><label class="field">Candidates</label><input type="number" id="rtCand" min="1" max="16" value="${Math.min(cfg.num_candidates ?? 4, 8)}"/></div>
+          <div><label class="field">SA iters</label><input type="number" id="rtSa" min="100" value="${Math.min(cfg.sa_iterations || 600, 1500)}"/></div>
+        </div>
+        <div id="weightBox" style="margin-top:0.45rem"></div>
         <button type="button" class="btn" id="btnApplyWeights" style="margin-top:0.35rem">Apply weights</button>
       </details>`;
   }
 
   function panelRoute() {
     const nat = state.nativeInfo;
-    const natHint = nat?.available
-      ? `Native core <strong>on</strong>${nat.gpu?.available ? ` · GPU ${esc(nat.gpu.device_name || nat.gpu.backend || '')}` : ' · CPU'}`
-      : 'Native core off — pure Python path';
+    const natLine = nat?.available
+      ? `Native ${nat.gpu?.available ? 'GPU' : 'CPU'} ready`
+      : 'Python router';
     return `
-      <p class="hint"><strong>TopoR-style isotropic</strong> routing: any-angle copper (no H/V preferred dirs), multi-variant net-order search, rubberband geometry + via minimize. Live on the <strong>2D board</strong> — no 3D during route.</p>
-      <div class="sim-chip" style="margin:0 0 0.45rem">${natHint}</div>
+      <div class="sim-chip" style="margin:0 0 0.5rem" id="routeLiveBar">Idle — copper draws live on the board</div>
+      <div class="sim-chip" style="margin:0 0 0.55rem" id="routeQuality">No route yet</div>
+
+      <label class="field">Goal</label>
       <div class="row2">
-        <div><label class="field">Clearance mm</label><input type="number" id="rtClear" step="0.05" value="0.2"/></div>
-        <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.1" value="0.5"/></div>
-      </div>
-      <div class="row2">
-        <div><label class="field">Variants (auto if empty)</label><input type="number" id="rtVariants" min="1" max="4" placeholder="auto"/></div>
-        <div><label class="field">Style</label><input type="text" value="isotropic free-angle" disabled/></div>
+        <div><label class="field">Timeout (s)</label><input type="number" id="imTimeout" min="15" step="15" value="120"/></div>
+        <div><label class="field">Target grade</label>
+          <select id="imGrade"><option>A</option><option selected>B</option><option>C</option><option>D</option></select>
+        </div>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-job="pre_route">Pre-route check</button>
-        <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">▶ TopoR free-angle route</button>
+        <button type="button" class="btn good" id="btnImprove" style="flex:1">↻ Improve until goal</button>
       </div>
-      <div id="routeLiveBar" class="sim-chip" style="margin:0.45rem 0">Idle — start TopoR to see live copper on 2D</div>
-      <p class="muted" id="route2dHint" style="font-size:0.72rem;margin:0.3rem 0">Live 2D preview updates as nets complete.</p>
-      <div id="routeQuality" class="sim-chip" style="margin:0.5rem 0">Quality — run TopoR</div>
-      <div id="siMfgBox" class="sim-chip" style="margin:0.35rem 0;display:none"></div>
+      <p class="hint" style="margin:0.2rem 0 0.55rem">Keeps routing (and optionally re-placing) with a <strong>live grade</strong> until timeout or grade + clean DRC.</p>
       <div class="actions">
-        <button type="button" class="btn primary" id="btnApplyRoute">Apply to KiCad PCB</button>
-        <button type="button" class="btn good" id="btnGoSim">Next: 3D EMS sim →</button>
+        <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">Single TopoR pass</button>
+        <button type="button" class="btn" id="btnApplyRoute">Apply to PCB</button>
       </div>
-      <p class="muted" id="routeApplyStatus" style="font-size:0.72rem">After apply, open Simulate for 3D OpenEMS visualization.</p>
-      <h3 style="font-size:0.78rem;margin:0.65rem 0 0.25rem;color:var(--muted)">Why this via?</h3>
-      <div id="viaExplain" class="sim-chip" style="margin:0 0 0.45rem;font-size:0.72rem;max-height:120px;overflow:auto">Run route to see via explanations.</div>
-      <div id="netReportTable" style="margin-top:0.5rem;max-height:200px;overflow:auto"></div>`;
+      <p class="muted" id="routeApplyStatus" style="font-size:0.72rem;margin:0.25rem 0 0.4rem">${esc(natLine)}</p>
+
+      <details>
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced</summary>
+        <div class="row2" style="margin-top:0.35rem">
+          <div><label class="field">Clearance mm</label><input type="number" id="rtClear" step="0.05" value="0.2"/></div>
+          <div><label class="field">Grid mm</label><input type="number" id="rtGrid" step="0.05" value="0.25"/></div>
+        </div>
+        <div class="row2">
+          <div><label class="field">Variants</label><input type="number" id="rtVariants" min="1" max="4" placeholder="auto"/></div>
+          <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:0.25rem;padding-bottom:0.1rem">
+            <label class="field" style="margin:0"><input type="checkbox" id="imPlace"/> Reseed placement</label>
+            <label class="field" style="margin:0"><input type="checkbox" id="imDrc" checked/> Require DRC clean</label>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn ghost" data-job="pre_route">Pre-route check</button>
+        </div>
+        <div id="siMfgBox" class="sim-chip" style="margin:0.35rem 0;display:none"></div>
+        <div id="viaExplain" class="sim-chip" style="margin:0.35rem 0;font-size:0.72rem;max-height:100px;overflow:auto">Via reasons appear after routing.</div>
+        <div id="netReportTable" style="margin-top:0.35rem;max-height:160px;overflow:auto"></div>
+      </details>
+      <span id="improveLiveBar" style="display:none"></span>
+      <span id="route2dHint" style="display:none"></span>`;
   }
 
   function panelSim() {
-    const glb = state.snap?.session?.glb || state.viewer?.assets?.glb || '—';
+    const glb = state.snap?.session?.glb || state.viewer?.assets?.glb || '';
     return `
-      <p class="hint" style="margin-top:0">Post-route <strong>3D EMS visualization</strong>. KiCad <strong>GLB</strong> (STEP models + mask/silk/copper)
-        plus OpenEMS EMI volumes for field / enclosure checks.</p>
       <div class="actions">
-        <button type="button" class="btn primary" data-job="export_board_3d">Rebuild board 3D (GLB)</button>
-        <button type="button" class="btn" data-job="export_step">Full STEP</button>
-      </div>
-      <p class="muted" style="font-size:0.75rem">Asset: ${esc(glb)}</p>
-      <div class="actions">
-        <button type="button" class="btn" data-job="score">Physics score</button>
-        <button type="button" class="btn" data-job="spice">Spice / PI</button>
+        <button type="button" class="btn primary" data-job="export_board_3d">Rebuild 3D model</button>
         <button type="button" class="btn good" data-job="openems">OpenEMS + EMI</button>
       </div>
-      <div class="actions">
-        <button type="button" class="btn ghost" data-job="export_dsn">DSN</button>
-        <button type="button" class="btn ghost" data-job="compare_routes">Compare</button>
-      </div>
-      <p class="hint">Toggle <strong>EMI volumes</strong> in the 3D toolbar after OpenEMS export. Route overlay shows applied copper in 3D.</p>
-      <ul class="notes" id="simNotes"><li>Run OpenEMS or rebuild 3D…</li></ul>`;
+      <p class="muted" style="font-size:0.75rem;margin:0.35rem 0">
+        ${glb ? `Model: ${esc(String(glb).split('/').pop())}` : 'No 3D model yet — rebuild after applying a route.'}
+      </p>
+      <details>
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">More tools</summary>
+        <div class="actions" style="margin-top:0.35rem">
+          <button type="button" class="btn" data-job="score">Physics score</button>
+          <button type="button" class="btn" data-job="spice">Spice / PI</button>
+          <button type="button" class="btn ghost" data-job="export_step">STEP</button>
+          <button type="button" class="btn ghost" data-job="export_dsn">DSN</button>
+          <button type="button" class="btn ghost" data-job="compare_routes">Compare</button>
+        </div>
+      </details>
+      <ul class="notes" id="simNotes"><li>Use the toolbar to show copper, vias, EMI.</li></ul>`;
   }
 
   function panelValidate() {
     return `
       <div class="actions">
-        <button type="button" class="btn primary" data-job="tests">Unit tests</button>
-        <button type="button" class="btn" data-job="ci_regression">CI regression</button>
         <button type="button" class="btn warn" data-job="drc">KiCad DRC</button>
+        <button type="button" class="btn primary" data-job="tests">Unit tests</button>
       </div>
       <div class="actions">
         <button type="button" class="btn good" data-job="pipeline">Full pipeline</button>
+        <button type="button" class="btn ghost" data-job="ci_regression">CI regression</button>
       </div>
-      <label class="field">pytest -k</label>
-      <input id="testK" placeholder="router or halo"/>
-      <button type="button" class="btn" id="btnTestsK" style="margin-top:0.35rem">Filtered tests</button>`;
+      <details style="margin-top:0.45rem">
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Filtered tests</summary>
+        <label class="field">pytest -k</label>
+        <input id="testK" placeholder="router or halo"/>
+        <button type="button" class="btn" id="btnTestsK" style="margin-top:0.35rem">Run filtered</button>
+      </details>`;
   }
 
   function bindStepPanel() {
@@ -1184,6 +1210,8 @@
     $$('[data-job]').forEach(btn => {
       btn.addEventListener('click', () => startJob(btn.dataset.job).catch(e => alert(e.message)));
     });
+    $('#btnImprove')?.addEventListener('click', () => startJob('improve').catch(e => alert(e.message)));
+    $('#btnGoRoute')?.addEventListener('click', () => setStep(2));
     $('#btnTestsK')?.addEventListener('click', () => startJob('tests', { k: $('#testK')?.value }).catch(e => alert(e.message)));
     const box = $('#weightBox');
     if (box) {
@@ -1275,23 +1303,44 @@
 
   function updateMetrics() {
     const score = state.snap?.last_score?.score || state.viewer?.physics?.score || {};
-    const total = score.total ?? state.snap?.last_score?.score_total;
-    $('#scoreTotal').textContent = total == null ? '—' : fmt(total, 1);
+    const physTotal = score.total ?? state.snap?.last_score?.score_total;
     const sess = state.snap?.session || state.viewer?.session || {};
-    $('#scoreMeta').textContent =
-      `${state.snap?.preset || state.viewer?.preset || '—'} · ${sess.movable ?? '—'} free / ${sess.locked ?? '—'} locked`;
-    $('#mIr').textContent = `IR ${fmt(score.ir_drop, 1)} · L ${fmt(score.loop_inductance, 1)}`;
-    $('#mSim').textContent = `${fmt(score.spice_score, 1)} · ${fmt(score.openems_score, 1)}`;
     const routes = state.snap?.routes || state.viewer?.routes || {};
     const prefer = routes.topor || routes.guide || Object.values(routes)[0];
+    const liveImp = state.snap?.last_score?.improve_live;
+    const bestImp = liveImp?.best || state.snap?.last_score?.improve?.best || liveImp;
+    const q = prefer?.quality || {};
+    const grade = bestImp?.grade || q.grade;
+    const rscore = bestImp?.score ?? q.score;
+    const viol = bestImp?.violations ?? prefer?.clearance_violations ?? q.drc?.violations;
+
+    // Prefer route grade when we have copper; otherwise physics cost
+    if (grade != null || rscore != null) {
+      if ($('#scoreLabel')) $('#scoreLabel').textContent = 'Route grade';
+      $('#scoreTotal').textContent = grade != null ? `${grade}${rscore != null ? ' · ' + fmt(rscore, 0) : ''}` : fmt(rscore, 0);
+      const bits = [];
+      if (viol != null) bits.push(`${viol} DRC`);
+      if (prefer?.via_count != null) bits.push(`${prefer.via_count} vias`);
+      if (bestImp?.strategy) bits.push(bestImp.strategy);
+      $('#scoreMeta').textContent = bits.length
+        ? bits.join(' · ')
+        : (q.summary || 'Route quality');
+    } else {
+      if ($('#scoreLabel')) $('#scoreLabel').textContent = 'Physics cost';
+      $('#scoreTotal').textContent = physTotal == null ? '—' : fmt(physTotal, 1);
+      $('#scoreMeta').textContent =
+        `${state.snap?.preset || state.viewer?.preset || '—'} · ${sess.movable ?? '—'} free / ${sess.locked ?? '—'} locked`;
+    }
+    $('#mIr').textContent = physTotal != null ? fmt(physTotal, 1) : `IR ${fmt(score.ir_drop, 1)}`;
+    $('#mSim').textContent = `${fmt(score.spice_score, 1)} · ${fmt(score.openems_score, 1)}`;
     if (prefer) {
       $('#mLen').textContent = `${fmt(prefer.total_length_mm)} mm`;
-      $('#mVia').textContent = `${prefer.via_count ?? 0} · ${prefer.clearance_violations ?? 0}`;
+      $('#mVia').textContent = `${prefer.via_count ?? 0} · ${viol ?? prefer.clearance_violations ?? 0}`;
     } else {
       $('#mLen').textContent = '—';
       $('#mVia').textContent = '—';
     }
-    const fp = scoreFingerprint(score);
+    const fp = scoreFingerprint(score) + '|' + (grade || '') + '|' + (rscore || '') + '|' + (viol ?? '');
     if (fp && fp !== state.chartKey) {
       state.chartKey = fp;
       drawScoreChart(score);
@@ -1356,51 +1405,57 @@
     state.selectedRoute = routes.topor ? 'topor' : (Object.keys(routes)[0] || 'topor');
     const prefer = routes.topor || routes[state.selectedRoute] || Object.values(routes)[0];
 
+    const jobs = state.snap?.jobs || [];
+    const running = jobs.find(j =>
+      (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide'
+        || j.type === 'improve' || j.type === 'continuous_improve')
+      && (j.status === 'running' || j.status === 'pending'));
+    const liveImp = state.snap?.last_score?.improve_live;
+    const bestImp = liveImp?.best || state.snap?.last_score?.improve?.best || liveImp;
+
     const live = $('#routeLiveBar');
     if (live) {
-      const jobs = state.snap?.jobs || [];
-      const running = jobs.find(j =>
-        (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide')
-        && (j.status === 'running' || j.status === 'pending'));
       if (running) {
         const segs = prefer?.segments?.length ?? 0;
-        live.innerHTML = `<strong>Routing…</strong> ${esc(running.stage || '')} · `
-          + `${fmt(running.progress, 0)}% · ${segs} segs · ${fmt(prefer?.total_length_mm, 1)} mm`;
+        const isImp = running.type === 'improve' || running.type === 'continuous_improve';
+        live.innerHTML = `<strong>${isImp ? 'Improving…' : 'Routing…'}</strong> ${esc(running.stage || '')} · `
+          + `${fmt(running.progress, 0)}% · ${segs} segs`
+          + (bestImp?.grade != null
+            ? ` · best <strong>${esc(bestImp.grade)}</strong>/${esc(bestImp.score)}`
+            : '');
       } else if (prefer?.segments?.length) {
-        live.innerHTML = `<strong>TopoR ready</strong> · ${prefer.segments.length} segs · `
+        live.innerHTML = `<strong>Ready</strong> · ${prefer.segments.length} segs · `
           + `${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias`;
       } else {
-        live.textContent = 'Idle — start TopoR to see live copper';
+        live.textContent = 'Idle — Improve or Single pass draws copper live';
       }
     }
 
     const qEl = $('#routeQuality');
     if (qEl) {
-      const q = prefer?.quality;
-      if (q?.summary) {
-        qEl.innerHTML = `<strong>TopoR</strong> · Grade ${esc(q.grade)} · ${esc(q.summary)}`;
-      } else if (prefer) {
-        qEl.textContent = `TopoR: ${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} viol`;
+      const q = prefer?.quality || {};
+      const grade = bestImp?.grade || q.grade;
+      const rscore = bestImp?.score ?? q.score;
+      const viol = bestImp?.violations ?? prefer?.clearance_violations ?? q.drc?.violations;
+      if (grade != null || q.summary) {
+        qEl.innerHTML = `<strong>Grade ${esc(grade ?? '—')}</strong>`
+          + (rscore != null ? ` · ${esc(rscore)}/100` : '')
+          + (viol != null ? ` · ${esc(viol)} DRC` : '')
+          + (q.summary && !grade ? ` · ${esc(q.summary)}` : '');
+      } else if (prefer?.segments?.length) {
+        qEl.textContent = `${fmt(prefer.total_length_mm, 1)} mm · ${prefer.via_count ?? 0} vias · ${prefer.clearance_violations ?? 0} DRC`;
+      } else {
+        qEl.textContent = 'No route yet';
       }
     }
     fillSiMfg(prefer);
     fillViaExplain(prefer);
     fillNetReports(prefer);
-    // Routing UX is 2D-only — do not rebuild 3D while routing
     updateRouteSelect();
     drawRoute2d();
-    // If user is already on Simulate, refresh 3D overlay once routes update
     if (state.vizMode === '3d' && three.root) {
       state.sceneKey = '';
       try { rebuildScene(); } catch (_) {}
-    }
-    const hint = $('#route2dHint');
-    if (hint) {
-      const pcb = state.snap?.routed_pcb || state.snap?.session?.routed_pcb;
-      hint.textContent = prefer?.segments?.length
-        ? `TopoR free-angle · Apply writes copper to KiCad · then Simulate for 3D EMS`
-          + (pcb ? ` · last PCB: ${pcb}` : '')
-        : 'Press TopoR free-angle route — 2D canvas updates as each net completes.';
     }
   }
 
@@ -2156,6 +2211,16 @@
         params.num_variants = Math.max(1, Math.min(4, parseInt(nv, 10) || 1));
       }
     }
+    if (type === 'improve' || type === 'continuous_improve') {
+      type = 'improve';
+      params.timeout_s = parseFloat($('#imTimeout')?.value || '120');
+      params.target_grade = ($('#imGrade')?.value || 'C').toUpperCase();
+      params.do_place = !!$('#imPlace')?.checked;
+      params.require_drc_clean = !!$('#imDrc')?.checked;
+      params.require_complete = true;
+      params.clearance_mm = parseFloat($('#rtClear')?.value || '0.2');
+      params.grid_mm = parseFloat($('#rtGrid')?.value || '0.5');
+    }
     if (type === 'tests' && params.k) {
       params.patterns = [params.k];
       delete params.k;
@@ -2171,7 +2236,8 @@
     try {
       const jobsPeek = state.snap?.jobs || [];
       const routingLive = jobsPeek.some(j =>
-        (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide')
+        (j.type === 'route_topor' || j.type === 'route_clearance' || j.type === 'route_guide'
+          || j.type === 'improve' || j.type === 'continuous_improve')
         && (j.status === 'running' || j.status === 'pending'));
       if (routingLive) forceViewer = true;
       const prevScore = state.chartKey;

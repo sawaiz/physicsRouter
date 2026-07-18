@@ -63,6 +63,25 @@ def test_attach_router_drc_sets_clearance_violations():
     assert any("router_drc:" in n for n in r.notes)
 
 
+def test_purge_shorting_copper_removes_cross():
+    """Crossing foreign nets: purge drops lower-priority copper (open > short)."""
+    from physics_router.router import purge_shorting_copper
+
+    r = RouteResult(
+        segments=[
+            RouteSegment(-5, 0, 5, 0, "F.Cu", "HIGH", 0.3),
+            RouteSegment(0, -5, 0, 5, "F.Cu", "LOW", 0.3),
+        ],
+        net_reports=[],
+    )
+    # Without config, priorities are equal — purge still removes one side of short
+    out = purge_shorting_copper(r, board=BoardModel(width_mm=20, height_mm=20, copper_layers=["F.Cu"], components={}, nets={"HIGH": [], "LOW": []}), clearance_mm=0.2)
+    rep = native_drc_check(out, clearance_mm=0.2)
+    assert rep["shorts"] == 0
+    assert len(out.segments) < len(r.segments)
+    assert any("purge_illegal" in n for n in out.notes)
+
+
 def test_outline_outside_counts_as_drc():
     r = 12.0
     n = 32
