@@ -98,7 +98,7 @@ YAML / KiCad labels  →  multi-objective place (SA, unlocked parts)
 2. Official **KiCad DRC** is the legality oracle after apply/autoroute.
 3. **Routing UX is 2D** (KiCad-style layers). **3D is post-route** on the Simulate step for EMS/OpenEMS.
 4. Routing is **isotropic free-angle** (TopoR-style), not Specctra preferred H/V.
-5. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may apply 180° for display).
+5. 2D preview, 3D GLB, and routes share **KiCad millimetre XY** (view may Y-flip for display: hook top, switch left).
 6. Native `pr_native` accelerates hot paths when built; Python remains clearance authority for legal copper.
 
 ---
@@ -121,21 +121,24 @@ Assets: `viewer/` (UI), `viewer/assets/*.glb` (regenerated locally; large files 
 
 ---
 
-## Native C++ core (optional)
+## Native C++ core (optional, v1.1 isotropic)
 
 | Path | Role |
 |------|------|
-| `native/` | Grid A\*, multi-net route, batch score |
+| `native/` | Isotropic free-angle, multi-site vias + reasons, rubberband, via minimize, batch score |
 | OpenCL | GPU batch clearance (e.g. Apple M3) |
-| OpenMP | Parallel score batches when the toolchain provides it |
+| OpenMP | Parallel score batches when available |
 | `scripts/build_native.sh` | CMake + pybind11 → `pr_native*.so` |
 | `./native/build/pr_bench` | Micro-benchmark |
 
 ```bash
 bash scripts/build_native.sh
-PYTHONPATH=native/build:src python -c "from physics_router.native_bridge import info; print(info())"
+export PYTHONPATH=native/build:src
+python -c "from physics_router.native_bridge import info; print(info())"
+# → 1.1.0-native-isotropic · GPU when OpenCL present
 ```
 
+Details: [native/README.md](native/README.md). Python still owns K-homotopy / CBS / planner / SI-MFG; native accelerates geometry and can be polished in Python.
 ---
 
 ## Architecture (modules)

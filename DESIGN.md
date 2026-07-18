@@ -60,9 +60,9 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 ### 3. Shared millimetre XY for 2D, 3D, and routes
 
-**Decision:** Board coordinates stay KiCad mm. GLB is scaled m→mm when needed; display may apply a **view-only 180°** so HALO matches KiCad (hook at top). The board is flattened so its thin axis is world **+Z** (parallel to the ground grid).
+**Decision:** Board coordinates stay KiCad mm. GLB is scaled m→mm when needed; the **view** applies a **Y-only flip** `(x, y) → (x, −y)` so HALO shows the hook (H1 at y=−13) at the **top** and the switch (S1 at x=−4.25) on the **left**, matching the PCB file. Do **not** use a 180° view rotation — that mirrors left/right. Footprint poses always come from `.kicad_pcb`; YAML `fixed` only marks lock flags. The board is flattened so its thin axis is world **+Z** (parallel to the ground grid).
 
-**Why:** Re-centering the GLB without matching route space caused overlays to drift; edge-on GLB exports made the PCB look vertical.
+**Why:** Re-centering the GLB without matching route space caused overlays to drift; edge-on GLB exports made the PCB look vertical; a full 180° view put S1 on the wrong side of U1.
 
 ### 3b. 2D for routing; 3D only after route for EMS
 
@@ -78,10 +78,9 @@ Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on de
 
 ### 5. Hybrid Python + optional native core
 
-**Decision:** Keep CLI/server/UI in Python; accelerate routing/scoring in C++ behind `native_bridge`.
+**Decision:** Keep CLI/server/UI and the full topology-first pipeline in Python; accelerate geometric routing in C++ (`pr_native` v1.1: isotropic detours, multi-site vias + reasons, post-rubberband, via minimize) behind `native_bridge`, with optional Python polish (elastic + SI/MFG).
 
-**Why:** Full rewrite would delay product features. Hot path (A\* + grids) dominates wall time; KiCad I/O does not.
-
+**Why:** Full rewrite would delay product features. Hot path (A\* + grids) dominates wall time; KiCad I/O and explainable/CBS/planner logic stay in Python.
 ### 6. Multi-net IC keepouts are not solid discs
 
 **Decision:** Only single-net footprints get a pad keepout disc. Multi-pin ICs do not place a net-agnostic block at the origin.
