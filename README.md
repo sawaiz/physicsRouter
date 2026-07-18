@@ -44,11 +44,12 @@ Implemented in `src/physics_router/regeometry.py`, wired into `topor_style_route
 
 #### Routing process (HALO-90 renders)
 
-Regenerate with:
+Regenerate figures + DRC report:
 
 ```bash
 python scripts/render_routing_process.py --halo
-# → docs/images/routing_process/
+# full TopoR + always-on DRC map also written by the eval block in docs:
+# docs/images/routing_process/{1..7}_*.png , drc_report.json
 ```
 
 | Stage | Figure |
@@ -58,10 +59,50 @@ python scripts/render_routing_process.py --halo
 | Clearance-aware connectivity (raw) | ![raw](docs/images/routing_process/3_clearance_raw.png) |
 | Post-connect re-geometry (bends + arcs) | ![regeo](docs/images/routing_process/4_regeometry.png) |
 | Copper by layer | ![layers](docs/images/routing_process/5_by_layer.png) |
+| **Always-on router DRC map** | ![drc](docs/images/routing_process/7_drc_map.png) |
 
 **Pipeline strip** (placement → guide → clearance → re-geometry):
 
 ![TopoR-style routing process](docs/images/routing_process/6_process_strip.png)
+
+#### Latest HALO-90 route evaluation (always-on DRC)
+
+Snapshot from a full `topor_style_route` on `third_party/halo-90` (planner + 2 variants, grid 0.5 mm, clearance 0.15 mm KiCad floor, re-geometry + elastic, native ExactMap). Source: [`docs/images/routing_process/drc_report.json`](docs/images/routing_process/drc_report.json).
+
+| Metric | HALO-90 | Synthetic demo |
+|--------|---------|----------------|
+| Completion | **23/23 nets** (0 unrouted) | 7/7 nets |
+| Segments / length | 162 · 746.5 mm | 29 · 154.7 mm |
+| Vias | 22 | 6 |
+| Grade / score | **D · 42.4** | **A · 95.2** |
+| **Router DRC total** | **38** | **0** |
+| → shorts (copper touch) | 25 | 0 |
+| → spacing (clearance) | 13 | 0 |
+| → **outside Edge.Cuts** | **0** | 0 |
+| Max copper radius | 12.26 mm (inside teardrop) | n/a |
+| Bends / multi-bend nets | 156 · 14 nets | 20 · 6 nets |
+| Wall time | ~59 s | ~0.8 s |
+
+**What the images show**
+
+1. **Outline keepout works** — DRC reports **0 outline escapes**; copper stays inside the teardrop (hook/H1 included). The earlier AABB-only bug (45 endpoints past 12 mm) is fixed.
+2. **Routing is free-angle and multi-layer** — CPX nets form ring/spoke geometry; F.Cu / In\* / B.Cu color in the DRC map; vias (gold) at layer transitions.
+3. **Not DRC-clean yet on dense charlieplex** — most violations are **CPX-n × CPX-m** crossings or near-misses near the LED ring and U1 fanout (`dist=0` shorts). Synthetic boards pass DRC fully (grade A).
+4. **Grade D is intentional honesty** — score is driven by `clearance_violations` from the built-in DRC, not a fake “100% routed = pass.” KiCad Validate would also flag the CPX spacing/shorts.
+5. **SI/MFG** (same run): ~11 mm parallel-run proxy, 14 acute angles, 22 via-near-pad hits — further polish targets, not outline leaks.
+
+**DRC samples (HALO)** — foreign-net contact on F.Cu / In2.Cu:
+
+| Kind | Nets | Layer | Dist / need (mm) |
+|------|------|-------|------------------|
+| short | CPX-0 × CPX-8 | F.Cu | 0 / 0.28 |
+| short | CPX-2 × CPX-7 | F.Cu | 0 / 0.28 |
+| short | CPX-4 × CPX-9 | In2.Cu | 0 / 0.28 |
+| spacing | CPX-5 × CPX-7 | In2.Cu | 0.16 / 0.28 |
+
+**DRC map** (red × short, orange × spacing, gold ● via) — regenerate with the process script + eval:
+
+![HALO-90 router DRC map](docs/images/routing_process/7_drc_map.png)
 
 ```bash
 # CLI — isotropic TopoR pipeline (auto multi-variant by net count)
