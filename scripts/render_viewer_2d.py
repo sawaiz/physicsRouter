@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from physics_router.config_io import load_config
-from physics_router.kicad_io import load_board_from_kicad_pcb
+from physics_router.kicad_io import load_board_from_kicad_pcb, local_to_board
 from physics_router.viewer_export import board_to_viewer_dict
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,12 +102,8 @@ class Canvas:
     def board_to_local_img(
         self, lx: float, ly: float, fx: float, fy: float, frot_deg: float
     ) -> tuple[float, float]:
-        """Footprint local mm (+Y up) → image pixels, after footprint place+rot and view."""
-        th = math.radians(frot_deg)
-        # KiCad: local → board (CCW)
-        cos_t, sin_t = math.cos(th), math.sin(th)
-        bx = fx + lx * cos_t - ly * sin_t
-        by = fy + lx * sin_t + ly * cos_t
+        """Footprint local mm → image pixels (pcbnew-accurate place + view)."""
+        bx, by = local_to_board(fx, fy, frot_deg, lx, ly)
         return self.tx(bx, by)
 
 
@@ -120,12 +116,9 @@ def collect_bounds(board_dict: dict) -> list[tuple[float, float]]:
         for g in c.get("graphics") or []:
             if g.get("kind") == "pad":
                 for dx, dy in ((g["w"] / 2, g["h"] / 2), (-g["w"] / 2, -g["h"] / 2)):
-                    th = math.radians(c["rot"] + g.get("rot", 0))
                     lx = g["x"] + dx
                     ly = g["y"] + dy
-                    cos_t, sin_t = math.cos(math.radians(c["rot"])), math.sin(math.radians(c["rot"]))
-                    bx = c["x"] + lx * cos_t - ly * sin_t
-                    by = c["y"] + lx * sin_t + ly * cos_t
+                    bx, by = local_to_board(c["x"], c["y"], c["rot"], lx, ly)
                     pts.append(view_xy(bx, by))
     for g in board_dict.get("outline") or []:
         if g.get("kind") == "circle":
@@ -225,14 +218,11 @@ def draw_footprint(cv: Canvas, comp: dict) -> None:
         shape = (g.get("shape") or "rect").lower()
         if large:
             col = hex_rgba("F.Cu", 50)
-        thr = math.radians(pr)
+        # Pad shape rot in footprint local space — same −angle convention as place
+        thr = math.radians(-float(pr or 0))
         cr, sr = math.cos(thr), math.sin(thr)
         if "circle" in shape or (shape == "oval" and abs(w - h) < 0.05):
-            thf = math.radians(frot)
-            cf, sf = math.cos(thf), math.sin(thf)
-            bcx = fx + px * cf - py * sf
-            bcy = fy + px * sf + py * cf
-            c = cv.tx(bcx, bcy)
+            c = cv.board_to_local_img(px, py, fx, fy, frot)
             r = 0.5 * max(w, h) * cv.scale
             if large:
                 d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], outline=col, width=2)

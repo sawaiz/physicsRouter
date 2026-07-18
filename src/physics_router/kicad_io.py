@@ -109,6 +109,27 @@ def _as_float(x: Any, default: float = 0.0) -> float:
         return default
 
 
+def local_to_board(
+    fx: float,
+    fy: float,
+    frot_deg: float,
+    lx: float,
+    ly: float,
+) -> tuple[float, float]:
+    """Map footprint-local mm → board mm (matches pcbnew pad absolute positions).
+
+    KiCad stores ``(at x y rot)`` with *rot* as the footprint orientation.  When
+    treating board XY as mathematical Y-up, the correct local→board map uses
+    **−rot** with the standard CCW matrix (equivalent to CW by *rot*).  Using
+    +rot swaps pads on ±90° parts (LEDs, MK1, S1) — looks “180° out”.
+    """
+    import math
+
+    th = math.radians(-float(frot_deg or 0.0))
+    c, s = math.cos(th), math.sin(th)
+    return (fx + lx * c - ly * s, fy + lx * s + ly * c)
+
+
 def load_board_from_kicad_pcb(
     path: str | Path,
     config: PlacementConfig | None = None,
