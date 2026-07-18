@@ -857,9 +857,8 @@ def clearance_aware_route(
     as clearance_violation — causes overlaps). Default False for clearance mode
     (leave edge unrouted instead of illegal copper); True only for guide_only.
 
-    ``style``: ``isotropic`` (default) — any-angle paths, no preferred H/V.
-    ``ring`` / ``halo`` — concentric track + radial (charlieplex LED rings).
-    ``auto`` / ``hybrid`` — multi-strategy hybrid (ring + power + critical + general).
+    ``style``: ``isotropic`` (default) — any-angle free-angle topological paths.
+    ``auto`` / ``hybrid`` — multi-strategy free-angle (matrix/power/critical/general).
     ``nets_filter``: if set, only these nets are routed (hybrid buckets).
     ``seed_result``: prior copper painted as obstacles (other strategies already done).
     ``design_rules``: optional DesignRules for per-net width / clearance floors.
@@ -877,7 +876,7 @@ def clearance_aware_route(
 
     style_l = (style or "isotropic").lower()
 
-    # Hybrid multi-strategy (default for auto): region/net classifier
+    # Hybrid multi-strategy free-angle (matrix / power / critical / general)
     if (
         not guide_only
         and not skip_hybrid
@@ -898,33 +897,15 @@ def clearance_aware_route(
         except Exception:
             pass
 
-    # Explicit ring-only path
-    if not guide_only and style_l in ("ring", "halo", "halo_ring"):
-        try:
-            from physics_router.halo_ring import detect_led_ring, halo_ring_route
-
-            if detect_led_ring(board) is not None:
-                return halo_ring_route(
-                    board,
-                    config,
-                    clearance_mm=float(clearance_mm),
-                    progress_cb=progress_cb,
-                )
-        except Exception:
-            pass
-
     # Native C++ isotropic core (v1.1): free-angle detours, multi-site vias,
     # post-rubberband, via minimize. Use when prefer_native and no live progress.
     # Soft-fallback native is OK for guide-like speed; for legal clearance routes
     # native now keeps soft_fallback=False by default.
     # Skip native when seeding prior copper or filtering nets (Python path owns paint).
-    if (
-        prefer_native
-        and not guide_only
-        and progress_cb is None
-        and seed_result is None
-        and nets_filter is None
-    ):
+    # C++ core: free-angle geometry search (including hybrid buckets + seed copper).
+    # progress_cb is intentionally ignored for the native hot path so UI progress
+    # does not force the slow pure-Python A* (report progress after return).
+    if prefer_native and not guide_only:
         try:
             from physics_router.native_bridge import (
                 available,
@@ -933,6 +914,14 @@ def clearance_aware_route(
             )
 
             if available():
+                order = net_order
+                if nets_filter is not None:
+                    # Restrict native to the requested subset (keep caller order)
+                    filt = set(nets_filter)
+                    if order:
+                        order = [n for n in order if n in filt]
+                    else:
+                        order = [n for n in board.nets if n in filt]
                 raw = route_board_native(
                     board,
                     config,
@@ -942,18 +931,36 @@ def clearance_aware_route(
                     allow_vias=bool(allow_vias),
                     use_gpu=True,
                     isotropic=True,
-                    net_order=net_order,
+                    net_order=order,
+                    exclusive_nets=nets_filter is not None,
+                    seed_segments=list(seed_result.segments) if seed_result else None,
                 )
                 if raw is not None:
                     if soft_fallback:
                         return _route_result_from_dict(raw)
-                    # Legal path: light Python polish (elastic + SI/MFG)
+                    # Legal path: light Python polish (elastic + SI/MFG) — not geometry search
                     try:
                         result = polish_native_with_python(
                             board, config, raw, clearance_mm=float(clearance_mm)
                         )
                     except Exception:
                         result = _route_result_from_dict(raw)
+                    # Drop nets outside filter if native still painted extras
+                    if nets_filter is not None:
+                        keep = set(nets_filter)
+                        result.segments = [s for s in result.segments if s.net in keep]
+                        result.vias = [v for v in result.vias if v.net in keep]
+                        result.via_count = len(result.vias)
+                        result.net_reports = [
+                            r for r in result.net_reports if r.net in keep
+                        ]
+                        result.unrouted_nets = [
+                            u for u in result.unrouted_nets if u in keep
+                        ]
+                        result.total_length_mm = sum(
+                            ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
+                            for s in result.segments
+                        )
                     # Same post-pass as Python path: rip-up/repair + honest DRC
                     result = repair_drc_conflicts(
                         result,
@@ -963,14 +970,26 @@ def clearance_aware_route(
                         grid_mm=grid,
                         layers=layers,
                         allow_vias=allow_vias,
-                        max_rounds=4,
+                        max_rounds=3,
                     )
                     result = purge_shorting_copper(
                         result, board, config, clearance_mm=clearance_mm
                     )
                     attach_router_drc(result, clearance_mm=clearance_mm, board=board)
                     result.compute_quality()
+                    result.notes.append("backend: native_cpp (geometry search)")
                     result.notes.append(result.quality.get("summary", ""))
+                    if progress_cb:
+                        try:
+                            progress_cb(
+                                1,
+                                1,
+                                "native",
+                                "done",
+                                {"score": (result.quality or {}).get("score")},
+                            )
+                        except Exception:
+                            pass
                     return result
         except Exception:
             pass
@@ -1979,6 +1998,9 @@ def _route_point_to_point(
         return True
 
     # Prefer K-homotopy same-layer paths when k_homotopy > 1 (must still pass DRC paint)
+    # Cap K on dense nets for speed
+    if k_homotopy > 1 and isinstance(k_homotopy, int) and k_homotopy > 2:
+        k_homotopy = 2
     if k_homotopy > 1:
         try:
             from physics_router.homotopy import k_homotopy_paths, pick_best_homotopy

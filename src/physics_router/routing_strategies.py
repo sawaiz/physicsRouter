@@ -332,14 +332,14 @@ def topor_style_route(
         r.notes.append("topor_pipeline: guide_only (topology sketch, no clearance)")
         return r
 
-    # Hybrid multi-strategy: ring CPX + power + critical + general (shared DRC paint)
+    # Hybrid multi-strategy free-angle when board has mixed net classes
     try:
         from physics_router.hybrid_route import classify_board, hybrid_route
 
         plan = classify_board(board, config, rules)
-        # Hybrid when LED ring present (charlieplex + power + core free-angle)
-        if plan.has_ring:
-            strats = sorted({a.strategy for a in plan.assignments})
+        strats = {a.strategy for a in plan.assignments}
+        # Use hybrid when matrix buses or multiple strategy classes exist
+        if "matrix" in strats or len(strats) >= 3:
             cl0 = clearance_mm if clearance_mm is not None else rules.constraints.min_clearance_mm
             r = hybrid_route(
                 board,
@@ -349,8 +349,9 @@ def topor_style_route(
                 progress_cb=progress_cb,
                 plan=plan,
             )
-            r.notes.append(f"topor_pipeline: hybrid primary strategies={strats}")
-            # Keep topor markers so UI/tests recognize a full pipeline result
+            r.notes.append(
+                f"topor_pipeline: hybrid free-angle strategies={sorted(strats)}"
+            )
             r.quality = {
                 **(r.quality or {}),
                 "pipeline": "topor_style_hybrid",
@@ -459,8 +460,9 @@ def topor_style_route(
                 allow_vias=bool(spec["allow_vias"]),
                 guide_only=False,
                 soft_fallback=False,
-                prefer_native=False,
-                progress_cb=cb,
+                # C++ core for geometry search; phase progress stays at variant level
+                prefer_native=True,
+                progress_cb=None,
                 net_order=list(spec["net_order"]),
                 style="isotropic",
                 congestion=cong,
@@ -468,6 +470,17 @@ def topor_style_route(
                 design_rules=rules,
                 skip_hybrid=True,
             )
+            if cb and progress_cb:
+                try:
+                    progress_cb(
+                        vi,
+                        max(1, len(variant_specs)),
+                        label,
+                        "variant_done",
+                        {"variant": label, "score": (raw.quality or {}).get("score")},
+                    )
+                except Exception:
+                    pass
             polished = _apply_drc_geometry(raw, board, config, rules, cl)
             polished.notes.append(f"topor_variant: {label}")
             cong.clear_present()

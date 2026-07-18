@@ -51,11 +51,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("isotropic", &pr::RouteConfig::isotropic)
       .def_readwrite("post_rubberband", &pr::RouteConfig::post_rubberband)
       .def_readwrite("via_minimize", &pr::RouteConfig::via_minimize)
-      .def_readwrite("threads", &pr::RouteConfig::threads)
-      .def_readwrite("ring_mode", &pr::RouteConfig::ring_mode)
-      .def_readwrite("ring_cx", &pr::RouteConfig::ring_cx)
-      .def_readwrite("ring_cy", &pr::RouteConfig::ring_cy)
-      .def_readwrite("ring_track_r", &pr::RouteConfig::ring_track_r);
+      .def_readwrite("threads", &pr::RouteConfig::threads);
 
   py::class_<pr::Segment>(m, "Segment")
       .def_readonly("x1", &pr::Segment::x1)

@@ -550,23 +550,43 @@ class AppState:
         from physics_router.routing_strategies import multilayer_route, topor_style_route
 
         p = job.params
-        clearance = float(p.get("clearance_mm", 0.2))
-        # Fine free-angle grid (0.1 mm); vias kept for connectivity over via-min
-        grid = float(p.get("grid_mm", 0.1))
-        num_variants = p.get("num_variants")
-        if num_variants is not None:
-            num_variants = int(num_variants)
-        self.set_progress(job, 3, "TopoR isotropic free-angle")
-        self.log(
-            job,
-            f"TopoR pipeline: multi-bend free-angle · clearance={clearance} mm · "
-            f"grid={grid} mm · vias=connectivity-first · variants={num_variants or 'auto'}",
-        )
         with self.lock:
             board = copy.deepcopy(self.board())
             cfg = self.config
             pcb_path = self.pcb_path
-        rules = load_design_rules(pcb_path) if pcb_path and Path(pcb_path).exists() else None
+        from physics_router.design_rules import jlcpcb_4layer_design_rules
+
+        rules = (
+            load_design_rules(pcb_path, manufacturer="JLCPCB")
+            if pcb_path and Path(pcb_path).exists()
+            else jlcpcb_4layer_design_rules()
+        )
+        # Default clearance/grid from JLCPCB 4L floors unless caller overrides
+        clearance = float(p.get("clearance_mm", rules.constraints.min_clearance_mm))
+        grid = float(p.get("grid_mm", max(0.15, rules.constraints.min_track_width_mm)))
+        num_variants = p.get("num_variants")
+        if num_variants is not None:
+            num_variants = int(num_variants)
+        self.set_progress(job, 3, "TopoR isotropic free-angle")
+        from physics_router.native_bridge import available as native_ok
+
+        self.log(
+            job,
+            f"TopoR pipeline: free-angle · clearance={clearance} mm · "
+            f"grid={grid} mm · vias=through-hole · variants={num_variants or 'auto'} · "
+            f"native_cpp={'on' if native_ok() else 'OFF'} · "
+            f"fab={rules.constraints.manufacturer or '—'} "
+            f"{rules.constraints.manufacturer_profile or ''}",
+        )
+        self.log(
+            job,
+            f"  DRC floors JLC4L: track≥{rules.constraints.min_track_width_mm}mm "
+            f"clear≥{rules.constraints.min_clearance_mm}mm "
+            f"via≥{rules.constraints.min_via_diameter_mm}/"
+            f"{rules.constraints.min_via_drill_mm}mm "
+            f"edge≥{rules.constraints.min_copper_edge_clearance_mm}mm "
+            f"blind/buried={'yes' if rules.constraints.allow_blind_buried_vias else 'no'}",
+        )
 
         last_pub = {"n": -1}
 

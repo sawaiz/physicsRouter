@@ -88,50 +88,6 @@ std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &
   return rubberband(path, g, layer, net_id);
 }
 
-static double polar_ang(double x, double y, double cx, double cy) {
-  // Match halo.js: x=sinθ, y=cosθ → atan2(x-cx, y-cy)
-  return std::atan2(x - cx, y - cy);
-}
-
-static Vec2 polar_xy(double r, double ang, double cx, double cy) {
-  return {cx + r * std::sin(ang), cy + r * std::cos(ang)};
-}
-
-/** Concentric-arc path (halo.js style): radial → arc → radial. Empty if blocked. */
-static std::vector<Vec2> try_polar_arc(const GridMap &grid, Vec2 start, Vec2 goal, int layer,
-                                       int net_id, double cx, double cy, double track_r) {
-  double a0 = polar_ang(start.x, start.y, cx, cy);
-  double a1 = polar_ang(goal.x, goal.y, cx, cy);
-  double d = a1 - a0;
-  while (d > M_PI)
-    d -= 2 * M_PI;
-  while (d < -M_PI)
-    d += 2 * M_PI;
-  if (track_r <= 1e-6) {
-    double r0 = std::hypot(start.x - cx, start.y - cy);
-    double r1 = std::hypot(goal.x - cx, goal.y - cy);
-    track_r = 0.5 * (r0 + r1);
-    if (track_r < 1.0)
-      return {};
-  }
-  int n = std::max(1, static_cast<int>(std::ceil(std::abs(d) / (2.0 * M_PI / 180.0)))); // ~2°
-  std::vector<Vec2> path;
-  path.push_back(start);
-  Vec2 t0 = polar_xy(track_r, a0, cx, cy);
-  path.push_back(t0);
-  for (int i = 1; i <= n; ++i) {
-    double t = static_cast<double>(i) / n;
-    path.push_back(polar_xy(track_r, a0 + d * t, cx, cy));
-  }
-  path.push_back(goal);
-  // legality
-  for (size_t i = 0; i + 1 < path.size(); ++i) {
-    if (grid.segment_blocked(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, layer, net_id))
-      return {};
-  }
-  return path;
-}
-
 std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int layer, int net_id,
                               int max_expansions, bool isotropic) {
   // 1) LOS free-angle
@@ -291,18 +247,6 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
 
   // try each preferred layer (isotropic free-angle)
   for (int layer : layers) {
-    // HALO ring: concentric radial+arc before free-angle chords (docs/HALO_RING_ROUTING.md)
-    if (cfg.ring_mode) {
-      auto poly =
-          try_polar_arc(grid, a, b, layer, net_id, cfg.ring_cx, cfg.ring_cy, cfg.ring_track_r);
-      ++alts;
-      if (poly.size() >= 2) {
-        method = "polar_arc";
-        emit_poly(poly, layer, net_id, width, out_segs);
-        paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
-        return true;
-      }
-    }
     auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions, cfg.isotropic);
     ++alts;
     if (poly.size() >= 2) {
@@ -341,46 +285,56 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
     sites.push_back({b.x, b.y - k * g});
   }
 
-  int l0 = layers.front(), l1 = layers.back();
+  // Prefer primary layer to each other preferred layer (matrix/CPX striping)
+  std::vector<std::pair<int, int>> layer_pairs;
+  if (layers.size() >= 2) {
+    for (size_t j = 1; j < layers.size(); ++j) {
+      layer_pairs.push_back({layers[0], layers[j]});
+      layer_pairs.push_back({layers[j], layers[0]});
+    }
+    if (layers.size() > 2) {
+      layer_pairs.push_back({layers[1], layers.back()});
+    }
+  }
   int sites_tried = 0;
-  for (const auto &site : sites) {
-    double vx = std::round(site.x / g) * g;
-    double vy = std::round(site.y / g) * g;
-    ++sites_tried;
-    if (!grid.in_bounds(vx, vy))
-      continue;
-    if (grid.point_blocked(vx, vy, l0, net_id) || grid.point_blocked(vx, vy, l1, net_id))
-      continue;
-    Vec2 via_pt{vx, vy};
-    auto p0 = route_point(grid, a, via_pt, l0, net_id, cfg.max_expansions / 2, cfg.isotropic);
-    auto p1 = route_point(grid, via_pt, b, l1, net_id, cfg.max_expansions / 2, cfg.isotropic);
-    if (p0.size() >= 2 && p1.size() >= 2) {
-      method = "via";
-      emit_poly(p0, l0, net_id, width, out_segs);
-      paint_poly(grid, p0, l0, net_id, width, cfg.clearance_mm);
-      emit_poly(p1, l1, net_id, width, out_segs);
-      paint_poly(grid, p1, l1, net_id, width, cfg.clearance_mm);
-      Via v;
-      v.x = vx;
-      v.y = vy;
-      v.net_id = net_id;
-      v.layer_a = l0;
-      v.layer_b = l1;
-      v.alternatives_considered = alts + sites_tried;
-      {
-        std::ostringstream oss;
-        oss << "Same-layer blocked on layers [";
-        for (size_t i = 0; i < blocked_layers.size(); ++i) {
-          if (i)
-            oss << ",";
-          oss << blocked_layers[i];
+  int exp_budget = std::max(500, cfg.max_expansions / 2);
+  for (const auto &lp : layer_pairs) {
+    int l0 = lp.first, l1 = lp.second;
+    for (const auto &site : sites) {
+      double vx = std::round(site.x / g) * g;
+      double vy = std::round(site.y / g) * g;
+      ++sites_tried;
+      if (sites_tried > 80) // cap for speed on dense boards
+        break;
+      if (!grid.in_bounds(vx, vy))
+        continue;
+      if (grid.point_blocked(vx, vy, l0, net_id) || grid.point_blocked(vx, vy, l1, net_id))
+        continue;
+      Vec2 via_pt{vx, vy};
+      auto p0 = route_point(grid, a, via_pt, l0, net_id, exp_budget, cfg.isotropic);
+      auto p1 = route_point(grid, via_pt, b, l1, net_id, exp_budget, cfg.isotropic);
+      if (p0.size() >= 2 && p1.size() >= 2) {
+        method = "via";
+        emit_poly(p0, l0, net_id, width, out_segs);
+        paint_poly(grid, p0, l0, net_id, width, cfg.clearance_mm);
+        emit_poly(p1, l1, net_id, width, out_segs);
+        paint_poly(grid, p1, l1, net_id, width, cfg.clearance_mm);
+        Via v;
+        v.x = vx;
+        v.y = vy;
+        v.net_id = net_id;
+        v.layer_a = l0;
+        v.layer_b = l1;
+        v.alternatives_considered = alts + sites_tried;
+        {
+          std::ostringstream oss;
+          oss << "Same-layer blocked; via L" << l0 << "->L" << l1 << " @(" << vx << "," << vy
+              << "). Tried " << alts << " same-layer + " << sites_tried << " via sites.";
+          v.reason = oss.str();
         }
-        oss << "]; transition L" << l0 << "->L" << l1 << " at (" << vx << "," << vy
-            << "). Tried " << alts << " same-layer + " << sites_tried << " via sites.";
-        v.reason = oss.str();
+        out_vias.push_back(v);
+        return true;
       }
-      out_vias.push_back(v);
-      return true;
     }
   }
   return false;

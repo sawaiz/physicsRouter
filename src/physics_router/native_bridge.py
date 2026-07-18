@@ -64,8 +64,14 @@ def route_board_native(
     post_rubberband: bool = True,
     via_minimize: bool = False,
     net_order: list[str] | None = None,
+    exclusive_nets: bool = False,
+    seed_segments: list[Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Run native router; return a dict compatible with ``RouteResult.to_dict()``."""
+    """Run native router; return a dict compatible with ``RouteResult.to_dict()``.
+
+    ``exclusive_nets=True`` with ``net_order`` routes **only** those nets (hybrid buckets).
+    ``seed_segments``: prior copper painted as obstacles (net-aware keepouts).
+    """
     m = _try_load()
     if m is None:
         return None
@@ -83,33 +89,26 @@ def route_board_native(
     cfg.soft_fallback = bool(soft_fallback)
     cfg.allow_vias = bool(allow_vias)
     cfg.use_gpu = bool(use_gpu)
-    # Scale A* budget with resolution (matches Python free_angle_route scaling)
-    cfg.max_expansions = int(min(20000, max(4000, 4000 * max(1.0, 0.35 / max(float(grid_mm), 0.05)))))
+    # Scale A* budget with resolution; denser grids get more expansions
+    n_nets = max(1, len(board.nets))
+    base_exp = 5000 * max(1.0, 0.35 / max(float(grid_mm), 0.05))
+    # Cap for speed on large multipin boards (e.g. HALO 23 nets × 90 LEDs)
+    cfg.max_expansions = int(min(12000 if n_nets > 16 else 20000, max(3000, base_exp)))
     if hasattr(cfg, "isotropic"):
         cfg.isotropic = bool(isotropic)
     if hasattr(cfg, "post_rubberband"):
         cfg.post_rubberband = bool(post_rubberband)
     if hasattr(cfg, "via_minimize"):
         cfg.via_minimize = bool(via_minimize)
-    # Auto ring mode for HALO-style LED circles (polar arcs before free-angle)
-    if hasattr(cfg, "ring_mode"):
-        try:
-            from physics_router.halo_ring import detect_led_ring
-
-            ring = detect_led_ring(board)
-            if ring is not None:
-                cfg.ring_mode = True
-                cfg.ring_cx = float(ring.cx)
-                cfg.ring_cy = float(ring.cy)
-                cfg.ring_track_r = 0.0  # auto mid-radius per edge
-        except Exception:
-            pass
 
     net_names = list(net_order) if net_order else list(board.nets.keys())
-    # append any missing nets
-    for n in board.nets:
-        if n not in net_names:
-            net_names.append(n)
+    if not exclusive_nets:
+        # append any missing nets (full-board mode)
+        for n in board.nets:
+            if n not in net_names:
+                net_names.append(n)
+    else:
+        net_names = [n for n in net_names if n in board.nets]
     name_to_id = {n: i for i, n in enumerate(net_names)}
 
     nets = []
@@ -146,8 +145,9 @@ def route_board_native(
                 ns.priority *= 1.5
         else:
             ns.width_mm = 0.25
-        # Stripe CPX/matrix nets across layers (matches Python clearance_aware_route)
-        if name.upper().startswith("CPX") and cfg.num_layers >= 2:
+        # Stripe multipin matrix / CPX nets across layers to reduce same-layer crossings
+        is_matrix = name.upper().startswith("CPX") or len(anchors) >= 12
+        if is_matrix and cfg.num_layers >= 2:
             try:
                 idx = int("".join(ch for ch in name if ch.isdigit()) or "0")
             except ValueError:
@@ -156,6 +156,8 @@ def route_board_native(
             ns.preferred_layers = [primary] + [
                 i for i in range(cfg.num_layers) if i != primary
             ]
+            # Slight priority demotion for dense buses so sparse nets paint first
+            ns.priority *= 0.85
         else:
             ns.preferred_layers = list(range(cfg.num_layers))
         nets.append(ns)
@@ -166,15 +168,45 @@ def route_board_native(
     obstacles = []
     for _ref, c in board.components.items():
         nets_on = {p.get("net") for p in (c.pads or []) if p.get("net")}
-        if len(nets_on) != 1:
+        # Single-net parts: keepout owned by that net (same-net may pass)
+        # Multi-net ICs: hard keepout (net_id=-1) so free-angle cannot cross the package
+        if len(nets_on) == 1:
+            nid = name_to_id.get(next(iter(nets_on)), -1)
+        elif len(nets_on) > 1:
+            nid = -1
+        else:
             continue
-        nid = name_to_id.get(next(iter(nets_on)), -1)
         ob = m.RectObs()
         ob.cx, ob.cy = c.x_mm, c.y_mm
-        ob.w = max(min(c.width_mm, c.height_mm) * 0.35, 0.4)
+        # Slightly larger body keepout for multi-net packages
+        scale = 0.45 if nid < 0 else 0.35
+        ob.w = max(min(c.width_mm, c.height_mm) * scale, 0.4)
         ob.h = ob.w
         ob.net_id = nid
         obstacles.append(ob)
+
+    # Seed prior hybrid-phase copper as net-aware keepouts (approx. along segments)
+    if seed_segments:
+        import math
+
+        layer_to_id = {ly: i for i, ly in enumerate(layers)}
+        for s in seed_segments:
+            nid = name_to_id.get(getattr(s, "net", ""), -1)
+            # Unknown nets block everyone
+            w = float(getattr(s, "width_mm", 0.25) or 0.25) + float(clearance_mm)
+            x1, y1 = float(s.x1), float(s.y1)
+            x2, y2 = float(s.x2), float(s.y2)
+            length = math.hypot(x2 - x1, y2 - y1)
+            steps = max(1, int(length / max(float(grid_mm), 0.1)))
+            for i in range(steps + 1):
+                t = i / steps
+                ob = m.RectObs()
+                ob.cx = x1 + (x2 - x1) * t
+                ob.cy = y1 + (y2 - y1) * t
+                ob.w = w
+                ob.h = w
+                ob.net_id = nid
+                obstacles.append(ob)
 
     result = m.route_board(nets, cfg, obstacles)
     id_to_name = {i: n for n, i in name_to_id.items()}

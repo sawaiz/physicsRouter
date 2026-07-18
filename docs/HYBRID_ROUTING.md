@@ -1,90 +1,54 @@
-# Hybrid multi-strategy routing
+# Hybrid multi-strategy routing (topological free-angle)
 
-Boards are rarely one topology. A LED earring ring wants **concentric arcs**;
-power wants **wide tracks on planes**; high-speed nets want **careful free-angle**
-with vias. physicsRouter **auto-detects** which nets (and regions) fit which
-algorithm, then routes them in phases on a **shared obstacle map** so spacing,
-widths, and electrical policy stay consistent.
+Boards mix dense multipin buses, power, and critical signals. physicsRouter
+**auto-classifies nets** and routes each class with free-angle topological
+search, painting a **shared obstacle map** so clearance, widths, and layer
+policy stay consistent.
 
-## Goals
+Halo-style concentric ring geometry has been **removed**; all strategies use
+isotropic free-angle / native A\* with layer striping and vias.
 
-1. **Auto-detect** region/net class → routing technique  
-2. Allow **different algorithms per net / section**  
-3. Preserve **design constraints**: clearance, track width, stackup layer
-   preference, net weights / critical flags  
+## Strategies
 
-## Detection
-
-| Signal | Strategy | Why |
-|--------|----------|-----|
-| CPX-* / pins on LED ring annulus | `ring` | halo.js concentric tracks |
-| Power / GND (class or name) | `power` | wider copper, plane-prefer layers |
-| Critical, HS, clock, RF, high weight | `critical` | free-angle + vias, finer grid |
-| Everything else | `general` | isotropic free-angle / native |
-
-Geometry:
-
-- **Ring region** — LED footprints form a circle (see `detect_led_ring`)  
-- **Core region** — pins near board/ring center (MCU, passives)  
-- **Board** — mixed / default  
-
-Classifier: `physics_router.hybrid_route.classify_board`.
+| Strategy | Detection | Tuning |
+|----------|-----------|--------|
+| **matrix** | CPX-* / MATRIX* / ≥12 pins | Finer grid, layer stripe, vias early |
+| **power** | POWER/GND class or VCC/GND names | Wider tracks, plane-prefer layers |
+| **critical** | critical / HS / clock / RF / high weight | Fine grid + vias |
+| **general** | everything else | Default free-angle / native |
 
 ## Paint order
 
 ```
-ring  →  power  →  critical  →  general
+matrix → power → critical → general
 ```
 
-Each phase:
+Each phase routes only its nets and seeds prior copper as obstacles.
 
-1. Routes only its net subset  
-2. Paints finished copper into the obstacle map (`seed_result`)  
-3. Later phases must clear that copper (same clearance floors)  
+## Constraints
 
-Widths / clearances come from `DesignRules` + `PlacementConfig` labels
-(`track_width_for_net`, `clearance_for_net`, `layers_for_net`, `weight_for_net`).
+| Constraint | Source |
+|------------|--------|
+| Clearance | DesignRules / KiCad net classes |
+| Track width | `track_width_for_net` (+ power boost) |
+| Layers | `layers_for_net` + CPX/matrix stripe |
+| Priority | PlacementConfig weights |
 
 ## API
 
 ```python
 from physics_router.hybrid_route import classify_board, hybrid_route
-from physics_router.design_rules import load_design_rules
 
 plan = classify_board(board, config, rules)
-print(plan.to_dict()["by_strategy"])
-
-result = hybrid_route(board, config, rules, clearance_mm=0.15)
-# result.quality["hybrid_plan"]  → full assignment dump
+result = hybrid_route(board, config, rules)
+# result.quality["hybrid_plan"]
 ```
 
-Entry points that use hybrid by default:
+`style="auto"|"hybrid"` on `clearance_aware_route`, TopoR when matrix nets
+exist, and Improve strategy `"hybrid"`.
 
-- `clearance_aware_route(..., style="auto"|"hybrid")`  
-- `topor_style_route` / TopoR UI job when a ring or multi-class board is detected  
-- Continuous **Improve** strategy `"hybrid"` first  
-
-Force a single technique:
+Force pure isotropic:
 
 ```python
-clearance_aware_route(board, config, style="ring")       # polar only
 clearance_aware_route(board, config, style="isotropic", skip_hybrid=True)
 ```
-
-## Constraints contract
-
-| Constraint | Source | Enforcement |
-|------------|--------|-------------|
-| Min clearance | KiCad DRC / DesignRules | ObstacleMap inflate + native/KiCad DRC |
-| Track width | net class + POWER boost | `_net_width` / `track_width_for_net` |
-| Layer preference | stackup + net class | `layers_for_net` per net |
-| Net priority | PlacementConfig weights | net paint order within a phase |
-| Copper legality | always-on DRC | repair + purge + optional kicad-cli |
-
-Algorithms may differ; **illegal copper is never preferred over open edges**
-(`soft_fallback=False`).
-
-## Related
-
-- [HALO_RING_ROUTING.md](HALO_RING_ROUTING.md) — polar track model  
-- [ARCHITECTURE_ROUTER.md](ARCHITECTURE_ROUTER.md) — topology pipeline  

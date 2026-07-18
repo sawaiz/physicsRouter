@@ -1,4 +1,4 @@
-"""Hybrid multi-strategy classifier and routing."""
+"""Hybrid multi-strategy classifier and routing (topological free-angle only)."""
 
 from __future__ import annotations
 
@@ -17,26 +17,24 @@ HALO_PCB = ROOT / "third_party/halo-90/pcb/halo-90.kicad_pcb"
 HALO_CFG = ROOT / "examples/halo-90/placement_config.yaml"
 
 
-def test_classify_synthetic_has_general():
+def test_classify_synthetic_has_strategies():
     cfg = example_config()
     board = board_from_synthetic(cfg)
     plan = classify_board(board, cfg, default_design_rules())
     assert plan.assignments
-    assert any(a.strategy == "general" or a.strategy == "power" for a in plan.assignments)
     d = plan.to_dict()
     assert "by_strategy" in d
+    assert sum(d["counts"].values()) == len(board.nets)
 
 
 @pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing")
-def test_classify_halo_assigns_cpx_to_ring():
+def test_classify_halo_matrix_cpx():
     cfg = load_config(HALO_CFG)
     board = load_board_from_kicad_pcb(HALO_PCB, cfg)
     plan = classify_board(board, cfg, default_design_rules())
-    assert plan.has_ring
     cpx = [a for a in plan.assignments if a.net.upper().startswith("CPX")]
     assert cpx
-    assert all(a.strategy == "ring" for a in cpx)
-    # Power-ish nets not forced onto ring strategy
+    assert all(a.strategy == "matrix" for a in cpx)
     powerish = [a for a in plan.assignments if a.net in ("+3V", "GND")]
     for a in powerish:
         assert a.strategy in ("power", "general", "critical")
@@ -47,12 +45,7 @@ def test_seed_result_and_nets_filter():
     board = board_from_synthetic(cfg)
     nets = list(board.nets.keys())
     assert nets
-    seed = RouteResult(
-        segments=[
-            RouteSegment(0, 0, 5, 0, "F.Cu", nets[0], 0.25),
-        ]
-    )
-    # Route only remaining nets with seed obstacles
+    seed = RouteResult(segments=[RouteSegment(0, 0, 5, 0, "F.Cu", nets[0], 0.25)])
     rest = nets[1:] if len(nets) > 1 else nets
     r = clearance_aware_route(
         board,
@@ -65,20 +58,24 @@ def test_seed_result_and_nets_filter():
         skip_hybrid=True,
         grid_mm=0.5,
     )
-    # Seed net should not reappear from this call
-    if rest != nets:
-        assert all(s.net != nets[0] or s in seed.segments for s in r.segments) or True
     assert isinstance(r, RouteResult)
 
 
 @pytest.mark.skipif(not HALO_PCB.exists() or not HALO_CFG.exists(), reason="halo missing")
-def test_hybrid_route_halo_runs():
+def test_hybrid_route_halo_runs_fast():
     cfg = load_config(HALO_CFG)
     board = load_board_from_kicad_pcb(HALO_PCB, cfg)
     r = hybrid_route(board, cfg, default_design_rules())
     assert r.segments
     assert (r.quality or {}).get("pipeline") == "hybrid"
     plan = (r.quality or {}).get("hybrid_plan") or {}
-    assert plan.get("has_ring")
-    assert "ring" in (plan.get("by_strategy") or {})
+    assert "matrix" in (plan.get("by_strategy") or {})
     assert any("hybrid" in n for n in r.notes)
+    # No halo_ring markers
+    assert not any("halo_ring" in n or "concentric" in n for n in r.notes)
+
+
+def test_no_halo_ring_module():
+    import importlib.util
+
+    assert importlib.util.find_spec("physics_router.halo_ring") is None
