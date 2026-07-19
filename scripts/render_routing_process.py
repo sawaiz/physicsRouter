@@ -29,8 +29,10 @@ from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 from physics_router.config_io import example_config, load_config
 from physics_router.design_rules import default_design_rules, load_design_rules
 from physics_router.graph_theory import plan_graph_topology
+from physics_router.global_router import build_global_route_plan
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
 from physics_router.native_bridge import info as native_info
+from physics_router.pin_access import build_pin_access_plan
 from physics_router.regeometry import (
     compute_topor_geometry_metrics,
     post_connect_regeometry,
@@ -247,20 +249,60 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     guide = topological_guide_route(board, cfg)
     meta["timings_s"]["guide"] = round(time.perf_counter() - t0, 3)
     graph_plan = plan_graph_topology(board, cfg).to_dict()
+    effective_rules = rules or default_design_rules()
+    pin_access = build_pin_access_plan(board, effective_rules)
+    production_plan = build_global_route_plan(
+        board, cfg, effective_rules, pin_access
+    )
     fig, ax = plt.subplots(figsize=(7.2, 7.2), dpi=140)
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
-    _draw_route(ax, guide, cfg, alpha=0.85)
+    _draw_route(ax, guide, cfg, alpha=0.18)
+    for net, sections in production_plan.sections.items():
+        vertices = production_plan.topology.hyperedges[net].vertices
+        for section in sections:
+            start = vertices[section.u]
+            goal = vertices[section.v]
+            ax.plot(
+                [start.x, goal.x],
+                [start.y, goal.y],
+                color=LAYER_COLORS.get(section.layer, "#dddddd"),
+                linewidth=1.8,
+                alpha=0.9,
+                solid_capstyle="round",
+            )
+    access_x = []
+    access_y = []
+    for accesses in pin_access.by_net.values():
+        for pad_access in accesses:
+            for site in pad_access.candidates:
+                access_x.append(site.x)
+                access_y.append(site.y)
+    if access_x:
+        ax.scatter(
+            access_x,
+            access_y,
+            s=8,
+            facecolors="none",
+            edgecolors="#f4c95d",
+            linewidths=0.65,
+            alpha=0.8,
+            zorder=5,
+        )
     ax.set_title(
-        f"2 · Hypergraph guide — crossing-aware MST + DSATUR layers\n"
-        f"{len(guide.segments)} segs · {guide.total_length_mm:.1f} mm",
+        f"2 · Production plan — topology + access + section layers\n"
+        f"{production_plan.metrics['sections']} sections · "
+        f"{pin_access.metrics['candidate_sites']} legal via sites",
         fontsize=10,
     )
     ax.set_xlabel("x (mm)")
     ax.set_ylabel("y (mm)")
     _metrics_box(
         ax,
-        f"segs={len(guide.segments)}\nlength={guide.total_length_mm:.1f}mm\n"
-        f"vias={guide.via_count}\nunrouted={len(guide.unrouted_nets)}",
+        f"sections={production_plan.metrics['sections']}\n"
+        f"planned_vias={production_plan.metrics['planned_vias']}\n"
+        f"access_sites={pin_access.metrics['candidate_sites']}\n"
+        f"outer_only={pin_access.metrics['outer_only_anchors']}\n"
+        f"overflow={production_plan.metrics['final_overflow']}",
     )
     fig.tight_layout()
     p2 = OUT / f"{tag}_2_guide_topology.png"
@@ -291,19 +333,21 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     _draw_board_base(ax, board, cfg, show_outline=True, dim_parts=True)
     _draw_route(ax, raw, cfg, alpha=0.9)
     ax.set_title(
-        "3 · Native hybrid free-angle (raw connectivity)\n"
-        "power → critical → parallel matrix bundle → general",
+        "3 · Native detailed route (atomic legal copper)\n"
+        "planned access/sections → buckets → negotiated repair",
         fontsize=10,
     )
     ax.set_xlabel("x (mm)")
     ax.set_ylabel("y (mm)")
     sp = m_raw.min_spacing_mm
     sp_s = f"{sp:.2f}" if sp < 900 else "n/a"
+    gate = (raw.quality or {}).get("manufacturing_gate") or {}
     _metrics_box(
         ax,
         f"segs={m_raw.segment_count}\nbends={m_raw.bend_count}\n"
         f"vias={m_raw.via_count}\nlength={m_raw.total_length_mm:.1f}mm\n"
-        f"min_spacing={sp_s}mm\nunrouted={len(raw.unrouted_nets)}",
+        f"min_spacing={sp_s}mm\nunrouted={len(raw.unrouted_nets)}\n"
+        f"gate={'PASS' if gate.get('passed') else 'FAIL'}",
     )
     fig.tight_layout()
     p3 = OUT / f"{tag}_3_clearance_raw.png"
@@ -410,8 +454,8 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
     fig.patch.set_facecolor("#0a1020")
     stages = [
         (p1, "1 Placement\n+ outline"),
-        (p2, "2 Guide\ntopology"),
-        (p3, "3 Clearance\nraw"),
+        (p2, "2 Access +\nsection plan"),
+        (p3, "3 Detailed\nroute + gate"),
         (p4, "4 Re-geometry\nbends+arcs"),
     ]
     for ax, (path, label) in zip(axes, stages):
@@ -480,6 +524,7 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
 
     meta["metrics"] = {
         "graph_plan": graph_plan,
+        "production_plan": production_plan.to_dict(),
         "route_graph": route_graph,
         "raw": m_raw.to_dict(),
         "regeometry": tg if isinstance(tg, dict) else m_pol.to_dict(),

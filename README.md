@@ -9,10 +9,9 @@ contain physically reachable pads, explicit vias at every layer transition,
 complete multipin nets, zero native hard violations, and zero copper errors
 after KiCad applies and refills the board.
 
-> **Status:** native v1.9.1 fixes layer-blind connectivity, forbids via-in-pad,
-> and adds
-> board-wide PathFinder-style negotiated congestion with conflict-directed
-> rip-up, but the
+> **Status:** the v2 production flow adds exact offset-via pin-access preflight,
+> capacity-aware per-section layer planning, strict success semantics, and the
+> earlier board-wide PathFinder conflict-directed rip-up. The
 > HALO-90 stress board is not fully autorouted yet. Correctly open nets are
 > preferable to illegal copper, but they are not a finished route.
 
@@ -55,8 +54,10 @@ The full diagnosis, publications and measured production-layout baseline are in
 |---|---|
 | **Exact board model** | Real pad centers, rotations, custom copper primitives, copper layers, arc Edge.Cuts, fab rules and through-via constraints |
 | **Net hypergraph** | One multi-terminal object per net instead of unrelated two-pin requests |
+| **Pin-access oracle** | Enumerates legal offset through-via sites before routing; checks all traversed pad layers, holes and Edge.Cuts |
 | **Topology candidates** | Crossing-aware spanning trees and layout-aware alternatives |
-| **Conflict graph** | Projected crossings become graph edges; DSATUR proposes copper layers |
+| **Global section plan** | PathFinder-style coarse capacity assigns every tree edge a layer and planned access-via cost |
+| **Conflict graph** | Projected crossings become graph edges; DSATUR seeds the section planner |
 | **Atomic C++ routing** | A net commits only when every anchor is physically connected |
 | **Explicit pin access** | F.Cu/B.Cu SMD escapes and layer transitions emit real vias |
 | **Native obstacles** | Oriented, net-owned pads painted only on their physical copper layers |
@@ -70,11 +71,11 @@ The full diagnosis, publications and measured production-layout baseline are in
 KiCad board + rules
         |
         v
-pad/layer model -> pin-access graph -> net hypergraph/topology candidates
-                                         |
-                              conflict graph + layer/via plan
-                                         |
-                              negotiated global routing
+pad/layer model -> exact pin-access sites -> net hypergraph/topology candidates
+                                               |
+                            capacity negotiation + per-section layer/via plan
+                                               |
+                              detailed C++ negotiated routing
                                          |
                          atomic track/via geometry transactions
                                          |
@@ -83,7 +84,10 @@ pad/layer model -> pin-access graph -> net hypergraph/topology candidates
                          zones/refill -> KiCad DRC -> score
 ```
 
-The remaining algorithmic bottleneck is dense CPX bundle routing. v1.9 now
+The remaining algorithmic bottleneck is dense CPX bundle completion. The v2
+flow removes the previous “invent a via after maze search” failure: it reserves
+legal escape candidates before layer assignment and gives the C++ detailed
+router the chosen layer for each topology section. Board-wide negotiation still
 performs three bounded PathFinder rounds, accumulates historical cost on
 overused cells and exact DRC markers, legalizes a maximal independent set of
 the conflict graph, and repairs only its victims. It never returns temporary
@@ -93,11 +97,20 @@ Current v1.9.1 HALO checkpoint: 12/23 nets, including CPX-1 and CPX-2, as 941
 segments and 271.8 mm total track. It has zero native hard violations, zero
 via/pad overlaps, and zero generated-copper KiCad errors. Eleven nets remain
 atomically open and KiCad reports 168 unconnected items, so this is a legal
-partial artifact rather than a finished board. The previous 42-via/GND-area
+partial artifact rather than a finished board. This is the pre-v2 checkpoint,
+retained as a regression baseline; a new HALO run is required to measure the
+pin-access/section planner. The previous 42-via/GND-area
 snapshot is intentionally superseded: the stricter audit found 33 via/pad
 violations in it. The current legal selection uses no vias or areas, which is
-honest but underuses the four-layer board; legal offset escape-via planning is
-therefore a completion blocker.
+honest but underuses the four-layer board.
+
+HALO now defaults to the explicit JLCPCB `4layer_capability` profile because
+its source KiCad design already uses 0.45/0.20 mm through vias. JLCPCB's current
+multilayer [capability table](https://jlcpcb.com/capabilities/pcb-capabilities)
+supports smaller geometry than this; the profile keeps a 0.125 mm radial
+annulus. Exact preflight improves from 122/240 SMD anchors with legal inner
+access at 0.60/0.30 mm to 191/240 at 0.45/0.20 mm.
+The general synthetic/default preset remains on 0.60/0.30 mm recommended vias.
 
 ## Definition of working
 
@@ -167,6 +180,8 @@ physics-router export-dsn --config placement_config.yaml -o board.dsn
 |---|---|
 | `native/` | C++ free-angle search, occupancy/exact maps, atomic nets, vias and areas |
 | `src/physics_router/graph_theory.py` | Hypergraphs, crossing-aware trees, conflict graph and DSATUR |
+| `src/physics_router/pin_access.py` | Exact pad-access preflight and finite legal offset-via candidates |
+| `src/physics_router/global_router.py` | Capacity negotiation and per-topology-section layer assignments |
 | `src/physics_router/native_bridge.py` | Exact board/pad/layer translation into the native core |
 | `src/physics_router/router.py` | Routing orchestration, embedded connectivity, DRC and KiCad output |
 | `src/physics_router/negotiated_congestion.py` | PathFinder present/historical costs and conflict-directed rip-up |

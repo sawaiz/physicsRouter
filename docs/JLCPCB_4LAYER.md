@@ -13,7 +13,7 @@ Source: [JLCPCB PCB capabilities](https://jlcpcb.com/capabilities/pcb-capabiliti
 | `2layer_recommended` | 2 | ≥0.20 mm | 0.6 / 0.3 | ≥0.3 mm | Cheap prototypes, simple PCBs |
 | `2layer_capability` | 2 | ≥0.10 mm | 0.45 / 0.2 | ≥0.2 mm | Dense 2L (DFM risk / cost) |
 | `4layer_recommended` | 4 | ≥0.15 mm | 0.6 / 0.3 | ≥0.3 mm | **Default** for most designs |
-| `4layer_capability` | 4 | ≥0.09 mm | 0.45 / 0.2 | ≥0.2 mm | BGA / dense multipin |
+| `4layer_capability` | 4 | ≥0.09 mm | 0.45 / 0.2 (0.125 radial annulus) | ≥0.2 mm | BGA / dense multipin; HALO-90 default |
 | `6layer_recommended` | 6 | ≥0.15 mm | 0.6 / 0.3 | ≥0.3 mm | HS / extra planes |
 | `6layer_capability` | 6 | ≥0.09 mm | 0.45 / 0.2 | ≥0.2 mm | High density 6L |
 

@@ -8,13 +8,14 @@ an incomplete multipin net is rolled back rather than leaking misleading
 partial copper.
 
 Halo-style concentric ring geometry has been **removed**; all strategies use
-isotropic free-angle / native A\* with graph-colored layers and vias.
+isotropic free-angle / native A\* with graph-seeded, capacity-negotiated
+per-section layers and explicit offset vias.
 
 ## Strategies
 
 | Strategy | Detection | Tuning |
 |----------|-----------|--------|
-| **matrix** | CPX-* / MATRIX* / ≥12 pins | Finer grid, DSATUR-preferred layer, vias early |
+| **matrix** | CPX-* / MATRIX* / ≥12 pins | Finer grid, section layer plan, reserved pin access |
 | **power** | POWER/GND class or VCC/GND names | Rounded native copper areas on plane-preferred layers; tracks when needed |
 | **critical** | critical / HS / clock / RF / high weight | Fine grid + vias |
 | **general** | everything else | Default free-angle / native |
@@ -36,15 +37,23 @@ and historical cell costs. Exact native DRC markers define the conflict graph;
 legalization retains deterministic maximal independent sets and sequentially
 retries only removed or incomplete victims.
 
+Before bucket routing, `pin_access.py` enumerates legal surface-pad escape
+sites using exact rotated/custom pad copper, all layers traversed by a through
+via, hole spacing and Edge.Cuts. `global_router.py` then assigns each
+hypergraph-tree edge a layer while negotiating coarse cell capacity. The C++
+detailed router tries those finite access sites and section layers first; a
+geometry fallback remains legal only if native DRC accepts the complete net.
+
 HALO-90 v1.9.1 legally completes two of ten CPX nets; eight remain intentionally
 open. Overall completion is 12/23. The first negotiation round finds 21
 complete temporary candidates, but they have
 more than 2,000 exact conflicts and are never exposed as legal copper. Three
 bounded rounds reduce coarse overused cells from 2,825 to 1,163 before exact
-legalization and targeted repair. Solving the rest needs conflict-component
-route alternatives and section-level layer/via assignment, including legal
-offset escape vias around the dense 0402 pads, not a weaker DRC gate. The
-current legal selection has zero vias; the earlier 42-via checkpoint contained
+legalization and targeted repair. This is the pre-v2 regression checkpoint.
+Solving the rest still needs conflict-component route alternatives and
+detouring global corridors; the new pin-access and section planner must be
+measured in a fresh HALO run. The current legal selection has zero vias; the
+earlier 42-via checkpoint contained
 33 same-net or foreign via/pad violations under the corrected rule.
 
 ## Constraints
@@ -53,7 +62,7 @@ current legal selection has zero vias; the earlier 42-via checkpoint contained
 |------------|--------|
 | Clearance | DesignRules / KiCad net classes |
 | Track width | `track_width_for_net` (+ power boost) |
-| Layers | `layers_for_net` + conflict-graph DSATUR preference |
+| Layers | DSATUR seed + capacity-negotiated per-tree-edge assignment |
 | Priority | PlacementConfig weights |
 
 ## API
@@ -65,6 +74,8 @@ plan = classify_board(board, config, rules)
 result = hybrid_route(board, config, rules)
 # result.quality["hybrid_plan"]
 # result.quality["graph_topology"]  # components, cycles, crossings, cuts
+# result.quality["production_route_plan"]  # access sites + section layers
+# result.quality["manufacturing_gate"]     # all nets + native DRC; KiCad pending
 # result.areas          # refillable power/ground geometry
 # result.unrouted_nets  # honest atomic failures
 ```

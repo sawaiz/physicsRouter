@@ -12,7 +12,10 @@ This document records **why** the system is shaped the way it is, and what we de
 4. **Interactive engineering UI** — guided place → route (2D) → apply → DRC → Simulate (3D EMS), with variant compare.
 5. **Native-only routing core** — the C++ core (`pr_native`) is the sole geometric router and clearance authority; Python remains the product shell (CLI, server, KiCad I/O) and policy layer.
 
-Non-goals (today): full commercial autorouter density, guaranteed DRC-zero on dense charlieplex without human cleanup, learned RL policies in production.
+Non-goals (today): guaranteed completion on every dense board, learned RL
+policies in production, or fabrication sign-off without KiCad/manufacturer
+review. A partial route is a failed autoroute even when its committed copper is
+clean.
 
 ---
 
@@ -148,6 +151,29 @@ from geometric legality while making both inspectable in route quality data.
 
 **Why:** In the HALO post-mortem, in-engine audits reported zero shorts while KiCad found real cross-net shorts, and a rectangular routing bound let copper stray outside a round board. DRC that is approximate, optional, or downstream misleads the UI and the score. Making the geometric core the single clearance-and-legality authority keeps native DRC, KiCad DRC, and the reported metrics describing the same physical copper. KiCad DRC (decision 2) remains the final fab oracle after apply/refill.
 
+### 10. Pin access and global sections precede detailed routing
+
+**Decision:** The production flow first enumerates a finite set of exact legal
+offset-via sites for every surface pad. It then builds a multi-terminal tree and
+uses coarse PathFinder history to assign each tree section—not each whole
+net—to a copper layer. A section may use an inner layer only if every surface
+endpoint has a reserved access site. The C++ detailed router consumes those
+sites and section assignments before trying geometry fallbacks.
+
+**Why:** Successful detailed routers treat pin access as a scarce resource and
+feed DRC failure back into topology. The former flow colored a whole net, then
+asked a local maze search to invent vias late. On HALO this produced either
+impossible inner-layer endpoints or a zero-via outer-layer pile-up. The new
+ordering makes physical access part of global feasibility while retaining exact
+C++ geometry as the final authority.
+
+### 11. Success is a manufacturing gate, not a score
+
+**Decision:** `quality.manufacturing_gate.passed` is true only when all required
+nets are electrically complete and native DRC reports zero hard violations.
+That state is still labeled `native_candidate` until the applied/refilled board
+passes KiCad DRC. Length, via count and aesthetics cannot override this gate.
+
 ---
 
 ## Performance notes
@@ -174,7 +200,7 @@ Prioritized by impact on **legal, manufacturable** boards for HALO-class density
 2. **Filled-zone import** — read KiCad's refilled polygons back into native exact DRC and SI/current-density analysis.
 3. **DRC-driven local rip-up** — parse filled-copper violations and re-route only the offending topology cluster.
 4. **Push-aside geometry** — move neighboring legal traces together instead of discarding a full dense net.
-5. **Pad layer legality** — distinguish SMD anchor layers from through-hole barrels in the connectivity proof.
+5. **Pin-access resource sharing** — reuse a legal escape across incident tree branches and charge it once in the global objective.
 
 ### Medium term
 

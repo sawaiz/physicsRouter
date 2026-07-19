@@ -5,7 +5,7 @@ C++17 **isotropic free-angle** router — the **only** geometric router in physi
 - **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
 - **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
 
-Version: **1.9.1-via-pad-clearance**
+Version: **2.0.0-production-flow**
 
 ## Build
 
@@ -34,7 +34,8 @@ Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. 
 | Packed `uint8` grid | O(1) cell tests with clearance-correct centerline inflation |
 | Atomic full-net commit | Failed multipin trees never leak partial copper |
 | Advisory graph tree | Python supplies crossing-aware hypergraph tree edges; blocked edges fall back to any legal frontier connection |
-| Conflict-graph layer order | DSATUR colors crossing nets and passes the chosen layer first without bypassing pad reachability |
+| Exact pin-access oracle | Python supplies finite offset-via sites checked against pads, holes, traversed layers and Edge.Cuts |
+| Per-section layer order | Coarse PathFinder capacity assigns every tree edge a layer; detailed geometry may take only legal fallbacks |
 | Topology-safe rubberband | Two-pin chains shorten; multipin branches remain intact |
 | Oriented pad/layer-aware obstacles | Real pad XY, angle, net and copper layers; package bodies do not bury anchors |
 | Layer-reachable anchors | SMD pads start/end only on exposed copper; inner escapes use two vias |

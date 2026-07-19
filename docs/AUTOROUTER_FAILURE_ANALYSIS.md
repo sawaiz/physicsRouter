@@ -180,7 +180,7 @@ route object and API response instead of being reset by a later native pass.
 |---|---|---|
 | PathFinder negotiated congestion | Temporarily permits sharing, then raises historical resource costs until conflicts disappear | Implemented board-wide with three bounded rounds and sparse historical cell costs; HALO conflicts reduce but do not converge yet |
 | TritonRoute | Explicit pin-access reservation, local workers, marker-driven rip-up, complete-or-unrouted net output | Pin access, exact-marker conflict graph, victim-only repair and atomic output implemented; local detailed repair remains limited |
-| Rubber-band layer assignment | Fix topological path classes before geometry; split trees into sections and add vias at layer crossings | Topology/layer plan implemented; section-level global via minimization remains |
+| Rubber-band layer assignment | Fix topological path classes before geometry; split trees into sections and add vias at layer crossings | Per-tree-edge layer assignment and access-via feasibility are implemented; shared branch escapes and true corridor detours remain |
 | Conflict-Based Search / MLV-CBS | Branch on route conflicts instead of relying only on route order; combine with congestion negotiation | Deterministic maximal-independent conflict legalization is in the primary flow; bounded branching over alternate route candidates remains experimental |
 | TopoR | Free-angle, topology-preserving geometry and automatic optimization | Free-angle, rubber-band and global conflict negotiation implemented; dense topology refinement and safe consolidation remain incomplete |
 | FreeRouting | Rip-up/reroute, stagnation detection, partial output, DRC feedback | Order variants and partial output implemented; stagnation hashes/history costs remain |
@@ -231,11 +231,14 @@ topological tools.
    layer candidates for each exact marker component, then branch on the
    conflicting pair instead of rerunning one deterministic path. Stop on
    stagnation hashes or a hard deadline.
-2. **Pin-access escape graph:** precompute a small set of legal rule-size via
-   escapes per pad and reserve them before long-run routing. Reuse one escape
-   per branch instead of independently inserting two vias for every tree edge.
-3. **Section-level layer assignment:** assign whole annular tree sections, not
-   entire nets or individual edges, and minimize transitions globally.
+2. **Pin-access resource sharing:** the exact access oracle now precomputes and
+   reserves legal rule-size offset vias. The next step is to model one escape as
+   a reusable branch resource instead of charging or inserting it independently
+   for every incident tree edge.
+3. **Corridor global routing:** the section planner now assigns each topology
+   edge a layer with PathFinder-style coarse capacity. It must next search
+   alternate coarse paths around obstacles rather than pricing only the direct
+   section cells.
 4. **Topology-preserving consolidation:** the current legal HALO artifact has
    941 segments. Collapse collinear/A* chains only when the embedded route
    graph and exact DRC remain unchanged.
@@ -246,6 +249,18 @@ topological tools.
    long native attempt by itself.
 7. **Provenance:** embed source commit/compiler/build flags in the native
    module and every route artifact to make stale binaries impossible to miss.
+
+Implemented in the v2 production-flow rewrite: exact pin-access preflight,
+per-section layer assignments, detailed-router consumption of reserved via
+sites, and an explicit all-nets-plus-zero-DRC manufacturing gate. These remove
+false success modes; they do not retroactively turn the recorded 12/23 HALO
+artifact into a completed route.
+
+On HALO, the preflight also exposed a rule-profile feasibility constraint:
+0.60/0.30 mm vias make only 122/240 SMD anchors inner-reachable, while the
+source-board-compatible JLCPCB capability profile (0.45/0.20 mm, 0.125 mm
+radial annulus) reaches 191/240. The remaining 49 anchors are deliberately
+outer-only; the global planner cannot spend an impossible via there.
 
 The acceptance gate remains: 23/23 nets, zero route-attributed KiCad copper
 errors after refill, no missing/illegal vias, and identical metrics in the
