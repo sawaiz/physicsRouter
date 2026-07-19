@@ -36,6 +36,7 @@ Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. 
 | Advisory graph tree | Python supplies crossing-aware hypergraph tree edges; blocked edges fall back to any legal frontier connection |
 | Exact pin-access oracle | Python supplies finite offset-via sites checked against pads, holes, traversed layers and Edge.Cuts |
 | Per-section layer order | Coarse PathFinder capacity assigns every tree edge a layer; detailed geometry may take only legal fallbacks |
+| **Capacity mesh (C++)** | Hierarchical cells + negotiated section layers before free-angle detail (`capacity_mesh.cpp`; tscircuit-inspired). Enabled by default via `RouteConfig.enable_capacity_mesh` |
 | Topology-safe rubberband | Two-pin chains shorten; multipin branches remain intact |
 | Oriented pad/layer-aware obstacles | Real pad XY, angle, net and copper layers; package bodies do not bury anchors |
 | Layer-reachable anchors | SMD pads start/end only on exposed copper; inner escapes use two vias |
