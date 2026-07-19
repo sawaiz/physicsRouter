@@ -11,6 +11,7 @@ This document records **why** the system is shaped the way it is, and what we de
 3. **TopoR-style free-angle routing** — topology and clearance first; no forced 45°/90° preferred directions. Product model: [docs/TOPOR.md](docs/TOPOR.md). Architecture (topology + sparse graph + geometry, negotiated congestion): [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md).
 4. **Interactive engineering UI** — guided place → route (2D) → apply → DRC → Simulate (3D EMS), with variant compare.
 5. **Native-only routing core** — the C++ core (`pr_native`) is the sole geometric router and clearance authority; Python remains the product shell (CLI, server, KiCad I/O) and policy layer.
+6. **Capacity-mesh global planning** — hierarchical capacity cells + pin-access + section layers (ideas from MIT tscircuit capacity-autorouter) before detailed copper; see [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md).
 
 Non-goals (today): guaranteed completion on every dense board, learned RL
 policies in production, or fabrication sign-off without KiCad/manufacturer

@@ -407,6 +407,9 @@ def hybrid_route(
     result.notes.append(
         "policy: sequential zero-violation per phase (priority/weight, rip-up, open>short)"
     )
+    result.notes.append(
+        "upstream: capacity-mesh + pin-access global plan (tscircuit-inspired)"
+    )
     result.notes.extend(plan.notes)
 
     phases = [s for s in _STRATEGY_ORDER if plan.nets_for(s)]

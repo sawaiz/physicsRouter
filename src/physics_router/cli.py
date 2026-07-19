@@ -469,6 +469,20 @@ def improve_cmd(
     default=None,
     help="Directory for DRC JSON/summary (default: alongside --out-pcb)",
 )
+@click.option(
+    "--pipeline",
+    type=click.Choice(["auto", "capacity", "hybrid", "topor"], case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="capacity=tscircuit-inspired mesh pipeline; hybrid=multi-strategy; topor=variants",
+)
+@click.option(
+    "--effort",
+    type=float,
+    default=0.55,
+    show_default=True,
+    help="Capacity-mesh effort 0..1 (depth / refinement)",
+)
 def route_cmd(
     config_path: Path,
     pcb_path: Path | None,
@@ -482,6 +496,8 @@ def route_cmd(
     ignore_kicad_rules: bool,
     drc: bool,
     drc_out: Path | None,
+    pipeline: str,
+    effort: float,
 ) -> None:
     """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish)."""
     config = load_config(config_path)
@@ -500,9 +516,19 @@ def route_cmd(
             f"min_track={rules.constraints.min_track_width_mm}mm"
         )
 
+    pipe = (pipeline or "auto").lower()
     if guide_only:
         routes = topological_guide_route(board, config)
-    elif rules is not None:
+    elif pipe == "capacity" or (pipe == "auto" and rules is not None):
+        from physics_router.route_pipeline import run_capacity_pipeline
+        from physics_router.design_rules import default_design_rules
+
+        r = rules or default_design_rules()
+        click.echo(f"Capacity-mesh pipeline (effort={effort})")
+        routes = run_capacity_pipeline(
+            board, config, r, effort=float(effort), raise_on_fail=False
+        )
+    elif rules is not None or pipe == "hybrid":
         routes = multilayer_route(
             board,
             config,

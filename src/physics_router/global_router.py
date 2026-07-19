@@ -18,6 +18,8 @@ from physics_router.graph_theory import GraphEdge, GraphTopologyPlan, plan_graph
 from physics_router.models import BoardModel, PlacementConfig
 from physics_router.pin_access import PinAccessPlan
 
+# capacity_mesh is optional — imported lazily in build_global_route_plan
+
 
 ResourceKey = tuple[int, int, str]
 
@@ -131,10 +133,32 @@ def build_global_route_plan(
     *,
     cell_mm: float | None = None,
     max_iterations: int = 12,
+    capacity_mesh: Any | None = None,
+    effort: float = 0.55,
 ) -> GlobalRoutePlan:
-    """Negotiate coarse capacity and assign every topology section a layer."""
+    """Negotiate coarse capacity and assign every topology section a layer.
+
+    When *capacity_mesh* is provided (tscircuit-style hierarchical mesh), leaf
+    size informs *cell_mm* and mesh path lengths bias section cost.
+    """
     layers = list(board.copper_layers or ["F.Cu", "B.Cu"])
     topology = plan_graph_topology(board, config, layers=layers)
+    if capacity_mesh is None and effort > 0:
+        try:
+            from physics_router.capacity_mesh import build_capacity_mesh
+
+            targets = []
+            for net, he in topology.hyperedges.items():
+                for v in he.vertices:
+                    targets.append((v.x, v.y, net))
+            capacity_mesh = build_capacity_mesh(
+                board, rules, effort=effort, targets=targets
+            )
+        except Exception:
+            capacity_mesh = None
+    if capacity_mesh is not None and cell_mm is None and getattr(capacity_mesh, "nodes", None):
+        avg_w = sum(n.width for n in capacity_mesh.nodes) / max(1, len(capacity_mesh.nodes))
+        cell_mm = max(0.45, 0.55 * avg_w)
     cell = max(
         0.45,
         float(cell_mm or max(0.65, 4.0 * rules.constraints.min_clearance_mm)),
@@ -175,8 +199,22 @@ def build_global_route_plan(
         historical = sum(history.get(key, 0.0) for key in cells)
         baseline = topology.layer_assignment.get(net)
         layer_change = 0.0 if layer == baseline else 0.35
+        mesh_bias = 0.0
+        if capacity_mesh is not None:
+            try:
+                from physics_router.capacity_mesh import path_through_mesh
+
+                path = path_through_mesh(
+                    capacity_mesh, (start.x, start.y), (goal.x, goal.y)
+                )
+                if not path:
+                    mesh_bias = 8.0  # no mesh corridor — discourage
+                else:
+                    mesh_bias = 0.15 * max(0, len(path) - 1)
+            except Exception:
+                mesh_bias = 0.0
         cost = edge.length_mm + 5.0 * vias + 2.5 * present + 18.0 * overflow
-        cost += historical + layer_change
+        cost += historical + layer_change + mesh_bias
         return SectionAssignment(
             net=net,
             edge_index=edge_index,
@@ -267,5 +305,7 @@ def build_global_route_plan(
             "layer_sections": dict(
                 sorted(Counter(value.layer for value in assignments.values()).items())
             ),
+            "capacity_mesh": capacity_mesh.to_dict() if capacity_mesh is not None else None,
+            "effort": effort,
         },
     )
