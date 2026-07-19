@@ -169,6 +169,8 @@ physics-router export-dsn --config placement_config.yaml -o board.dsn
 | `src/physics_router/graph_theory.py` | Hypergraphs, crossing-aware trees, conflict graph and DSATUR |
 | `src/physics_router/native_bridge.py` | Exact board/pad/layer translation into the native core |
 | `src/physics_router/router.py` | Routing orchestration, embedded connectivity, DRC and KiCad output |
+| `src/physics_router/negotiated_congestion.py` | PathFinder present/historical costs and conflict-directed rip-up |
+| `src/physics_router/hybrid_route.py` | Per-net/region algorithm selection under shared rules ([docs/HYBRID_ROUTING.md](docs/HYBRID_ROUTING.md)) |
 | `src/physics_router/continuous_improve.py` | Candidate loop, scoring, deadlines and KiCad oracle |
 | `src/physics_router/kicad_tools.py` | KiCad DRC/ERC, renders and exports |
 | `viewer/` / `src/physics_router/server.py` | Local UI, API and live progress |

@@ -138,6 +138,16 @@ from geometric legality while making both inspectable in route quality data.
 
 **Why:** Engineers already know that palette; reduces cognitive load vs arbitrary net colors alone.
 
+### 9. Always-on native DRC (the router validates its own copper)
+
+**Decision:** Exact copper DRC lives in the C++ core (`drc_check` in `native/src/exact.cpp`: foreign-net seg–seg spacing/shorts, via–seg and via–via clearance, spatially hashed) and runs automatically inside routing — not as an optional post-step. It is the authoritative `clearance_violations` count via `attach_router_drc`. Three consequences follow:
+
+- **Polish is DRC-guarded.** Rubberband, post-connect re-geometry, and elastic phases measure DRC before and after; a phase that raises the violation count is reverted (`_apply_drc_geometry` in `routing_strategies.py`).
+- **Conflict-directed rip-up** builds its net-conflict graph from native DRC markers, legalizes a maximal independent set, and retries only victims.
+- **Outline containment is a routing invariant, not a post-check.** `ExactMap` carries the Edge.Cuts polygon; `segment_blocked` rejects any edge whose endpoints leave the outline or that crosses an outline edge, so free-angle search never proposes copper outside the board.
+
+**Why:** In the HALO post-mortem, in-engine audits reported zero shorts while KiCad found real cross-net shorts, and a rectangular routing bound let copper stray outside a round board. DRC that is approximate, optional, or downstream misleads the UI and the score. Making the geometric core the single clearance-and-legality authority keeps native DRC, KiCad DRC, and the reported metrics describing the same physical copper. KiCad DRC (decision 2) remains the final fab oracle after apply/refill.
+
 ---
 
 ## Performance notes
