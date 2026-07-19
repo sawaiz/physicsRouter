@@ -1,3 +1,4 @@
+#include "pr_native/capacity_mesh.hpp"
 #include "pr_native/exact.hpp"
 #include "pr_native/gpu.hpp"
 #include "pr_native/router.hpp"
@@ -80,7 +81,11 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("atomic_nets", &pr::RouteConfig::atomic_nets)
       .def_readwrite("congestion_cell_mm", &pr::RouteConfig::congestion_cell_mm)
       .def_readwrite("congestion", &pr::RouteConfig::congestion)
-      .def_readwrite("threads", &pr::RouteConfig::threads);
+      .def_readwrite("threads", &pr::RouteConfig::threads)
+      .def_readwrite("enable_capacity_mesh",
+                     &pr::RouteConfig::enable_capacity_mesh)
+      .def_readwrite("capacity_effort", &pr::RouteConfig::capacity_effort)
+      .def_readwrite("capacity_depth", &pr::RouteConfig::capacity_depth);
 
   py::class_<pr::Segment>(m, "Segment")
       .def_readonly("x1", &pr::Segment::x1)
@@ -274,6 +279,81 @@ PYBIND11_MODULE(pr_native, m) {
     d["backend"] = s.backend;
     return d;
   });
+
+  // Capacity mesh (tscircuit-inspired global planning)
+  py::class_<pr::CapacityNode>(m, "CapacityNode")
+      .def_readonly("id", &pr::CapacityNode::id)
+      .def_readonly("cx", &pr::CapacityNode::cx)
+      .def_readonly("cy", &pr::CapacityNode::cy)
+      .def_readonly("width", &pr::CapacityNode::width)
+      .def_readonly("height", &pr::CapacityNode::height)
+      .def_readonly("depth", &pr::CapacityNode::depth)
+      .def_readonly("capacity", &pr::CapacityNode::capacity)
+      .def_readonly("contains_target", &pr::CapacityNode::contains_target)
+      .def_readonly("contains_obstacle", &pr::CapacityNode::contains_obstacle);
+
+  py::class_<pr::CapacityMesh>(m, "CapacityMesh")
+      .def_readonly("nodes", &pr::CapacityMesh::nodes)
+      .def_readonly("capacity_depth", &pr::CapacityMesh::capacity_depth)
+      .def_readonly("effort", &pr::CapacityMesh::effort)
+      .def_readonly("board_span_mm", &pr::CapacityMesh::board_span_mm)
+      .def_property_readonly(
+          "num_edges",
+          [](const pr::CapacityMesh &m) { return m.edges.size(); });
+
+  m.def(
+      "build_capacity_mesh",
+      [](const pr::RouteConfig &cfg,
+         const std::vector<std::pair<double, double>> &targets,
+         const std::vector<std::pair<double, double>> &obstacles, double effort,
+         int capacity_depth) {
+        std::vector<pr::Vec2> t, o;
+        for (const auto &p : targets)
+          t.push_back({p.first, p.second});
+        for (const auto &p : obstacles)
+          o.push_back({p.first, p.second});
+        return pr::build_capacity_mesh(cfg, t, o, effort, capacity_depth);
+      },
+      py::arg("cfg"), py::arg("targets") = std::vector<std::pair<double, double>>{},
+      py::arg("obstacles") = std::vector<std::pair<double, double>>{},
+      py::arg("effort") = 0.55, py::arg("capacity_depth") = -1);
+
+  m.def(
+      "path_through_mesh",
+      [](const pr::CapacityMesh &mesh, double sx, double sy, double gx,
+         double gy) {
+        return pr::path_through_mesh(mesh, {sx, sy}, {gx, gy});
+      },
+      py::arg("mesh"), py::arg("sx"), py::arg("sy"), py::arg("gx"),
+      py::arg("gy"));
+
+  m.def(
+      "plan_capacity_for_nets",
+      [](std::vector<pr::NetSpec> nets, const pr::RouteConfig &cfg,
+         const std::vector<pr::RectObs> &pads, double effort) {
+        auto stats = pr::plan_capacity_for_nets(nets, cfg, pads, effort);
+        py::dict d;
+        d["mesh_nodes"] = stats.mesh_nodes;
+        d["mesh_edges"] = stats.mesh_edges;
+        d["sections_assigned"] = stats.sections_assigned;
+        d["capacity_depth"] = stats.capacity_depth;
+        d["effort"] = stats.effort;
+        d["cell_mm"] = stats.cell_mm;
+        d["final_overflow"] = stats.final_overflow;
+        d["nets"] = nets; // with topology_edge_layers filled
+        return d;
+      },
+      py::arg("nets"), py::arg("cfg"),
+      py::arg("pads") = std::vector<pr::RectObs>{}, py::arg("effort") = 0.55);
+
+  m.def("tuned_node_capacity", &pr::tuned_node_capacity, py::arg("width"),
+        py::arg("height"), py::arg("via_diameter_mm") = 0.6,
+        py::arg("track_pitch_mm") = 0.35, py::arg("layer_count") = 2);
+
+  m.def("calculate_optimal_capacity_depth",
+        &pr::calculate_optimal_capacity_depth, py::arg("board_span_mm"),
+        py::arg("target_min_capacity") = 0.55, py::arg("max_depth") = 12,
+        py::arg("via_diameter_mm") = 0.6, py::arg("track_pitch_mm") = 0.35);
 
   m.def(
       "score_batch",

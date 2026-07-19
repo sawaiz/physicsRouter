@@ -63,6 +63,44 @@ def test_pipeline_solver_steps() -> None:
     assert "manufacturing_gate" in names or solver.failed
 
 
+def test_native_capacity_mesh_api() -> None:
+    """C++ capacity mesh must be exposed and produce nodes."""
+    from physics_router.router import _native_core
+
+    n = _native_core()
+    assert hasattr(n, "build_capacity_mesh")
+    assert hasattr(n, "plan_capacity_for_nets")
+    assert hasattr(n, "tuned_node_capacity")
+    cfg = n.RouteConfig()
+    cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max = 0, 50, 0, 40
+    cfg.num_layers = 2
+    cfg.clearance_mm = 0.2
+    cfg.via_diameter_mm = 0.6
+    mesh = n.build_capacity_mesh(
+        cfg,
+        [(10.0, 10.0), (40.0, 30.0), (20.0, 20.0)],
+        [(15.0, 15.0)],
+        0.4,
+        -1,
+    )
+    assert len(mesh.nodes) >= 1
+    assert mesh.capacity_depth >= 1
+    cap = n.tuned_node_capacity(8.0, 8.0)
+    assert cap > n.tuned_node_capacity(1.0, 1.0)
+    # plan_capacity_for_nets fills topology layers
+    ns = n.NetSpec()
+    ns.net_id = 0
+    ns.name = "N"
+    ns.anchors = [n.Vec2(5, 5), n.Vec2(40, 30), n.Vec2(20, 10)]
+    ns.priority = 2.0
+    ns.width_mm = 0.25
+    out = n.plan_capacity_for_nets([ns], cfg, [], 0.4)
+    assert out["sections_assigned"] >= 1
+    planned = out["nets"][0]
+    assert len(planned.topology_edges) >= 1
+    assert len(planned.topology_edge_layers) == len(planned.topology_edges)
+
+
 def test_run_capacity_pipeline_returns_result() -> None:
     cfg = example_config()
     board = board_from_synthetic(cfg)

@@ -18,6 +18,7 @@ add_library(pr_core STATIC
   src/exact.cpp
   src/score.cpp
   src/gpu_opencl.cpp
+  src/capacity_mesh.cpp
 )
 target_include_directories(pr_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

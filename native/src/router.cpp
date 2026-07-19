@@ -1,4 +1,5 @@
 #include "pr_native/router.hpp"
+#include "pr_native/capacity_mesh.hpp"
 #include "pr_native/gpu.hpp"
 #include <algorithm>
 #include <chrono>
@@ -1114,21 +1115,38 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     }
   }
 
+  // Capacity-mesh global planning: assign topology edge layers + preferred
+  // layer order before exact free-angle geometrization (tscircuit-inspired).
+  std::vector<NetSpec> planned_nets = nets;
+  if (cfg.enable_capacity_mesh && !planned_nets.empty()) {
+    auto cap = plan_capacity_for_nets(planned_nets, cfg, pad_obstacles,
+                                      cfg.capacity_effort);
+    result.notes.push_back(
+        "capacity_mesh: nodes=" + std::to_string(cap.mesh_nodes) +
+        " edges=" + std::to_string(cap.mesh_edges) +
+        " sections=" + std::to_string(cap.sections_assigned) +
+        " depth=" + std::to_string(cap.capacity_depth) +
+        " overflow=" + std::to_string(cap.final_overflow) +
+        " effort=" + std::to_string(cap.effort));
+  } else {
+    result.notes.push_back("capacity_mesh: disabled");
+  }
+
   // Sort only by priority. The Python policy already supplies its preferred
   // few-pin/default order, while stable equal-priority order is essential for
   // deterministic whole-bucket rebuild variants.
-  std::vector<int> order(nets.size());
-  for (size_t i = 0; i < nets.size(); ++i)
+  std::vector<int> order(planned_nets.size());
+  for (size_t i = 0; i < planned_nets.size(); ++i)
     order[i] = static_cast<int>(i);
   std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
-    return nets[a].priority > nets[b].priority;
+    return planned_nets[a].priority > planned_nets[b].priority;
   });
 
   int total = static_cast<int>(order.size());
   int done = 0;
 
   for (int oi : order) {
-    const auto &net = nets[oi];
+    const auto &net = planned_nets[oi];
     NetReport rep;
     rep.net_id = net.net_id;
     rep.name = net.name;

@@ -44,11 +44,39 @@ while solver.step():
 copper = solver.result
 ```
 
-## Relationship to C++ detail
+## C++ core (authoritative)
+
+Implemented in `native/src/capacity_mesh.cpp` and always run inside
+``route_board`` when ``RouteConfig.enable_capacity_mesh`` is true (default):
+
+| C++ API | Role |
+|---------|------|
+| `build_capacity_mesh` | Hierarchical quadtree capacity cells |
+| `path_through_mesh` | A\* on mesh adjacency |
+| `plan_capacity_for_nets` | Negotiate section layers + preferred layer order |
+| `tuned_node_capacity` / `calculate_optimal_capacity_depth` | Capacity depth auto-tune |
+
+Before sequential free-angle geometrization, native planning:
+
+1. Builds a mesh over board bounds + pad anchors
+2. Ensures each net has topology edges (Prim MST if missing)
+3. Assigns each topology edge a copper layer under occupancy + history
+4. Reorders ``preferred_layers`` by assigned section majority
+
+Python `capacity_mesh.build_capacity_mesh` **prefers the C++ build** and only
+falls back to pure Python if `pr_native` is unavailable.
+
+RouteConfig knobs:
+
+```text
+enable_capacity_mesh = true
+capacity_effort      = 0.55   # 0..1
+capacity_depth       = -1     # -1 = auto
+```
 
 The mesh never draws copper. Exact free-angle geometry, ExactMap DRC, and
-full-net commit remain in `pr_native` + `router.py`. The mesh only answers:
-*where is capacity left, which layer should this section use, which vias are legal?*
+full-net commit remain in `pr_native` detailed search. The mesh only answers:
+*where is capacity left, which layer should this section use?*
 
 ## References
 

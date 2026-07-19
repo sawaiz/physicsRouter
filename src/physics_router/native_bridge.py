@@ -114,6 +114,16 @@ def route_board_native(
         cfg.board_outline = [m.Vec2(x, y) for x, y in outline]
     cfg.grid_mm = float(grid_mm)
     cfg.clearance_mm = float(clearance_mm)
+    # C++ capacity-mesh global planning (runs inside route_board)
+    if hasattr(cfg, "enable_capacity_mesh"):
+        cfg.enable_capacity_mesh = True
+    if hasattr(cfg, "capacity_effort"):
+        effort = 0.55
+        if routing_plan is not None:
+            effort = float(
+                (getattr(routing_plan, "metrics", None) or {}).get("effort", 0.55)
+            )
+        cfg.capacity_effort = effort
     rules = dict(getattr(board, "design_rules", None) or {})
     if hasattr(cfg, "edge_clearance_mm"):
         cfg.edge_clearance_mm = float(

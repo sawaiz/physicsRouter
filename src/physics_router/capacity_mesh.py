@@ -159,11 +159,88 @@ def build_capacity_mesh(
 ) -> CapacityMesh:
     """Build a hierarchical capacity mesh covering the board extent.
 
-    ``targets`` are (x, y, net) pin anchors. Nodes that contain targets or
-    component centers are refined until *capacity_depth*. Completely empty
-    pure-obstacle cells are discarded early.
+    Prefers the C++ ``pr_native`` implementation when available; falls back to
+    pure Python. ``targets`` are (x, y, net) pin anchors.
     """
     layers = list(board.copper_layers or ["F.Cu", "B.Cu"])
+    # --- Native C++ path ---
+    try:
+        from physics_router.router import _native_core
+
+        n = _native_core()
+        if hasattr(n, "build_capacity_mesh"):
+            cfg = n.RouteConfig()
+            cfg.x_min, cfg.x_max = 0.0, float(board.width_mm)
+            cfg.y_min, cfg.y_max = 0.0, float(board.height_mm)
+            if board.outline:
+                xs, ys = [], []
+                for item in board.outline:
+                    if item.get("kind") == "line":
+                        xs += [float(item["x1"]), float(item["x2"])]
+                        ys += [float(item["y1"]), float(item["y2"])]
+                if xs:
+                    cfg.x_min, cfg.x_max = min(xs), max(xs)
+                    cfg.y_min, cfg.y_max = min(ys), max(ys)
+            cfg.num_layers = max(1, len(layers))
+            cfg.clearance_mm = float(rules.constraints.min_clearance_mm)
+            cfg.via_diameter_mm = float(
+                getattr(rules.constraints, "min_via_diameter_mm", None) or 0.6
+            )
+            t_list: list[tuple[float, float]] = []
+            if targets:
+                t_list = [(float(x), float(y)) for x, y, _n in targets]
+            else:
+                for _net, pins in board.nets.items():
+                    for ref, _pad in pins:
+                        if ref in board.components:
+                            c = board.components[ref]
+                            t_list.append((c.x_mm, c.y_mm))
+            o_list = [
+                (c.x_mm, c.y_mm) for c in board.components.values()
+            ]
+            raw = n.build_capacity_mesh(
+                cfg,
+                t_list,
+                o_list,
+                float(effort),
+                int(capacity_depth) if capacity_depth is not None else -1,
+            )
+            nodes = [
+                CapacityNode(
+                    node_id=f"cn{nd.id}",
+                    cx=float(nd.cx),
+                    cy=float(nd.cy),
+                    width=float(nd.width),
+                    height=float(nd.height),
+                    depth=int(nd.depth),
+                    available_layers=tuple(layers),
+                    capacity=float(nd.capacity),
+                    contains_target=bool(nd.contains_target),
+                    contains_obstacle=bool(nd.contains_obstacle),
+                )
+                for nd in raw.nodes
+            ]
+            # Rebuild edges via path queries is heavy; re-link from native edges
+            # if exposed — currently only node list is bound; run Python
+            # adjacency for edges so path_through_mesh still works.
+            mesh = CapacityMesh(
+                nodes=nodes,
+                edges=[],
+                layers=layers,
+                metrics={
+                    "capacity_depth": int(raw.capacity_depth),
+                    "effort": float(raw.effort),
+                    "board_span_mm": float(raw.board_span_mm),
+                    "backend": "native_cpp",
+                    "nodes": len(nodes),
+                    "num_edges_native": int(raw.num_edges),
+                },
+            )
+            # Python adjacency on native nodes
+            return _link_python_edges(mesh)
+    except Exception:
+        pass
+    # --- Pure Python fallback continues below ---
     x0, y0 = 0.0, 0.0
     x1, y1 = float(board.width_mm), float(board.height_mm)
     # Prefer outline bbox when available
@@ -396,6 +473,57 @@ def build_capacity_mesh(
             "track_pitch_mm": round(pitch, 4),
         },
     )
+
+
+def _link_python_edges(mesh: CapacityMesh) -> CapacityMesh:
+    """Compute adjacency edges for a node list (used after native build)."""
+    if not mesh.nodes:
+        return mesh
+    cell = max(0.5, min(n.width for n in mesh.nodes) * 0.5)
+    buckets: dict[tuple[int, int], list[CapacityNode]] = defaultdict(list)
+    for n in mesh.nodes:
+        buckets[(int(n.cx // cell), int(n.cy // cell))].append(n)
+
+    def nearby(n: CapacityNode) -> list[CapacityNode]:
+        ix, iy = int(n.cx // cell), int(n.cy // cell)
+        out: list[CapacityNode] = []
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-2, -1, 0, 1, 2):
+                out.extend(buckets.get((ix + dx, iy + dy), []))
+        return out
+
+    def are_adjacent(a: CapacityNode, b: CapacityNode) -> bool:
+        eps = 0.08 * max(min(a.width, b.width), min(a.height, b.height), 0.2)
+        dx = abs(a.cx - b.cx)
+        dy = abs(a.cy - b.cy)
+        half_w = 0.5 * (a.width + b.width)
+        half_h = 0.5 * (a.height + b.height)
+        if dx < half_w * 0.35 and dy < half_h * 0.35:
+            return False
+        if dx <= half_w + eps and dy <= 0.55 * max(a.height, b.height):
+            return True
+        if dy <= half_h + eps and dx <= 0.55 * max(a.width, b.width):
+            return True
+        return False
+
+    edges: list[CapacityEdge] = []
+    edge_i = 0
+    seen: set[tuple[str, str]] = set()
+    for a in mesh.nodes:
+        for b in nearby(a):
+            if a.node_id >= b.node_id:
+                continue
+            if not are_adjacent(a, b):
+                continue
+            key = (a.node_id, b.node_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            edge_i += 1
+            edges.append(CapacityEdge(edge_id=f"ce{edge_i}", a=a.node_id, b=b.node_id))
+    mesh.edges = edges
+    mesh.metrics["edges"] = len(edges)
+    return mesh
 
 
 def _capacity_histogram(nodes: list[CapacityNode]) -> dict[str, int]:

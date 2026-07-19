@@ -110,6 +110,10 @@ struct RouteConfig {
   double congestion_cell_mm = 0.5;
   std::vector<CongestionCell> congestion;
   int threads = 0; // 0 = auto
+  // Capacity-mesh global planning (tscircuit-inspired) before detailed route
+  bool enable_capacity_mesh = true;
+  double capacity_effort = 0.55; // 0..1 depth / refinement
+  int capacity_depth = -1;       // -1 = auto from board span
 };
 
 struct NetReport {
