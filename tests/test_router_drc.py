@@ -130,6 +130,52 @@ def test_native_drc_detects_through_via_on_foreign_front_pad():
     assert rep["pad_shorts"] == 1
 
 
+def test_native_drc_forbids_same_net_via_in_pad():
+    board = _fixed_pad_board()
+    route = RouteResult(
+        vias=[
+            Via(
+                5.0,
+                5.0,
+                net="PAD_NET",
+                size_mm=0.6,
+                layers=("F.Cu", "B.Cu"),
+            )
+        ],
+        via_count=1,
+    )
+
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+
+    assert rep["pad_shorts"] == 1
+    assert any(
+        item["net_a"] == item["net_b"] == "PAD_NET"
+        and item.get("object_b") == "pad:U1"
+        for item in rep["items"]
+    )
+
+
+def test_same_net_via_near_pad_needs_no_electrical_clearance():
+    board = _fixed_pad_board()
+    route = RouteResult(
+        vias=[
+            Via(
+                5.85,
+                5.0,
+                net="PAD_NET",
+                size_mm=0.6,
+                layers=("F.Cu", "B.Cu"),
+            )
+        ],
+        via_count=1,
+    )
+
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+
+    assert rep["pad_shorts"] == 0
+    assert rep["pad_spacing"] == 0
+
+
 @pytest.mark.skipif(
     not Path("third_party/halo-90/pcb/halo-90.kicad_pcb").exists(),
     reason="HALO-90 PCB not cloned",

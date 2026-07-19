@@ -36,14 +36,16 @@ and historical cell costs. Exact native DRC markers define the conflict graph;
 legalization retains deterministic maximal independent sets and sequentially
 retries only removed or incomplete victims.
 
-HALO-90 v1.9 legally completes two of ten CPX nets; eight remain intentionally
-open. Overall completion is 12/23 with 42 explicit vias and one GND area. The
-first negotiation round finds 20 complete temporary candidates, but they have
+HALO-90 v1.9.1 legally completes two of ten CPX nets; eight remain intentionally
+open. Overall completion is 12/23. The first negotiation round finds 21
+complete temporary candidates, but they have
 more than 2,000 exact conflicts and are never exposed as legal copper. Three
-bounded rounds reduce coarse overused cells from 2,842 to 1,529 before exact
+bounded rounds reduce coarse overused cells from 2,825 to 1,163 before exact
 legalization and targeted repair. Solving the rest needs conflict-component
-route alternatives and section-level layer/via assignment, not a weaker DRC
-gate.
+route alternatives and section-level layer/via assignment, including legal
+offset escape vias around the dense 0402 pads, not a weaker DRC gate. The
+current legal selection has zero vias; the earlier 42-via checkpoint contained
+33 same-net or foreign via/pad violations under the corrected rule.
 
 ## Constraints
 

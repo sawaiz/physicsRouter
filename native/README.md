@@ -5,7 +5,7 @@ C++17 **isotropic free-angle** router — the **only** geometric router in physi
 - **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
 - **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
 
-Version: **1.9.0-negotiated-congestion**
+Version: **1.9.1-via-pad-clearance**
 
 ## Build
 
@@ -48,6 +48,7 @@ Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. 
 | Sparse PathFinder history | Present and persistent resource costs steer exact/GridMap A* away from repeatedly overused cells |
 | Conflict-directed legalization | Exact marker graph selects a maximal legal net set before victim-only repair |
 | Copper-edge margin | Track half-width plus the active fabrication edge clearance is reserved around curved Edge.Cuts |
+| No via-in-pad | Exact rotated-pad distance rejects physical overlap with every pad; foreign pads additionally receive electrical clearance |
 | OpenCL batch clearance | Parallel sample tests after/during validation |
 | pybind11 | Zero-copy-friendly lists of segments into Python |
 

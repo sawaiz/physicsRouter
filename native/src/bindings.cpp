@@ -26,7 +26,8 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("h", &pr::RectObs::h)
       .def_readwrite("rotation_deg", &pr::RectObs::rotation_deg)
       .def_readwrite("net_id", &pr::RectObs::net_id)
-      .def_readwrite("layers", &pr::RectObs::layers);
+      .def_readwrite("layers", &pr::RectObs::layers)
+      .def_readwrite("is_pad", &pr::RectObs::is_pad);
 
   py::class_<pr::NetSpec>(m, "NetSpec")
       .def(py::init<>())

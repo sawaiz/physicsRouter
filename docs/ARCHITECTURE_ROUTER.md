@@ -154,6 +154,7 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | Atomic native multipin transactions | **Done** (`RouteConfig.atomic_nets`) |
 | Oriented pad/net/layer-aware native obstacles | **Done** |
 | SMD anchor layer reachability + two-via escape | **Done** |
+| Via/pad separation on every traversed layer | **Done** (own pad: no physical overlap; foreign pad: full clearance) |
 | Native organic power/ground areas | **Done** (refillable KiCad zones) |
 | Bounded bucket rebuild | **Done** (parallel power/critical/matrix variants) |
 | Multi-pin net hypergraph | **Done** (`graph_theory.py`; one hyperedge per net) |
@@ -177,9 +178,12 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 - Compare length / vias / unrouted / grade vs guide and FreeRouting SES when available
 - Optional: reproduce Eremex sample boards from [TopoR 6.0 examples](https://www.eremex.com/support/tutorials/topor6_0_examples/) as behavioral tests (completion, vias, topology)
 
-The checked-in v1.9 HALO-90 snapshot commits 12/23 nets (including CPX-0,
-CPX-1, 42 explicit vias, and one GND area), leaves 11 nets explicitly open,
+The checked-in v1.9.1 HALO-90 snapshot commits 12/23 nets (including CPX-1 and
+CPX-2), leaves 11 nets explicitly open,
 and reports zero native track/via shorts, spacing hits, or Edge.Cuts escapes.
+It contains no vias or areas after the corrected no-via-in-pad gate rejected
+33 violations in the previous 42-via snapshot. Legal offset escape-via
+planning is now an explicit dense-board blocker.
 Its topology plan contains 240 vertices, 23 hyperedges, 217 tree edges, and
 77 net-conflict edges; the emitted route has zero same-layer crossings.
 This replaces the invalid 17/23 result that treated inner-layer copper as

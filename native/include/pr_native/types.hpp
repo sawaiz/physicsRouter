@@ -17,6 +17,9 @@ struct RectObs {
   double rotation_deg = 0;
   int net_id = -1; // -1 = blocks all
   std::vector<int> layers; // empty = all copper layers
+  // Identifies physical pad copper for the exact via-site distance check.
+  // Tracks may terminate on their own pad, but vias may never overlap a pad.
+  bool is_pad = false;
 };
 
 struct Segment {

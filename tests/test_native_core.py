@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def test_native_info():
     assert str(i["version"]).startswith("1.9.")
     assert i["features"]["pathfinder_history"] is True
     assert i["features"]["conflict_directed_ripup"] is True
+    assert i["features"]["no_via_in_pad"] is True
     assert "gpu" in i
     assert i.get("features", {}).get("isotropic") is True
 
@@ -435,16 +437,32 @@ def test_native_smd_anchors_use_two_vias_for_inner_escape():
     wall.net_id = -1
     wall.layers = [0]
 
-    result = pr_native.route_board([net], cfg, [wall])
+    # A same-net pad at the first preferred escape site must remain available
+    # to tracks but reject a discrete via. Via-in-pad is not supported by the
+    # fabrication model.
+    own_pad = pr_native.RectObs()
+    own_pad.cx = -3.2
+    own_pad.cy = 0.0
+    own_pad.w = 0.8
+    own_pad.h = 0.8
+    own_pad.net_id = 4
+    own_pad.layers = [0]
+    own_pad.is_pad = True
+
+    result = pr_native.route_board([net], cfg, [wall, own_pad])
     assert result.net_reports[0].status == "ok"
     assert len(result.vias) == 2
     assert any(segment.layer == 1 for segment in result.segments)
     assert all(via.layer_a == 0 and via.layer_b == 3 for via in result.vias)
     assert all(via.size_mm == pytest.approx(0.6) for via in result.vias)
     assert all(via.drill_mm == pytest.approx(0.3) for via in result.vias)
+    for via in result.vias:
+        outside_x = max(0.0, abs(via.x - own_pad.cx) - own_pad.w * 0.5)
+        outside_y = max(0.0, abs(via.y - own_pad.cy) - own_pad.h * 0.5)
+        assert math.hypot(outside_x, outside_y) >= 0.3 - 1e-9
     assert "two_via_escape" in result.net_reports[0].method
 
     cfg.allow_vias = False
-    blocked = pr_native.route_board([net], cfg, [wall])
+    blocked = pr_native.route_board([net], cfg, [wall, own_pad])
     assert blocked.net_reports[0].status == "unrouted"
     assert blocked.segments == []

@@ -160,6 +160,20 @@ double polygon_edge_distance(Vec2 point, const std::vector<Vec2> &polygon) {
   return best;
 }
 
+double point_rotated_rect_distance(Vec2 point, const RectObs &rect) {
+  constexpr double kPi = 3.14159265358979323846;
+  const double angle = rect.rotation_deg * kPi / 180.0;
+  const double cosine = std::cos(angle);
+  const double sine = std::sin(angle);
+  const double dx = point.x - rect.cx;
+  const double dy = point.y - rect.cy;
+  const double local_x = dx * cosine + dy * sine;
+  const double local_y = -dx * sine + dy * cosine;
+  const double outside_x = std::max(0.0, std::abs(local_x) - 0.5 * rect.w);
+  const double outside_y = std::max(0.0, std::abs(local_y) - 0.5 * rect.h);
+  return std::hypot(outside_x, outside_y);
+}
+
 std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
                                double margin, const RouteConfig &cfg) {
   if (anchors.empty())
@@ -258,7 +272,7 @@ struct HistoryCostMap {
 
 } // namespace
 
-const char *native_version() { return "1.9.0-negotiated-congestion"; }
+const char *native_version() { return "1.9.1-via-pad-clearance"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -449,7 +463,8 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
                        const std::vector<int> &goal_allowed, double width,
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
                        std::string &method,
-                       const HistoryCostMap *history = nullptr) {
+                       const HistoryCostMap *history = nullptr,
+                       const std::vector<RectObs> *pad_obstacles = nullptr) {
   std::vector<int> blocked_layers;
   int alts = 0;
 
@@ -478,9 +493,28 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
     // traversed by the hole, including intermediate layers for through vias.
     const double extra_radius =
         std::max(0.0, 0.5 * (cfg.via_diameter_mm - width));
-    for (int layer : via_layers(layer_a, layer_b))
+    for (int layer : via_layers(layer_a, layer_b)) {
+      // Pads are intentionally net-aware in the track map so an owning trace
+      // can reach its terminal. Via-in-pad is a different manufacturing
+      // operation and is forbidden here for both owning and foreign pads.
+      if (pad_obstacles != nullptr) {
+        for (const auto &pad : *pad_obstacles) {
+          if (!pad.is_pad)
+            continue;
+          if (!pad.layers.empty() &&
+              std::find(pad.layers.begin(), pad.layers.end(), layer) ==
+                  pad.layers.end())
+            continue;
+          const double pad_clearance =
+              pad.net_id == net_id ? 0.0 : cfg.clearance_mm;
+          if (point_rotated_rect_distance(site, pad) <
+              0.5 * cfg.via_diameter_mm + pad_clearance - 1e-9)
+            return true;
+        }
+      }
       if (grid.disk_blocked(site.x, site.y, extra_radius, layer, net_id))
         return true;
+    }
     return grid.hole_blocked(site.x, site.y);
   };
 
@@ -1133,7 +1167,8 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
                              net.anchors[candidate.to], net.net_id, layers,
                              from_allowed, to_allowed, net.width_mm,
-                             edge_segments, edge_vias, method, history_ptr);
+                             edge_segments, edge_vias, method, history_ptr,
+                             &pad_obstacles);
         if (!ok)
           continue;
         in[candidate.to] = 1;

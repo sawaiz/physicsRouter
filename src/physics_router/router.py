@@ -3402,8 +3402,11 @@ def _route_to_pad_drc(
         y: float,
         distance: float,
         copper_radius: float,
+        required_clearance: float | None = None,
     ) -> None:
-        needed = copper_radius + clearance_mm
+        needed = copper_radius + (
+            clearance_mm if required_clearance is None else required_clearance
+        )
         if distance >= needed - 1e-9:
             return
         kind = "short" if distance < copper_radius - 1e-9 else "spacing"
@@ -3444,7 +3447,10 @@ def _route_to_pad_drc(
         via_layers = _via_copper_layers(via, board_layers)
         for pad_ref, pad_net, exposed, polygon in pads:
             common = [layer for layer in board_layers if layer in via_layers & exposed]
-            if via.net == pad_net or not common:
+            # Via-in-pad is forbidden even for owning-net pads. Tracks may
+            # terminate on their own pad; a same-net via must not physically
+            # overlap it, and a foreign via also needs electrical clearance.
+            if not common:
                 continue
             distance = _point_polygon_distance((via.x, via.y), polygon)
             add_hit(
@@ -3456,6 +3462,7 @@ def _route_to_pad_drc(
                 via.y,
                 distance,
                 0.5 * via.size_mm,
+                0.0 if via.net == pad_net else clearance_mm,
             )
     return hits
 

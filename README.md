@@ -9,7 +9,8 @@ contain physically reachable pads, explicit vias at every layer transition,
 complete multipin nets, zero native hard violations, and zero copper errors
 after KiCad applies and refills the board.
 
-> **Status:** native v1.9 fixes the layer-blind/via-free router failure and adds
+> **Status:** native v1.9.1 fixes layer-blind connectivity, forbids via-in-pad,
+> and adds
 > board-wide PathFinder-style negotiated congestion with conflict-directed
 > rip-up, but the
 > HALO-90 stress board is not fully autorouted yet. Correctly open nets are
@@ -88,13 +89,15 @@ overused cells and exact DRC markers, legalizes a maximal independent set of
 the conflict graph, and repairs only its victims. It never returns temporary
 overlap as committed copper and cannot regress the legal input baseline.
 
-Current v1.9 HALO checkpoint: 12/23 nets, including CPX-0, CPX-1 and GND,
-1,326 segments, 42 rule-size through vias and one native GND area (365.5 mm
-total track). It has zero native hard violations and zero generated-copper
-KiCad errors. Eleven nets remain atomically open and KiCad reports 162
-unconnected items, so this is a legal partial artifact rather than a finished
-board. The high segment count also makes topology-preserving consolidation a
-quality priority after completion improves.
+Current v1.9.1 HALO checkpoint: 12/23 nets, including CPX-1 and CPX-2, as 941
+segments and 271.8 mm total track. It has zero native hard violations, zero
+via/pad overlaps, and zero generated-copper KiCad errors. Eleven nets remain
+atomically open and KiCad reports 168 unconnected items, so this is a legal
+partial artifact rather than a finished board. The previous 42-via/GND-area
+snapshot is intentionally superseded: the stricter audit found 33 via/pad
+violations in it. The current legal selection uses no vias or areas, which is
+honest but underuses the four-layer board; legal offset escape-via planning is
+therefore a completion blocker.
 
 ## Definition of working
 

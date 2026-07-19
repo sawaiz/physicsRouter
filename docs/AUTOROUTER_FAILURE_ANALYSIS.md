@@ -78,25 +78,35 @@ KiCad 10 check is not globally pristine: it includes donor-board text,
 courtyard and a small number of fixed copper warnings. It is a topology and
 layer-assignment reference, not a zero-DRC geometry oracle to copy blindly.
 
-### Corrected v1.9 checkpoint
+### Corrected v1.9.1 checkpoint
 
 The current deterministic hybrid run commits 12/23 HALO nets, including
-CPX-0, CPX-1 and GND, as 1,326 segments, 42 rule-size through vias and one
-native GND area (365.5 mm total track). Eleven nets remain atomically open.
+CPX-1 and CPX-2, as 941 segments and 271.8 mm total track. Eleven nets remain
+atomically open. It currently selects no vias or areas.
 The generated copper has:
 
 - zero native track/track, track/pad, via/pad and outline hard violations;
 - zero route-attributed KiCad copper errors with the source project loaded;
 - no partial copper for rejected nets;
-- 162 KiCad unconnected items because the board route is incomplete.
+- 168 KiCad unconnected items because the board route is incomplete.
 
-The board-wide negotiation pass generated 20/23 complete temporary candidates
+The v1.9 snapshot had appeared clean only because same-net via/pad contacts
+were exempted from the router audit. Rechecking it with the v1.9.1 invariant
+found 33 via/pad violations among its 42 vias. Search now measures every via
+annulus against exact rotated pad rectangles on every traversed copper layer:
+same-net pads forbid physical overlap, while foreign pads also require normal
+electrical clearance. The replacement artifact removes all 33 violations.
+Its zero-via result is a real routing-quality regression, not a reporting bug:
+the current 0.60/0.30 mm via rule cannot yet find enough offset fanout sites in
+the dense 0402 ring, so the legalizer retains outer-layer nets instead.
+
+The board-wide negotiation pass generated 21/23 complete temporary candidates
 in its first round. Those candidates were deliberately not legal output: exact
 DRC still found more than 2,000 conflict markers. Across three rounds the
-active conflict set changed from 22 to 17 to 14 nets and coarse overused cells
-fell from 2,842 to 1,529. Exact conflict-graph legalization plus targeted
+active conflict set changed from 23 to 17 to 14 nets and coarse overused cells
+fell from 2,825 to 1,163. Exact conflict-graph legalization plus targeted
 repair then retained 12 legal nets. This is a one-net improvement over v1.8,
-but the unresolved CPX bundle and the 1,326-segment geometry show that
+but the unresolved CPX bundle and the 941-segment geometry show that
 negotiation is now infrastructure, not proof of full convergence.
 
 This is much more honest than the failed run and proves the corrected geometry
@@ -132,6 +142,8 @@ multilayer connected component; failed attempts leave no stubs.
 - With blind/buried vias disabled, every transition emits an F.Cu–B.Cu through
   via and checks every traversed layer.
 - Search checks the via disk, not only its center.
+- Exact rotated-pad distance forbids via-in-pad on owning nets and applies full
+  clearance to foreign pads on every traversed copper layer.
 - A separate hole occupancy map enforces same-net hole spacing without
   incorrectly blocking legal same-net track overlap.
 - Inner-colored SMD trees attempt explicit two-via escape/fanout before an
@@ -225,7 +237,7 @@ topological tools.
 3. **Section-level layer assignment:** assign whole annular tree sections, not
    entire nets or individual edges, and minimize transitions globally.
 4. **Topology-preserving consolidation:** the current legal HALO artifact has
-   1,326 segments. Collapse collinear/A* chains only when the embedded route
+   941 segments. Collapse collinear/A* chains only when the embedded route
    graph and exact DRC remain unchanged.
 5. **Power topology:** connect narrow pad escapes to native/KiCad-filled GND
    and +3V areas, with thermals/refill included in connectivity validation.

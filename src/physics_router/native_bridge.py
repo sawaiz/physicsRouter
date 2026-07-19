@@ -61,6 +61,7 @@ def info() -> dict[str, Any]:
             "dsatur_layer_coloring": True,
             "pathfinder_history": True,
             "conflict_directed_ripup": True,
+            "no_via_in_pad": True,
         },
     }
 
@@ -380,6 +381,8 @@ def route_board_native(
             # Unassigned copper is still copper and blocks every routed net.
             ob.net_id = name_to_id.get(pad_net, -1)
             ob.layers = copper_layer_ids
+            if hasattr(ob, "is_pad"):
+                ob.is_pad = True
             obstacles.append(ob)
 
             # KiCad custom pads may carry copper far outside their anchor
@@ -412,6 +415,8 @@ def route_board_native(
                         )
                     primitive.net_id = ob.net_id
                     primitive.layers = copper_layer_ids
+                    if hasattr(primitive, "is_pad"):
+                        primitive.is_pad = True
                     obstacles.append(primitive)
 
     # Seed prior hybrid-phase copper as net-aware keepouts (approx. along segments)

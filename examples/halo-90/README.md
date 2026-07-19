@@ -95,19 +95,21 @@ physics-router export-openems \
 
 ## Current native-router snapshot
 
-The v1.9 checkpoint uses graph/annular topology, atomic multipin transactions,
+The v1.9.1 checkpoint uses graph/annular topology, atomic multipin transactions,
 layer-aware oriented and custom-pad obstacles, explicit rule-size through
 vias, a separate drilled-hole occupancy map, dense-grid matrix rebuilds and
 project-aware KiCad validation. A board-wide PathFinder pass adds sparse
 present/historical resource cost, exact-marker conflict legalization and
-victim-only repair. It commits **12/23 nets**, including CPX-0, CPX-1 and GND,
-as 1,326 segments (365.5 mm), 42 vias and one native GND area.
+victim-only repair. Exact rotated-pad checks prohibit via-in-pad even on an
+owning net. It commits **12/23 nets**, including CPX-1 and CPX-2, as 941
+segments (271.8 mm). This legal selection has no vias or native areas; the
+superseded 42-via snapshot contained 33 via/pad violations.
 
 Fast DRC reports zero committed-copper shorts, spacing violations,
 foreign-pad hits and outline escapes. KiCad 10.0.4, with the matching project
 loaded, reports zero errors attributable to generated tracks/vias. The donor
 board still has two fixed battery-pad/Edge.Cuts errors plus non-routing
-footprint/text issues. KiCad reports 162 unconnected items because eleven nets
+footprint/text issues. KiCad reports 168 unconnected items because eleven nets
 are honestly open.
 
 This remains a legal partial route, not fabrication sign-off. See the
