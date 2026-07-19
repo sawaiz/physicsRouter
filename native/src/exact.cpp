@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <queue>
 #include <unordered_set>
 
@@ -659,8 +660,11 @@ std::vector<Vec2> free_angle_route_exact(const ExactMap &m, Vec2 start, Vec2 goa
     return m.in_bounds(p.x, p.y) && !m.blocked(p.x, p.y, layer, net);
   };
 
-  // 1) straight free-angle when fully clear
-  if (!seg_blocked(start.x, start.y, goal.x, goal.y)) {
+  // 1) Straight free-angle when fully clear. Under negotiated congestion it
+  // remains a candidate, not an unconditional winner: PathFinder history must
+  // be able to move a net away from an overused but geometrically open lane.
+  const bool direct_clear = !seg_blocked(start.x, start.y, goal.x, goal.y);
+  if (direct_clear && (congestion == nullptr || congestion->empty())) {
     set_method("los");
     return {start, goal};
   }
@@ -718,6 +722,10 @@ std::vector<Vec2> free_angle_route_exact(const ExactMap &m, Vec2 start, Vec2 goa
   for (size_t i = 0; i < costed.size(); ++i)
     detour_pts[i] = costed[i].second;
 
+  const double direct_cost =
+      direct_clear
+          ? edge_cost(start.x, start.y, goal.x, goal.y, dist(start, goal))
+          : std::numeric_limits<double>::max();
   for (const Vec2 &mid : detour_pts) {
     if (!valid_mid(mid))
       continue;
@@ -725,8 +733,18 @@ std::vector<Vec2> free_angle_route_exact(const ExactMap &m, Vec2 start, Vec2 goa
       continue;
     if (seg_blocked(mid.x, mid.y, goal.x, goal.y))
       continue;
-    set_method("detour");
-    return {start, mid, goal};
+    const double candidate_cost = detour_cost(mid);
+    if (candidate_cost + 1e-9 < direct_cost) {
+      set_method(congestion != nullptr && !congestion->empty()
+                     ? "detour_congestion"
+                     : "detour");
+      return {start, mid, goal};
+    }
+    break;
+  }
+  if (direct_clear) {
+    set_method("los_congestion");
+    return {start, goal};
   }
 
   // two-corner chain (capped — clearance checks are the cost)
@@ -834,6 +852,11 @@ std::vector<Vec2> free_angle_route_exact(const ExactMap &m, Vec2 start, Vec2 goa
         path.front() = start;
         path.back() = goal;
         set_method("astar");
+        // A clearance-only rubberband can collapse the path straight back
+        // through an expensive historical lane. Preserve the negotiated A*
+        // geometry until the board reaches a conflict-free iteration.
+        if (congestion != nullptr && !congestion->empty())
+          return path;
         return rubberband_exact(m, path, layer, net, width_mm);
       }
 

@@ -163,6 +163,7 @@ class DesignRules(BaseModel):
             "board_thickness_mm": self.constraints.board_thickness_mm,
             "min_clearance_mm": self.constraints.min_clearance_mm,
             "min_track_width_mm": self.constraints.min_track_width_mm,
+            "min_copper_edge_clearance_mm": self.constraints.min_copper_edge_clearance_mm,
             "min_via_diameter_mm": self.constraints.min_via_diameter_mm,
             "min_via_drill_mm": self.constraints.min_via_drill_mm,
             "min_hole_to_hole_mm": self.constraints.min_hole_to_hole_mm,

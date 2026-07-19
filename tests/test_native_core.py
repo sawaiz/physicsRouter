@@ -27,7 +27,9 @@ def test_native_info():
     i = info()
     assert i["available"] is True
     assert "version" in i
-    assert str(i["version"]).startswith("1.8.")
+    assert str(i["version"]).startswith("1.9.")
+    assert i["features"]["pathfinder_history"] is True
+    assert i["features"]["conflict_directed_ripup"] is True
     assert "gpu" in i
     assert i.get("features", {}).get("isotropic") is True
 

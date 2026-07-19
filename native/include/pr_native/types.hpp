@@ -70,11 +70,20 @@ struct NetSpec {
   int area_priority = 0;
 };
 
+/** Sparse historical routing-resource cost supplied by the PathFinder host. */
+struct CongestionCell {
+  int ix = 0;
+  int iy = 0;
+  int layer = 0;
+  double cost = 0.0;
+};
+
 struct RouteConfig {
   double x_min = 0, x_max = 100, y_min = 0, y_max = 100;
   std::vector<Vec2> board_outline; // optional true Edge.Cuts polygon
   double grid_mm = 0.1; // fine free-angle default (matches Python pipeline)
   double clearance_mm = 0.2;
+  double edge_clearance_mm = 0.01;
   double via_diameter_mm = 0.8;
   double via_drill_mm = 0.4;
   double min_hole_to_hole_mm = 0.25;
@@ -88,6 +97,8 @@ struct RouteConfig {
   bool post_rubberband = true;
   bool via_minimize = false; // connectivity/clearance beat via count
   bool atomic_nets = true;   // commit a net only when every anchor connects
+  double congestion_cell_mm = 0.5;
+  std::vector<CongestionCell> congestion;
   int threads = 0; // 0 = auto
 };
 

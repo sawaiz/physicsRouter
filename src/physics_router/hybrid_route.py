@@ -422,6 +422,29 @@ def hybrid_route(
             f"unrouted={len(partial.unrouted_nets)}"
         )
 
+    # Greedy phase commits are safe but can reserve the only viable matrix
+    # homotopy. Re-open the board as independent temporary candidates, raise
+    # historical costs on overused resources, and reroute only conflict nets.
+    # Native/organic power areas remain fixed fill resources throughout.
+    if plan.nets_for("matrix") and len(board.nets) >= 4:
+        from physics_router.negotiated_congestion import negotiated_congestion_route
+
+        if progress_cb:
+            try:
+                progress_cb(0, 3, "pathfinder", "negotiated_congestion", {})
+            except Exception:
+                pass
+        result = negotiated_congestion_route(
+            board,
+            config,
+            rules,
+            plan,
+            result,
+            clearance_mm=rules.constraints.min_clearance_mm,
+            max_iterations=3,
+            workers=4,
+        )
+
     cl_floor = rules.constraints.min_clearance_mm
     layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
     if result.segments:

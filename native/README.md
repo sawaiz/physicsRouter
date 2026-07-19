@@ -5,7 +5,7 @@ C++17 **isotropic free-angle** router — the **only** geometric router in physi
 - **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
 - **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
 
-Version: **1.8.0-graph-topology**
+Version: **1.9.0-negotiated-congestion**
 
 ## Build
 
@@ -45,6 +45,9 @@ Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. 
 | Post rubberband + via_minimize | Geometry polish after connectivity |
 | Parallel bucket bundles | Stable power/critical/matrix orders run concurrently; best zero-violation completion wins |
 | Batch then bounded recovery | Fast legal bucket route; small rejected nets retry individually |
+| Sparse PathFinder history | Present and persistent resource costs steer exact/GridMap A* away from repeatedly overused cells |
+| Conflict-directed legalization | Exact marker graph selects a maximal legal net set before victim-only repair |
+| Copper-edge margin | Track half-width plus the active fabrication edge clearance is reserved around curved Edge.Cuts |
 | OpenCL batch clearance | Parallel sample tests after/during validation |
 | pybind11 | Zero-copy-friendly lists of segments into Python |
 
@@ -68,3 +71,5 @@ Reports GPU device, route wall time, and score-batch cost.
 | `atomic_nets` | true | Roll back a net unless all anchors connect |
 | `soft_fallback` | false | Never paint illegal copper |
 | `use_gpu` | true | OpenCL batch when available |
+| `congestion` | empty | Sparse present/historical per-layer resource costs supplied by the board-wide host |
+| `edge_clearance_mm` | 0.01 | Copper-to-Edge.Cuts clearance in addition to half track width; Python supplies the active board rule |

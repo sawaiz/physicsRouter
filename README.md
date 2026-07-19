@@ -9,7 +9,9 @@ contain physically reachable pads, explicit vias at every layer transition,
 complete multipin nets, zero native hard violations, and zero copper errors
 after KiCad applies and refills the board.
 
-> **Status:** native v1.8 fixes the layer-blind/via-free router failure, but the
+> **Status:** native v1.9 fixes the layer-blind/via-free router failure and adds
+> board-wide PathFinder-style negotiated congestion with conflict-directed
+> rip-up, but the
 > HALO-90 stress board is not fully autorouted yet. Correctly open nets are
 > preferable to illegal copper, but they are not a finished route.
 
@@ -58,6 +60,8 @@ The full diagnosis, publications and measured production-layout baseline are in
 | **Explicit pin access** | F.Cu/B.Cu SMD escapes and layer transitions emit real vias |
 | **Native obstacles** | Oriented, net-owned pads painted only on their physical copper layers |
 | **Bounded variants** | Whole priority/matrix buckets rebuilt in deterministic orders |
+| **Negotiated congestion** | Signal nets may temporarily share capacity; present and historical costs move later candidates away from persistent conflicts |
+| **Conflict-directed rip-up** | Exact native DRC markers form a net-conflict graph; deterministic independent sets are legalized and only victims are retried |
 | **Organic power areas** | Native zone boundaries; KiCad remains fill/thermal authority |
 | **Validation** | Embedded multilayer connectivity graph, native DRC, then official KiCad DRC |
 
@@ -78,15 +82,19 @@ pad/layer model -> pin-access graph -> net hypergraph/topology candidates
                          zones/refill -> KiCad DRC -> score
 ```
 
-The next algorithmic bottleneck is dense CPX bundle routing. The intended
-solution is bounded negotiated congestion plus local conflict search/repair,
-not relaxing the DRC gate.
+The remaining algorithmic bottleneck is dense CPX bundle routing. v1.9 now
+performs three bounded PathFinder rounds, accumulates historical cost on
+overused cells and exact DRC markers, legalizes a maximal independent set of
+the conflict graph, and repairs only its victims. It never returns temporary
+overlap as committed copper and cannot regress the legal input baseline.
 
-Current v1.8 HALO checkpoint: 11/23 nets, two complete CPX nets, 213
-segments, 12 rule-size through vias and one native GND area (287.8 mm total
-track). It has zero native hard violations and zero route-attributed KiCad
-copper errors. Twelve nets remain atomically open, so this is a legal partial
-artifact rather than a finished board.
+Current v1.9 HALO checkpoint: 12/23 nets, including CPX-0, CPX-1 and GND,
+1,326 segments, 42 rule-size through vias and one native GND area (365.5 mm
+total track). It has zero native hard violations and zero generated-copper
+KiCad errors. Eleven nets remain atomically open and KiCad reports 162
+unconnected items, so this is a legal partial artifact rather than a finished
+board. The high segment count also makes topology-preserving consolidation a
+quality priority after completion improves.
 
 ## Definition of working
 

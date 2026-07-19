@@ -505,6 +505,10 @@ def render_suite(board, cfg, rules, tag: str) -> dict:
         "unrouted_nets": list(polished.unrouted_nets),
         "net_status": {report.net: report.status for report in polished.net_reports},
     }
+    if tag == "halo90":
+        route_artifact = OUT / "halo90_route.json"
+        route_artifact.write_text(json.dumps(polished.to_dict(), indent=2) + "\n")
+        meta["route"]["artifact"] = route_artifact.name
     meta["images"] = [
         p1.name,
         p2.name,

@@ -30,15 +30,20 @@ its nets and seeds prior tracks and vias as physical-width obstacles; KiCad
 remains the area-fill authority. The exact native DRC gate rejects a batch if
 it introduces track/via shorts, spacing hits, or an Edge.Cuts escape. Power,
 critical, and matrix buckets compare deterministic whole-bucket rebuilds in
-parallel and keep the most-complete legal result.
+parallel and keep the most-complete legal result. A final board-wide
+PathFinder-style pass routes temporary per-net candidates with sparse present
+and historical cell costs. Exact native DRC markers define the conflict graph;
+legalization retains deterministic maximal independent sets and sequentially
+retries only removed or incomplete victims.
 
-HALO-90 v1.8 legally completes two of ten CPX nets; eight remain intentionally
-open. Overall completion is 9/23 with 21 explicit vias and one GND area. This
-stricter result enforces the physical copper layers exposed by every pad; the
-previous 17/23 snapshot incorrectly accepted inner-layer endpoints at F.Cu-only
-SMD pads. The graph planner models 240 unique pad vertices in 23 hyperedges,
-selects 217 tree edges, and colors 77 net-conflict edges over four layers.
-Solving the rest still needs a true concurrent bundle/topology search.
+HALO-90 v1.9 legally completes two of ten CPX nets; eight remain intentionally
+open. Overall completion is 12/23 with 42 explicit vias and one GND area. The
+first negotiation round finds 20 complete temporary candidates, but they have
+more than 2,000 exact conflicts and are never exposed as legal copper. Three
+bounded rounds reduce coarse overused cells from 2,842 to 1,529 before exact
+legalization and targeted repair. Solving the rest needs conflict-component
+route alternatives and section-level layer/via assignment, not a weaker DRC
+gate.
 
 ## Constraints
 

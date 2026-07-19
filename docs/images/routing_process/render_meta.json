@@ -3,7 +3,7 @@
     "tag": "synthetic",
     "native": {
       "available": true,
-      "version": "1.8.0-graph-topology",
+      "version": "1.9.0-negotiated-congestion",
       "gpu": {
         "available": false,
         "device_name": "cpu",
@@ -23,13 +23,15 @@
         "width_aware_obstacle_inflation": true,
         "hypergraph_topology": true,
         "crossing_aware_mst": true,
-        "dsatur_layer_coloring": true
+        "dsatur_layer_coloring": true,
+        "pathfinder_history": true,
+        "conflict_directed_ripup": true
       }
     },
     "timings_s": {
       "guide": 0.001,
-      "clearance_raw": 0.061,
-      "regeometry": 0.158
+      "clearance_raw": 0.086,
+      "regeometry": 0.134
     },
     "metrics": {
       "graph_plan": {
@@ -208,7 +210,7 @@
     "tag": "halo90",
     "native": {
       "available": true,
-      "version": "1.8.0-graph-topology",
+      "version": "1.9.0-negotiated-congestion",
       "gpu": {
         "available": false,
         "device_name": "cpu",
@@ -228,13 +230,15 @@
         "width_aware_obstacle_inflation": true,
         "hypergraph_topology": true,
         "crossing_aware_mst": true,
-        "dsatur_layer_coloring": true
+        "dsatur_layer_coloring": true,
+        "pathfinder_history": true,
+        "conflict_directed_ripup": true
       }
     },
     "timings_s": {
-      "guide": 0.247,
-      "clearance_raw": 34.482,
-      "regeometry": 3.034
+      "guide": 0.194,
+      "clearance_raw": 136.729,
+      "regeometry": 13.134
     },
     "metrics": {
       "graph_plan": {
@@ -286,18 +290,19 @@
         "planner": "hypergraph+crossing_mst+dsatur"
       },
       "route_graph": {
-        "vertices": 211,
-        "edges": 225,
-        "connected_components": 11,
-        "cycle_rank": 25,
+        "vertices": 1012,
+        "edges": 1368,
+        "connected_components": 12,
+        "cycle_rank": 390,
         "crossing_number": 0,
         "crossing_conflict_edges": 0,
         "max_degree": 6,
-        "articulation_points": 114,
-        "bridges": 122,
+        "articulation_points": 727,
+        "bridges": 745,
         "layer_edge_counts": {
-          "F.Cu": 206,
-          "B.Cu": 7
+          "F.Cu": 1303,
+          "B.Cu": 12,
+          "In1.Cu": 11
         },
         "per_net": {
           "GND": {
@@ -309,6 +314,16 @@
             "articulation_points": 35,
             "bridges": 36,
             "max_degree": 2
+          },
+          "CPX-0": {
+            "vertices": 101,
+            "edges": 100,
+            "via_edges": 44,
+            "connected_components": 1,
+            "cycle_rank": 0,
+            "articulation_points": 76,
+            "bridges": 100,
+            "max_degree": 3
           },
           "MIC": {
             "vertices": 2,
@@ -330,6 +345,26 @@
             "bridges": 3,
             "max_degree": 2
           },
+          "Net-(TP2-Pad1)": {
+            "vertices": 3,
+            "edges": 2,
+            "via_edges": 0,
+            "connected_components": 1,
+            "cycle_rank": 0,
+            "articulation_points": 1,
+            "bridges": 2,
+            "max_degree": 2
+          },
+          "RX": {
+            "vertices": 44,
+            "edges": 43,
+            "via_edges": 0,
+            "connected_components": 1,
+            "cycle_rank": 0,
+            "articulation_points": 42,
+            "bridges": 43,
+            "max_degree": 2
+          },
           "SCL": {
             "vertices": 4,
             "edges": 3,
@@ -341,16 +376,6 @@
             "max_degree": 2
           },
           "SDA": {
-            "vertices": 3,
-            "edges": 2,
-            "via_edges": 0,
-            "connected_components": 1,
-            "cycle_rank": 0,
-            "articulation_points": 1,
-            "bridges": 2,
-            "max_degree": 2
-          },
-          "Net-(TP2-Pad1)": {
             "vertices": 3,
             "edges": 2,
             "via_edges": 0,
@@ -380,62 +405,52 @@
             "bridges": 2,
             "max_degree": 2
           },
-          "RX": {
-            "vertices": 6,
-            "edges": 5,
+          "XL-INT1": {
+            "vertices": 10,
+            "edges": 9,
             "via_edges": 0,
             "connected_components": 1,
             "cycle_rank": 0,
-            "articulation_points": 4,
-            "bridges": 5,
+            "articulation_points": 8,
+            "bridges": 9,
             "max_degree": 2
           },
-          "CPX-2": {
-            "vertices": 39,
-            "edges": 38,
-            "via_edges": 0,
+          "CPX-1": {
+            "vertices": 798,
+            "edges": 1187,
+            "via_edges": 8,
             "connected_components": 1,
-            "cycle_rank": 0,
-            "articulation_points": 36,
-            "bridges": 38,
-            "max_degree": 3
-          },
-          "CPX-5": {
-            "vertices": 107,
-            "edges": 131,
-            "via_edges": 0,
-            "connected_components": 1,
-            "cycle_rank": 25,
-            "articulation_points": 31,
-            "bridges": 28,
+            "cycle_rank": 390,
+            "articulation_points": 558,
+            "bridges": 542,
             "max_degree": 6
           }
         }
       },
       "raw": {
-        "total_length_mm": 287.838,
-        "via_count": 12,
-        "bend_count": 221,
-        "multi_bend_nets": 10,
+        "total_length_mm": 365.462,
+        "via_count": 42,
+        "bend_count": 604,
+        "multi_bend_nets": 11,
         "arc_corners": 0,
-        "min_spacing_mm": 0.3101,
-        "segment_count": 213,
-        "net_count_routed": 11,
+        "min_spacing_mm": 0.3,
+        "segment_count": 1326,
+        "net_count_routed": 12,
         "notes": []
       },
       "regeometry": {
-        "total_length_mm": 287.838,
-        "via_count": 12,
-        "bend_count": 221,
-        "multi_bend_nets": 10,
+        "total_length_mm": 365.462,
+        "via_count": 42,
+        "bend_count": 604,
+        "multi_bend_nets": 11,
         "arc_corners": 0,
-        "min_spacing_mm": 0.3101,
-        "segment_count": 213,
-        "net_count_routed": 11,
+        "min_spacing_mm": 0.3,
+        "segment_count": 1326,
+        "net_count_routed": 12,
         "notes": []
       },
       "guide_segs": 217,
-      "polished_segs": 213
+      "polished_segs": 1326
     },
     "drc": {
       "violations": 0,
@@ -446,49 +461,49 @@
       "areas_deferred_to_kicad": 1
     },
     "route": {
-      "segments": 213,
-      "vias": 12,
+      "segments": 1326,
+      "vias": 42,
       "areas": 1,
-      "length_mm": 287.838,
+      "length_mm": 365.462,
       "unrouted_nets": [
         "+3V",
-        "XL-INT1",
-        "XL-INT2",
-        "TX",
-        "CPX-0",
-        "CPX-1",
+        "CPX-2",
         "CPX-3",
         "CPX-4",
+        "CPX-5",
         "CPX-6",
         "CPX-7",
         "CPX-8",
-        "CPX-9"
+        "CPX-9",
+        "TX",
+        "XL-INT2"
       ],
       "net_status": {
         "GND": "ok",
         "+3V": "unrouted",
+        "CPX-0": "ok",
         "MIC": "ok",
         "Net-(R3-Pad2)": "ok",
+        "Net-(TP2-Pad1)": "ok",
+        "RX": "ok",
         "SCL": "ok",
         "SDA": "ok",
-        "Net-(TP2-Pad1)": "ok",
         "SW-A": "ok",
         "SW-B": "ok",
-        "XL-INT1": "unrouted",
-        "XL-INT2": "unrouted",
         "TX": "unrouted",
-        "RX": "ok",
-        "CPX-0": "unrouted",
-        "CPX-1": "unrouted",
-        "CPX-2": "ok",
+        "XL-INT1": "ok",
+        "XL-INT2": "unrouted",
+        "CPX-1": "ok",
+        "CPX-2": "unrouted",
         "CPX-3": "unrouted",
         "CPX-4": "unrouted",
-        "CPX-5": "ok",
+        "CPX-5": "unrouted",
         "CPX-6": "unrouted",
         "CPX-7": "unrouted",
         "CPX-8": "unrouted",
         "CPX-9": "unrouted"
-      }
+      },
+      "artifact": "halo90_route.json"
     },
     "images": [
       "halo90_1_placement_outline.png",

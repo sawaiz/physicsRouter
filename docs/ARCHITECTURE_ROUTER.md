@@ -83,6 +83,14 @@ For each remaining bucket:
     Select most-complete legal variant; bounded recovery for small rejects
             │
             ▼
+Board-wide negotiated congestion:
+    · route independent candidates with soft present sharing
+    · raise historical cost on overused cells and exact DRC markers
+    · reroute only the exact conflict component
+    · legalize maximal independent conflict sets
+    · retry only removed/incomplete victims
+            │
+            ▼
 Post-connect re-geometry only if exact DRC does not worsen
             │
             ▼
@@ -99,6 +107,7 @@ Report legal completion · preserve rejected nets as explicitly open
 | Isotropic free-angle | `router.free_angle_route` (`style=isotropic`) |
 | Radar / sparse candidates | `topology.radar_scan_points` |
 | Negotiated congestion | `topology.CongestionMap` |
+| Board-wide PathFinder host | `negotiated_congestion.negotiated_congestion_route` |
 | Multi-variant + Pareto | `routing_strategies.topor_style_route` (optional outer strategy) |
 | Elastic geometry | `router.rubberband_cleanup` |
 | Post-connect re-geometry | `regeometry.post_connect_regeometry` (subdivide, spacing, arcs) |
@@ -151,7 +160,8 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 | Crossing-aware spanning topology | **Done** (weighted Kruskal tree, native advisory edge order) |
 | Net conflict graph + layer coloring | **Done** (weighted deterministic DSATUR) |
 | Embedded route graph audit | **Done** (components, cycles, crossings, articulation points, bridges) |
-| Concurrent dense CPX bundle solver | Roadmap — main HALO-90 completion blocker |
+| Board-wide PathFinder history + exact conflict rip-up | **Done** (`negotiated_congestion.py`; bounded, monotonic legal output) |
+| Conflict-component homotopy branching | Roadmap — main HALO-90 completion blocker |
 | Incremental invalidation on component move | Roadmap |
 | End-to-end RL manager / PCBWorld | Roadmap |
 
@@ -167,8 +177,8 @@ Persistent conflict regions accumulate **historical** cost so nets move into alt
 - Compare length / vias / unrouted / grade vs guide and FreeRouting SES when available
 - Optional: reproduce Eremex sample boards from [TopoR 6.0 examples](https://www.eremex.com/support/tutorials/topor6_0_examples/) as behavioral tests (completion, vias, topology)
 
-The checked-in v1.8 HALO-90 snapshot commits 9/23 nets (including two CPX
-nets, 21 explicit vias, and one GND area), leaves 14 nets explicitly open,
+The checked-in v1.9 HALO-90 snapshot commits 12/23 nets (including CPX-0,
+CPX-1, 42 explicit vias, and one GND area), leaves 11 nets explicitly open,
 and reports zero native track/via shorts, spacing hits, or Edge.Cuts escapes.
 Its topology plan contains 240 vertices, 23 hyperedges, 217 tree edges, and
 77 net-conflict edges; the emitted route has zero same-layer crossings.
@@ -186,6 +196,7 @@ filled polygon and thermals. See
 |------|------|
 | `src/physics_router/graph_theory.py` | Board hypergraph, crossing-aware Kruskal, DSATUR layer coloring, route graph audits |
 | `src/physics_router/topology.py` | Signatures, radar, congestion, Pareto scores |
+| `src/physics_router/negotiated_congestion.py` | Board-wide history, resource ownership, exact conflict graph, victim repair |
 | `src/physics_router/router.py` | Graph guide, free-angle policy, rubberband, vias, apply-to-KiCad |
 | `native/router.cpp` | Advisory tree geometrization, atomic GridMap batch router, native copper areas |
 | `src/physics_router/regeometry.py` | Post-connect free-angle reshape + TopoR geometry metrics |

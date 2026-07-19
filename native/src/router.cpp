@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <queue>
 #include <sstream>
 #include <unordered_map>
@@ -135,6 +136,30 @@ bool point_in_polygon(Vec2 point, const std::vector<Vec2> &polygon) {
   return inside;
 }
 
+double point_segment_distance(Vec2 point, Vec2 start, Vec2 end) {
+  const double dx = end.x - start.x;
+  const double dy = end.y - start.y;
+  const double denom = dx * dx + dy * dy;
+  if (denom <= 1e-18)
+    return dist(point, start);
+  const double t = std::clamp(
+      ((point.x - start.x) * dx + (point.y - start.y) * dy) / denom,
+      0.0, 1.0);
+  return dist(point, {start.x + t * dx, start.y + t * dy});
+}
+
+double polygon_edge_distance(Vec2 point, const std::vector<Vec2> &polygon) {
+  if (polygon.size() < 2)
+    return std::numeric_limits<double>::max();
+  double best = std::numeric_limits<double>::max();
+  for (size_t index = 0; index < polygon.size(); ++index) {
+    const Vec2 &start = polygon[index];
+    const Vec2 &end = polygon[(index + 1) % polygon.size()];
+    best = std::min(best, point_segment_distance(point, start, end));
+  }
+  return best;
+}
+
 std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
                                double margin, const RouteConfig &cfg) {
   if (anchors.empty())
@@ -186,19 +211,72 @@ std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
   return hull;
 }
 
+struct HistoryKey {
+  int x = 0, y = 0, layer = 0;
+  bool operator==(const HistoryKey &other) const {
+    return x == other.x && y == other.y && layer == other.layer;
+  }
+};
+
+struct HistoryKeyHash {
+  size_t operator()(const HistoryKey &key) const {
+    return (static_cast<size_t>(key.x) * 73856093u) ^
+           (static_cast<size_t>(key.y) * 19349663u) ^
+           (static_cast<size_t>(key.layer) * 83492791u);
+  }
+};
+
+struct HistoryCostMap {
+  double cell_mm = 0.5;
+  std::unordered_map<HistoryKey, double, HistoryKeyHash> cells;
+
+  explicit HistoryCostMap(const RouteConfig &cfg)
+      : cell_mm(std::max(0.1, cfg.congestion_cell_mm)) {
+    for (const auto &cell : cfg.congestion)
+      cells[{cell.ix, cell.iy, cell.layer}] += cell.cost;
+  }
+  bool empty() const { return cells.empty(); }
+  double cost(double x, double y, int layer) const {
+    const HistoryKey key{static_cast<int>(std::floor(x / cell_mm)),
+                         static_cast<int>(std::floor(y / cell_mm)), layer};
+    const auto it = cells.find(key);
+    return it == cells.end() ? 0.0 : it->second;
+  }
+  double edge_penalty(Vec2 a, Vec2 b, int layer) const {
+    const double length = dist(a, b);
+    const int samples = std::max(
+        1, static_cast<int>(std::ceil(length / std::max(0.1, cell_mm * 0.5))));
+    double sum = 0.0;
+    for (int index = 0; index <= samples; ++index) {
+      const double t = static_cast<double>(index) / samples;
+      sum += cost(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t,
+                  layer);
+    }
+    return sum / static_cast<double>(samples + 1);
+  }
+};
+
 } // namespace
 
-const char *native_version() { return "1.8.0-graph-topology"; }
+const char *native_version() { return "1.9.0-negotiated-congestion"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
   return rubberband(path, g, layer, net_id);
 }
 
-std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int layer, int net_id,
-                              int max_expansions, bool isotropic) {
+static std::vector<Vec2>
+route_point_costed(const GridMap &grid, Vec2 start, Vec2 goal, int layer,
+                   int net_id, int max_expansions, bool isotropic,
+                   const HistoryCostMap *history) {
+  const bool negotiated = history != nullptr && !history->empty();
+  auto route_cost = [&](Vec2 a, Vec2 b) {
+    return dist(a, b) + (negotiated ? history->edge_penalty(a, b, layer) : 0.0);
+  };
   // 1) LOS free-angle
-  if (!grid.segment_blocked(start.x, start.y, goal.x, goal.y, layer, net_id))
+  const bool direct_clear =
+      !grid.segment_blocked(start.x, start.y, goal.x, goal.y, layer, net_id);
+  if (direct_clear && !negotiated)
     return {start, goal};
 
   const double gmm = grid.grid();
@@ -235,16 +313,24 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
 
   // Prefer shorter detours
   std::sort(mids.begin(), mids.end(), [&](const Vec2 &a, const Vec2 &b) {
-    return dist(start, a) + dist(a, goal) < dist(start, b) + dist(b, goal);
+    return route_cost(start, a) + route_cost(a, goal) <
+           route_cost(start, b) + route_cost(b, goal);
   });
 
+  const double direct_cost =
+      direct_clear ? route_cost(start, goal) : std::numeric_limits<double>::max();
   for (const auto &m : mids) {
     if (!grid.in_bounds(m.x, m.y) || grid.point_blocked(m.x, m.y, layer, net_id))
       continue;
     if (!grid.segment_blocked(start.x, start.y, m.x, m.y, layer, net_id) &&
-        !grid.segment_blocked(m.x, m.y, goal.x, goal.y, layer, net_id))
-      return {start, m, goal};
+        !grid.segment_blocked(m.x, m.y, goal.x, goal.y, layer, net_id)) {
+      if (!direct_clear || route_cost(start, m) + route_cost(m, goal) < direct_cost)
+        return {start, m, goal};
+      break;
+    }
   }
+  if (direct_clear)
+    return {start, goal};
 
   // Two-corner isotropic chain (limited; matches Python cand cap)
   size_t lim = std::min<size_t>(mids.size(), 28);
@@ -318,6 +404,8 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
       NodeKey nk{nix, niy};
       double step = gmm * ((DX[d] && DY[d]) ? 1.414213562 : 1.0);
       double ng = gc + step;
+      if (negotiated)
+        ng += history->edge_penalty(cp, np, layer);
       auto it = gscore.find(nk);
       if (it != gscore.end() && it->second <= ng + 1e-12)
         continue;
@@ -342,7 +430,17 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
   std::reverse(path.begin(), path.end());
   path.front() = start;
   path.back() = goal;
-  return rubberband(path, grid, layer, net_id);
+  // Clearance-only shortcutting can collapse an A* path back into its
+  // historically expensive lane. Preserve negotiated geometry until the
+  // board reaches a conflict-free iteration.
+  return negotiated ? path : rubberband(path, grid, layer, net_id);
+}
+
+std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal,
+                              int layer, int net_id, int max_expansions,
+                              bool isotropic) {
+  return route_point_costed(grid, start, goal, layer, net_id, max_expansions,
+                            isotropic, nullptr);
 }
 
 static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, int net_id,
@@ -350,7 +448,8 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
                        const std::vector<int> &start_allowed,
                        const std::vector<int> &goal_allowed, double width,
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
-                       std::string &method) {
+                       std::string &method,
+                       const HistoryCostMap *history = nullptr) {
   std::vector<int> blocked_layers;
   int alts = 0;
 
@@ -414,8 +513,9 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
     for (int layer : layers) {
       if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
         continue;
-      auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions,
-                              cfg.isotropic);
+      auto poly = route_point_costed(grid, a, b, layer, net_id,
+                                     cfg.max_expansions, cfg.isotropic,
+                                     history);
       ++alts;
       if (poly.size() >= 2) {
         method = cfg.isotropic ? "isotropic" : "astar";
@@ -476,8 +576,10 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
       Vec2 via_pt{vx, vy};
       if (via_site_blocked(via_pt, l0, l1))
         continue;
-      auto p0 = route_point(grid, a, via_pt, l0, net_id, exp_budget, cfg.isotropic);
-      auto p1 = route_point(grid, via_pt, b, l1, net_id, exp_budget, cfg.isotropic);
+      auto p0 = route_point_costed(grid, a, via_pt, l0, net_id, exp_budget,
+                                   cfg.isotropic, history);
+      auto p1 = route_point_costed(grid, via_pt, b, l1, net_id, exp_budget,
+                                   cfg.isotropic, history);
       if (p0.size() >= 2 && p1.size() >= 2) {
         method = "via";
         emit_poly(p0, l0, net_id, width, out_segs);
@@ -531,12 +633,13 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
               via_site_blocked(vb, terminal_layer, route_layer))
             continue;
           const int stub_budget = std::max(500, cfg.max_expansions / 3);
-          auto p0 = route_point(grid, a, va, terminal_layer, net_id,
-                                stub_budget, cfg.isotropic);
-          auto pm = route_point(grid, va, vb, route_layer, net_id,
-                                cfg.max_expansions, cfg.isotropic);
-          auto p1 = route_point(grid, vb, b, terminal_layer, net_id,
-                                stub_budget, cfg.isotropic);
+          auto p0 = route_point_costed(grid, a, va, terminal_layer, net_id,
+                                       stub_budget, cfg.isotropic, history);
+          auto pm = route_point_costed(grid, va, vb, route_layer, net_id,
+                                       cfg.max_expansions, cfg.isotropic,
+                                       history);
+          auto p1 = route_point_costed(grid, vb, b, terminal_layer, net_id,
+                                       stub_budget, cfg.isotropic, history);
           if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
             continue;
           method = "two_via_escape";
@@ -578,9 +681,9 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
             if (!grid.in_bounds(site.x, site.y) ||
                 via_site_blocked(site, terminal_layer, route_layer))
               continue;
-            auto stub = route_point(grid, anchor, site, terminal_layer, net_id,
-                                    std::max(500, cfg.max_expansions / 3),
-                                    cfg.isotropic);
+            auto stub = route_point_costed(
+                grid, anchor, site, terminal_layer, net_id,
+                std::max(500, cfg.max_expansions / 3), cfg.isotropic, history);
             if (stub.size() < 2)
               continue;
             escapes.push_back({site, std::move(stub)});
@@ -598,9 +701,9 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
           if (dist(start_escape.site, goal_escape.site) <
               cfg.via_drill_mm + cfg.min_hole_to_hole_mm)
             continue;
-          auto middle = route_point(grid, start_escape.site,
-                                    goal_escape.site, route_layer, net_id,
-                                    cfg.max_expansions, cfg.isotropic);
+          auto middle = route_point_costed(
+              grid, start_escape.site, goal_escape.site, route_layer, net_id,
+              cfg.max_expansions, cfg.isotropic, history);
           if (middle.size() < 2)
             continue;
           method = "two_via_fanout";
@@ -636,8 +739,9 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
     for (int layer : layers) {
       if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
         continue;
-      auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions,
-                              cfg.isotropic);
+      auto poly = route_point_costed(grid, a, b, layer, net_id,
+                                     cfg.max_expansions, cfg.isotropic,
+                                     history);
       ++alts;
       if (poly.size() < 2)
         continue;
@@ -854,6 +958,11 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
   result.notes.push_back(std::string("native_version: ") + native_version());
 
   GridMap grid(cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max, cfg.grid_mm, cfg.num_layers);
+  HistoryCostMap history(cfg);
+  const HistoryCostMap *history_ptr = history.empty() ? nullptr : &history;
+  if (history_ptr != nullptr)
+    result.notes.push_back("pathfinder_history_cells=" +
+                           std::to_string(cfg.congestion.size()));
 
   // RectObs stores physical copper dimensions. Inflate it for the widest
   // centerline routed in this atomic bucket; using a hard-coded 0.25 mm made
@@ -866,12 +975,15 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     obstacle_track_width = 0.25;
 
   if (cfg.board_outline.size() >= 3) {
+    const double edge_margin =
+        std::max(0.0, cfg.edge_clearance_mm) + 0.5 * obstacle_track_width;
     auto &cells = grid.data();
     for (int layer = 0; layer < grid.layers(); ++layer) {
       for (int iy = 0; iy < grid.height(); ++iy) {
         for (int ix = 0; ix < grid.width(); ++ix) {
           Vec2 point{grid.ix_to_world(ix), grid.iy_to_world(iy)};
-          if (!point_in_polygon(point, cfg.board_outline)) {
+          if (!point_in_polygon(point, cfg.board_outline) ||
+              polygon_edge_distance(point, cfg.board_outline) < edge_margin) {
             size_t index = (static_cast<size_t>(layer) * grid.height() + iy) *
                                grid.width() +
                            ix;
@@ -1021,7 +1133,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
                              net.anchors[candidate.to], net.net_id, layers,
                              from_allowed, to_allowed, net.width_mm,
-                             edge_segments, edge_vias, method);
+                             edge_segments, edge_vias, method, history_ptr);
         if (!ok)
           continue;
         in[candidate.to] = 1;

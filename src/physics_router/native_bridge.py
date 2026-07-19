@@ -2,9 +2,9 @@
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 
-Native v1.8: graph-planned atomic layer-reachable routing, oriented pad
-obstacles, topology-safe multipin polish, organic copper areas, and bounded
-parallel bucket-rebuild variants.
+Native v1.9: graph-planned atomic layer-reachable routing, oriented pad
+obstacles, topology-safe multipin polish, organic copper areas, and C++
+historical-cost geometry for board-wide negotiated congestion.
 Python remains the TopoR policy/file-format host; C++ owns geometry.
 """
 
@@ -59,6 +59,8 @@ def info() -> dict[str, Any]:
             "hypergraph_topology": True,
             "crossing_aware_mst": True,
             "dsatur_layer_coloring": True,
+            "pathfinder_history": True,
+            "conflict_directed_ripup": True,
         },
     }
 
@@ -80,11 +82,13 @@ def route_board_native(
     seed_segments: list[Any] | None = None,
     max_expansions: int | None = None,
     use_copper_areas: bool = False,
+    congestion: Any | None = None,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``.
 
     ``exclusive_nets=True`` with ``net_order`` routes **only** those nets (hybrid buckets).
     ``seed_segments``: prior copper painted as obstacles (net-aware keepouts).
+    ``congestion``: sparse present/historical PathFinder costs.
     """
     m = _try_load()
     if m is None:
@@ -107,6 +111,10 @@ def route_board_native(
     cfg.grid_mm = float(grid_mm)
     cfg.clearance_mm = float(clearance_mm)
     rules = dict(getattr(board, "design_rules", None) or {})
+    if hasattr(cfg, "edge_clearance_mm"):
+        cfg.edge_clearance_mm = float(
+            rules.get("min_copper_edge_clearance_mm") or 0.01
+        )
     if hasattr(cfg, "via_diameter_mm"):
         cfg.via_diameter_mm = float(rules.get("min_via_diameter_mm") or 0.8)
     if hasattr(cfg, "via_drill_mm"):
@@ -156,6 +164,30 @@ def route_board_native(
         net_names = [n for n in net_names if n in board.nets]
     name_to_id = {n: i for i, n in enumerate(net_names)}
     layer_to_id = {layer: index for index, layer in enumerate(layers)}
+    if congestion is not None and hasattr(cfg, "congestion"):
+        cfg.congestion_cell_mm = float(
+            getattr(congestion, "cell_mm", 0.5) or 0.5
+        )
+        present_weight = float(getattr(congestion, "present_weight", 1.0))
+        historical_weight = float(
+            getattr(congestion, "historical_weight", 1.0)
+        )
+        combined: dict[tuple[int, int, str], float] = {}
+        for key, value in getattr(congestion, "present", {}).items():
+            combined[key] = combined.get(key, 0.0) + present_weight * float(value)
+        for key, value in getattr(congestion, "historical", {}).items():
+            combined[key] = combined.get(key, 0.0) + historical_weight * float(value)
+        cells = []
+        for (ix, iy, layer), cost in sorted(combined.items()):
+            if layer not in layer_to_id or cost <= 0.0:
+                continue
+            cell = m.CongestionCell()
+            cell.ix = int(ix)
+            cell.iy = int(iy)
+            cell.layer = layer_to_id[layer]
+            cell.cost = float(cost)
+            cells.append(cell)
+        cfg.congestion = cells
 
     graph_plan = None
     graph_plan_error = ""

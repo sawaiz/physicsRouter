@@ -78,17 +78,26 @@ KiCad 10 check is not globally pristine: it includes donor-board text,
 courtyard and a small number of fixed copper warnings. It is a topology and
 layer-assignment reference, not a zero-DRC geometry oracle to copy blindly.
 
-### Corrected v1.8 checkpoint
+### Corrected v1.9 checkpoint
 
-The current deterministic power-first run commits 11/23 HALO nets, including
-two complete CPX nets and GND, as 213 segments, 12 rule-size through vias and
-one native GND area (287.8 mm total track). Twelve nets remain atomically open.
+The current deterministic hybrid run commits 12/23 HALO nets, including
+CPX-0, CPX-1 and GND, as 1,326 segments, 42 rule-size through vias and one
+native GND area (365.5 mm total track). Eleven nets remain atomically open.
 The generated copper has:
 
 - zero native track/track, track/pad, via/pad and outline hard violations;
 - zero route-attributed KiCad copper errors with the source project loaded;
 - no partial copper for rejected nets;
-- 163 KiCad unconnected items because the board route is incomplete.
+- 162 KiCad unconnected items because the board route is incomplete.
+
+The board-wide negotiation pass generated 20/23 complete temporary candidates
+in its first round. Those candidates were deliberately not legal output: exact
+DRC still found more than 2,000 conflict markers. Across three rounds the
+active conflict set changed from 22 to 17 to 14 nets and coarse overused cells
+fell from 2,842 to 1,529. Exact conflict-graph legalization plus targeted
+repair then retained 12 legal nets. This is a one-net improvement over v1.8,
+but the unresolved CPX bundle and the 1,326-segment geometry show that
+negotiation is now infrastructure, not proof of full convergence.
 
 This is much more honest than the failed run and proves the corrected geometry
 path, but it is not a successful full-board result.
@@ -157,11 +166,11 @@ route object and API response instead of being reset by a later native pass.
 
 | Router/research scheme | Relevant mechanism | physicsRouter status |
 |---|---|---|
-| PathFinder negotiated congestion | Temporarily permits sharing, then raises historical resource costs until conflicts disappear | Not yet implemented board-wide; highest-impact next step |
-| TritonRoute | Explicit pin-access reservation, local workers, marker-driven rip-up, complete-or-unrouted net output | Pin access and atomic output implemented; marker repair remains limited |
+| PathFinder negotiated congestion | Temporarily permits sharing, then raises historical resource costs until conflicts disappear | Implemented board-wide with three bounded rounds and sparse historical cell costs; HALO conflicts reduce but do not converge yet |
+| TritonRoute | Explicit pin-access reservation, local workers, marker-driven rip-up, complete-or-unrouted net output | Pin access, exact-marker conflict graph, victim-only repair and atomic output implemented; local detailed repair remains limited |
 | Rubber-band layer assignment | Fix topological path classes before geometry; split trees into sections and add vias at layer crossings | Topology/layer plan implemented; section-level global via minimization remains |
-| Conflict-Based Search / MLV-CBS | Branch on route conflicts instead of relying only on route order; combine with congestion negotiation | Experimental module exists; not yet the primary native matrix solver |
-| TopoR | Free-angle, topology-preserving geometry and automatic optimization | Free-angle/rubber-band pieces implemented; global conflict negotiation incomplete |
+| Conflict-Based Search / MLV-CBS | Branch on route conflicts instead of relying only on route order; combine with congestion negotiation | Deterministic maximal-independent conflict legalization is in the primary flow; bounded branching over alternate route candidates remains experimental |
+| TopoR | Free-angle, topology-preserving geometry and automatic optimization | Free-angle, rubber-band and global conflict negotiation implemented; dense topology refinement and safe consolidation remain incomplete |
 | FreeRouting | Rip-up/reroute, stagnation detection, partial output, DRC feedback | Order variants and partial output implemented; stagnation hashes/history costs remain |
 
 The key distinction is that mature routers do not make one irreversible greedy
@@ -206,16 +215,18 @@ topological tools.
 
 ## Highest-impact remaining work
 
-1. **Native negotiated congestion:** give edges/cells historical costs, route
-   all CPX candidates, rip the highest-conflict nets, and iterate to a bounded
-   fixed point. Do not require every early route to be permanent.
+1. **Conflict-component route alternatives:** create multiple homotopy and
+   layer candidates for each exact marker component, then branch on the
+   conflicting pair instead of rerunning one deterministic path. Stop on
+   stagnation hashes or a hard deadline.
 2. **Pin-access escape graph:** precompute a small set of legal rule-size via
    escapes per pad and reserve them before long-run routing. Reuse one escape
    per branch instead of independently inserting two vias for every tree edge.
 3. **Section-level layer assignment:** assign whole annular tree sections, not
    entire nets or individual edges, and minimize transitions globally.
-4. **Conflict-directed repair:** use KiCad/native markers to build a conflict
-   set and branch/rip only the responsible nets (CBS or MLV-CBS style).
+4. **Topology-preserving consolidation:** the current legal HALO artifact has
+   1,326 segments. Collapse collinear/A* chains only when the embedded route
+   graph and exact DRC remain unchanged.
 5. **Power topology:** connect narrow pad escapes to native/KiCad-filled GND
    and +3V areas, with thermals/refill included in connectivity validation.
 6. **Hard native deadline/cancellation:** propagate a monotonic deadline into

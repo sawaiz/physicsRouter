@@ -6,6 +6,7 @@ from physics_router.config_io import example_config
 from physics_router.design_rules import default_design_rules
 from physics_router.kicad_io import board_from_synthetic
 from physics_router.router import (
+    ObstacleMap,
     RouteResult,
     RouteSegment,
     Via,
@@ -87,6 +88,33 @@ def test_congestion_map_and_radar() -> None:
     assert not sv.dominates(sv2) or sv2.dominates(sv) or True  # either may dominate
     dummy = RouteResult(total_length_mm=10, via_count=1, unrouted_nets=[])
     assert score_vector_from_route(dummy).total_length_mm == 10
+
+
+def test_historical_cost_moves_clear_line_of_sight() -> None:
+    om = ObstacleMap(20.0, 10.0, layers=["F.Cu"], clearance_mm=0.2)
+    congestion = CongestionMap(
+        cell_mm=0.5,
+        present_weight=1.0,
+        historical_weight=2.0,
+    )
+    congestion.paint_segment(1.0, 5.0, 19.0, 5.0, "F.Cu", amount=12.0)
+    congestion.negotiate()
+    method: list[str] = []
+
+    path = free_angle_route(
+        (1.0, 5.0),
+        (19.0, 5.0),
+        "F.Cu",
+        "N",
+        om,
+        grid_mm=0.25,
+        method_out=method,
+        congestion=congestion,
+    )
+
+    assert path is not None and len(path) >= 3
+    assert method == ["detour_congestion"]
+    assert any(abs(y - 5.0) > 0.1 for _x, y in path[1:-1])
 
 
 def test_multilayer_route_uses_topor_pipeline() -> None:

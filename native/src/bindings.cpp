@@ -43,6 +43,13 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("area_margin_mm", &pr::NetSpec::area_margin_mm)
       .def_readwrite("area_priority", &pr::NetSpec::area_priority);
 
+  py::class_<pr::CongestionCell>(m, "CongestionCell")
+      .def(py::init<>())
+      .def_readwrite("ix", &pr::CongestionCell::ix)
+      .def_readwrite("iy", &pr::CongestionCell::iy)
+      .def_readwrite("layer", &pr::CongestionCell::layer)
+      .def_readwrite("cost", &pr::CongestionCell::cost);
+
   py::class_<pr::RouteConfig>(m, "RouteConfig")
       .def(py::init<>())
       .def_readwrite("x_min", &pr::RouteConfig::x_min)
@@ -52,6 +59,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("board_outline", &pr::RouteConfig::board_outline)
       .def_readwrite("grid_mm", &pr::RouteConfig::grid_mm)
       .def_readwrite("clearance_mm", &pr::RouteConfig::clearance_mm)
+      .def_readwrite("edge_clearance_mm", &pr::RouteConfig::edge_clearance_mm)
       .def_readwrite("via_diameter_mm", &pr::RouteConfig::via_diameter_mm)
       .def_readwrite("via_drill_mm", &pr::RouteConfig::via_drill_mm)
       .def_readwrite("min_hole_to_hole_mm",
@@ -67,6 +75,8 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("post_rubberband", &pr::RouteConfig::post_rubberband)
       .def_readwrite("via_minimize", &pr::RouteConfig::via_minimize)
       .def_readwrite("atomic_nets", &pr::RouteConfig::atomic_nets)
+      .def_readwrite("congestion_cell_mm", &pr::RouteConfig::congestion_cell_mm)
+      .def_readwrite("congestion", &pr::RouteConfig::congestion)
       .def_readwrite("threads", &pr::RouteConfig::threads);
 
   py::class_<pr::Segment>(m, "Segment")
@@ -175,8 +185,16 @@ PYBIND11_MODULE(pr_native, m) {
           cptr = &cong;
         }
         std::string method;
-        auto path = pr::free_angle_route_exact(em, {sx, sy}, {gx, gy}, layer, net, grid_mm,
-                                               max_expansions, width_mm, cptr, &method);
+        std::vector<pr::Vec2> path;
+        {
+          // Board-wide negotiated routing evaluates independent conflict nets
+          // concurrently. Release the GIL for the C++ geometry search while
+          // retaining Python ownership only for argument/result conversion.
+          py::gil_scoped_release release;
+          path = pr::free_angle_route_exact(em, {sx, sy}, {gx, gy}, layer, net,
+                                            grid_mm, max_expansions, width_mm,
+                                            cptr, &method);
+        }
         if (path.empty())
           return py::none();
         py::list pts;
