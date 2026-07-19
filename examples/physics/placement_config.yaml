@@ -1,0 +1,1983 @@
+project_name: muon3-physics
+board_width_mm: 140.0
+board_height_mm: 110.0
+grid_mm: 0.5
+notes: 'Muon3 / ../physics telescope board (v10 layout). Four-channel SiPM AFE (OPA858), LT3482 ~70 V
+  HV, iCE40 FPGA, nRF9151 radio path, USB-C PD / VSYS power tree. Generous 140×110 mm outline with functional
+  regions: left SiPM+AFE channels, center digital, bottom power/HV, right expansion. Sources: physics/pcb
+  DESIGN_RULES.md, PART_SELECTION.md, README.md.'
+nets:
+- name: GND
+  net_class: ground
+  weight: 6.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: System return — continuous ground, no split planes (DESIGN_RULES).
+  power_loop_group: main_gnd
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: VSYS
+  net_class: power
+  weight: 5.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Post-PD / system bus (5–20 V class). Feeds bucks, HV boost, TEC headroom.
+  power_loop_group: sys_bus
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: VSYS_IN
+  net_class: power
+  weight: 5.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Protected USB-C / input rail before power path.
+  power_loop_group: sys_bus
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: +3V3
+  net_class: power
+  weight: 5.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Main digital/analog 3.3 V. nRF, FPGA I/O, AFE, sensors. Synchronous buck from VSYS.
+  power_loop_group: dcdc_3v3
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: +1V2
+  net_class: power
+  weight: 5.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: iCE40UP5K core / VCCPLL 1.2 V. Short, low impedance to FPGA.
+  power_loop_group: dcdc_1v2
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: P3V3_S
+  net_class: power
+  weight: 4.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Switched / quiet 3.3 V domain (sensor or radio-side).
+  power_loop_group: dcdc_3v3
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: EN_HV
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: HV enable for LT3482 bias. Must default safe-off.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: BOOST_SW
+  net_class: power
+  weight: 5.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: LT3482 switch node — high di/dt. Short hot loop L1–U10–D10.
+  power_loop_group: hv_bias
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_RAW
+  net_class: power
+  weight: 4.8
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Raw boost output (~70–90 V class). 100 V passives; isolate from TIA.
+  power_loop_group: hv_bias
+  simulate_spice: true
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_MID
+  net_class: power
+  weight: 4.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: HV filter intermediate.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_QUIET
+  net_class: power
+  weight: 4.8
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Filtered quiet HV rail to per-channel SiPM bias.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_FB
+  net_class: analog
+  weight: 4.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: LT3482 feedback. Keep short, quiet, away from BOOST_SW.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_COMP
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Boost compensation node.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_COMP_C
+  net_class: analog
+  weight: 3.0
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Compensation capacitor net.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_MON
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: HV monitor divider to ADC/FPGA telemetry.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_TRIM
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC trim into HV feedback (DAC80508 path).
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: HV_SIPM0
+  net_class: power
+  weight: 4.5
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 0 SiPM bias (~68–75 V S12572). Keyed connector; never on shell.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: SIPM_AN0
+  net_class: analog
+  weight: 5.0
+  critical: true
+  max_length_mm: 25
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 0 SiPM anode → TIA summing. No pour under summing node; guard/keepout.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: true
+  emi_sensitive: true
+- name: INA0
+  net_class: analog
+  weight: 4.5
+  critical: true
+  max_length_mm: 20
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA input / ESD path channel 0.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: TIA0
+  net_class: analog
+  weight: 4.8
+  critical: true
+  max_length_mm: 30
+  target_impedance_ohm: null
+  pair_with: null
+  notes: OPA858 TIA output channel 0 → dual threshold.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: VBOTF0
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA bias / bottom filter channel 0.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: VTHF0
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Threshold filter channel 0.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: THRESH0
+  net_class: analog
+  weight: 4.0
+  critical: true
+  max_length_mm: 35
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC threshold setpoint channel 0 (low/high via comparator).
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CMPRAW0
+  net_class: signal
+  weight: 4.2
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Raw comparator out channel 0 before FPGA boundary.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: CMP0
+  net_class: signal
+  weight: 4.5
+  critical: true
+  max_length_mm: 45
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA timing input channel 0 (active-low events). Preserve subset masks.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_SIPM1
+  net_class: power
+  weight: 4.5
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 1 SiPM bias (~68–75 V S12572). Keyed connector; never on shell.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: SIPM_AN1
+  net_class: analog
+  weight: 5.0
+  critical: true
+  max_length_mm: 25
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 1 SiPM anode → TIA summing. No pour under summing node; guard/keepout.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: true
+  emi_sensitive: true
+- name: INA1
+  net_class: analog
+  weight: 4.5
+  critical: true
+  max_length_mm: 20
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA input / ESD path channel 1.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: TIA1
+  net_class: analog
+  weight: 4.8
+  critical: true
+  max_length_mm: 30
+  target_impedance_ohm: null
+  pair_with: null
+  notes: OPA858 TIA output channel 1 → dual threshold.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: VBOTF1
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA bias / bottom filter channel 1.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: VTHF1
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Threshold filter channel 1.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: THRESH1
+  net_class: analog
+  weight: 4.0
+  critical: true
+  max_length_mm: 35
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC threshold setpoint channel 1 (low/high via comparator).
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CMPRAW1
+  net_class: signal
+  weight: 4.2
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Raw comparator out channel 1 before FPGA boundary.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: CMP1
+  net_class: signal
+  weight: 4.5
+  critical: true
+  max_length_mm: 45
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA timing input channel 1 (active-low events). Preserve subset masks.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_SIPM2
+  net_class: power
+  weight: 4.5
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 2 SiPM bias (~68–75 V S12572). Keyed connector; never on shell.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: SIPM_AN2
+  net_class: analog
+  weight: 5.0
+  critical: true
+  max_length_mm: 25
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 2 SiPM anode → TIA summing. No pour under summing node; guard/keepout.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: true
+  emi_sensitive: true
+- name: INA2
+  net_class: analog
+  weight: 4.5
+  critical: true
+  max_length_mm: 20
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA input / ESD path channel 2.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: TIA2
+  net_class: analog
+  weight: 4.8
+  critical: true
+  max_length_mm: 30
+  target_impedance_ohm: null
+  pair_with: null
+  notes: OPA858 TIA output channel 2 → dual threshold.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: VBOTF2
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA bias / bottom filter channel 2.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: VTHF2
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Threshold filter channel 2.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: THRESH2
+  net_class: analog
+  weight: 4.0
+  critical: true
+  max_length_mm: 35
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC threshold setpoint channel 2 (low/high via comparator).
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CMPRAW2
+  net_class: signal
+  weight: 4.2
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Raw comparator out channel 2 before FPGA boundary.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: CMP2
+  net_class: signal
+  weight: 4.5
+  critical: true
+  max_length_mm: 45
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA timing input channel 2 (active-low events). Preserve subset masks.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: HV_SIPM3
+  net_class: power
+  weight: 4.5
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 3 SiPM bias (~68–75 V S12572). Keyed connector; never on shell.
+  power_loop_group: hv_bias
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: SIPM_AN3
+  net_class: analog
+  weight: 5.0
+  critical: true
+  max_length_mm: 25
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Channel 3 SiPM anode → TIA summing. No pour under summing node; guard/keepout.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: true
+  emi_sensitive: true
+- name: INA3
+  net_class: analog
+  weight: 4.5
+  critical: true
+  max_length_mm: 20
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA input / ESD path channel 3.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: TIA3
+  net_class: analog
+  weight: 4.8
+  critical: true
+  max_length_mm: 30
+  target_impedance_ohm: null
+  pair_with: null
+  notes: OPA858 TIA output channel 3 → dual threshold.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: VBOTF3
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TIA bias / bottom filter channel 3.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: VTHF3
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Threshold filter channel 3.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: THRESH3
+  net_class: analog
+  weight: 4.0
+  critical: true
+  max_length_mm: 35
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC threshold setpoint channel 3 (low/high via comparator).
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CMPRAW3
+  net_class: signal
+  weight: 4.2
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Raw comparator out channel 3 before FPGA boundary.
+  power_loop_group: afe_ch{i}
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: CMP3
+  net_class: signal
+  weight: 4.5
+  critical: true
+  max_length_mm: 45
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA timing input channel 3 (active-low events). Preserve subset masks.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: VBOT
+  net_class: analog
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Shared TIA bottom / bias reference from DAC domain.
+  power_loop_group: afe_shared
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: DAC_SPARE_G
+  net_class: analog
+  weight: 2.0
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC spare channel G.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: DAC_SPARE_H
+  net_class: analog
+  weight: 2.0
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: DAC spare channel H.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: TCXO_CLK
+  net_class: clock
+  weight: 4.5
+  critical: true
+  max_length_mm: 30
+  target_impedance_ohm: null
+  pair_with: null
+  notes: TCXO clock to FPGA/timing. Short, clean return.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: CFG_SCK
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: CFG_SI
+  notes: SPI config clock (flash/FPGA).
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CFG_SI
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: CFG_SCK
+  notes: SPI config data in.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CFG_SO
+  net_class: signal
+  weight: 3.2
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: SPI config data out.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: CFG_SS
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: SPI config chip select.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: FPGA_CDONE
+  net_class: signal
+  weight: 2.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: iCE40 configuration done.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: FPGA_CRESET
+  net_class: signal
+  weight: 2.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: iCE40 CRESET_B.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: FPGA_SPARE_B24
+  net_class: signal
+  weight: 1.5
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA spare I/O.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: FPGA_SPARE_G1
+  net_class: signal
+  weight: 1.5
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: FPGA spare I/O.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: SDA
+  net_class: differential
+  weight: 3.8
+  critical: true
+  max_length_mm: 50
+  target_impedance_ohm: null
+  pair_with: SCL
+  notes: I2C data (DAC, BME/env sensor). Length-match with SCL.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: SCL
+  net_class: differential
+  weight: 3.8
+  critical: true
+  max_length_mm: 50
+  target_impedance_ohm: null
+  pair_with: SDA
+  notes: I2C clock.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NRF_SCK
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: nRF9151 SPI clock (host/co-proc).
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NRF_COPI
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: nRF SPI COPI.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NRF_CIPO
+  net_class: signal
+  weight: 3.2
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: nRF SPI CIPO.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NRF_CS
+  net_class: signal
+  weight: 3.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: nRF SPI CS.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NRF_IRQ
+  net_class: signal
+  weight: 3.0
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: nRF interrupt.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: GNSS_EN
+  net_class: signal
+  weight: 2.5
+  critical: true
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: GNSS enable.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: GNSS_RX
+  net_class: signal
+  weight: 3.0
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: GNSS_TX
+  notes: GNSS UART RX.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: GNSS_TX
+  net_class: signal
+  weight: 3.0
+  critical: true
+  max_length_mm: 40
+  target_impedance_ohm: null
+  pair_with: GNSS_RX
+  notes: GNSS UART TX.
+  power_loop_group: radio
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: GPS_PPS
+  net_class: clock
+  weight: 4.0
+  critical: true
+  max_length_mm: 50
+  target_impedance_ohm: null
+  pair_with: null
+  notes: 1PPS timing to FPGA.
+  power_loop_group: digital
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: true
+- name: LED_RGB0
+  net_class: signal
+  weight: 1.5
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Status RGB.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: LED_RGB1
+  net_class: signal
+  weight: 1.5
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: ''
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: LED_RGB2
+  net_class: signal
+  weight: 1.5
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: ''
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NTC0
+  net_class: analog
+  weight: 3.0
+  critical: true
+  max_length_mm: 60
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Thermistor channel 0 (SiPM/TEC cold/hot).
+  power_loop_group: thermal
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: NTC1
+  net_class: analog
+  weight: 3.0
+  critical: true
+  max_length_mm: 60
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Thermistor channel 1.
+  power_loop_group: thermal
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_0a-Pad46)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_13b-Pad6)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_23b-Pad21)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_29b-Pad19)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_2a-Pad47)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_31b-Pad18)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_3b_G6-Pad44)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_4a-Pad48)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_5b-Pad45)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_6a-Pad2)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_8a-Pad4)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOB_9b-Pad3)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_42b-Pad31)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_43a-Pad32)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_44b-Pad34)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_48b-Pad36)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_49a-Pad43)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_50b-Pad38)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U3-IOT_51a-Pad42)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+- name: unconnected-(U4-GND-Pad14)
+  net_class: signal
+  weight: 0.1
+  critical: false
+  max_length_mm: null
+  target_impedance_ohm: null
+  pair_with: null
+  notes: Unconnected pad net — ignore for placement priority.
+  power_loop_group: null
+  simulate_spice: false
+  simulate_em: false
+  emi_sensitive: false
+fixed:
+- ref: H1
+  x_mm: 9.76
+  y_mm: 82.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (H1)
+- ref: H2
+  x_mm: 65.07
+  y_mm: 10.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (H2)
+- ref: H3
+  x_mm: 117.7
+  y_mm: 66.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (H3)
+- ref: H4
+  x_mm: 65.07
+  y_mm: 88.5
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (H4)
+- ref: J1
+  x_mm: 16.74
+  y_mm: 86.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J1)
+- ref: J2
+  x_mm: 13.52
+  y_mm: 15.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (J2)
+- ref: J3
+  x_mm: 13.52
+  y_mm: 32.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (J3)
+- ref: J4
+  x_mm: 13.52
+  y_mm: 49.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (J4)
+- ref: J5
+  x_mm: 13.52
+  y_mm: 66.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Edge/mechanical fixed (J5)
+- ref: J6
+  x_mm: 116.63
+  y_mm: 26.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J6)
+- ref: J7
+  x_mm: 116.63
+  y_mm: 14.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J7)
+- ref: J8
+  x_mm: 116.63
+  y_mm: 20.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J8)
+- ref: J9
+  x_mm: 85.48
+  y_mm: 64.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J9)
+- ref: J10
+  x_mm: 85.48
+  y_mm: 70.0
+  rotation_deg: -90.0
+  locked: true
+  notes: Edge/mechanical fixed (J10)
+- ref: U101
+  x_mm: 32.0
+  y_mm: 88.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U101)
+- ref: U102
+  x_mm: 42.0
+  y_mm: 88.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U102)
+- ref: U111
+  x_mm: 32.0
+  y_mm: 62.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U111)
+- ref: U112
+  x_mm: 42.0
+  y_mm: 62.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U112)
+- ref: U121
+  x_mm: 32.0
+  y_mm: 40.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U121)
+- ref: U122
+  x_mm: 42.0
+  y_mm: 40.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U122)
+- ref: U131
+  x_mm: 32.0
+  y_mm: 22.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U131)
+- ref: U132
+  x_mm: 42.0
+  y_mm: 22.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U132)
+- ref: U3
+  x_mm: 68.0
+  y_mm: 55.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U3)
+- ref: U4
+  x_mm: 82.0
+  y_mm: 48.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U4)
+- ref: U5
+  x_mm: 72.0
+  y_mm: 80.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U5)
+- ref: U6
+  x_mm: 62.0
+  y_mm: 40.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U6)
+- ref: U10
+  x_mm: 70.0
+  y_mm: 18.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U10)
+- ref: U11
+  x_mm: 88.0
+  y_mm: 50.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U11)
+- ref: U12
+  x_mm: 88.0
+  y_mm: 62.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (U12)
+- ref: X1
+  x_mm: 55.0
+  y_mm: 40.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (X1)
+- ref: L1
+  x_mm: 62.0
+  y_mm: 18.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (L1)
+- ref: L2
+  x_mm: 90.0
+  y_mm: 18.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (L2)
+- ref: D10
+  x_mm: 78.0
+  y_mm: 18.0
+  rotation_deg: 0.0
+  locked: true
+  notes: Functional floorplan seed (D10)
+- ref: C112
+  x_mm: 28.0
+  y_mm: 59.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R124
+  x_mm: 35.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C132
+  x_mm: 32.0
+  y_mm: 21.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C13
+  x_mm: 29.0
+  y_mm: 21.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C11
+  x_mm: 35.0
+  y_mm: 60.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R136
+  x_mm: 35.0
+  y_mm: 20.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R113
+  x_mm: 35.0
+  y_mm: 65.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C122
+  x_mm: 37.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C113
+  x_mm: 35.0
+  y_mm: 65.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R132
+  x_mm: 29.0
+  y_mm: 19.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R105
+  x_mm: 35.0
+  y_mm: 87.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C125
+  x_mm: 36.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: R102
+  x_mm: 33.0
+  y_mm: 85.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R123
+  x_mm: 35.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: R122
+  x_mm: 33.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C134
+  x_mm: 33.0
+  y_mm: 24.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: D4
+  x_mm: 32.0
+  y_mm: 38.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: R11
+  x_mm: 31.0
+  y_mm: 60.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R103
+  x_mm: 31.0
+  y_mm: 87.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C103
+  x_mm: 37.0
+  y_mm: 86.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R125
+  x_mm: 35.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C135
+  x_mm: 34.0
+  y_mm: 20.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C115
+  x_mm: 31.0
+  y_mm: 64.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R131
+  x_mm: 37.0
+  y_mm: 21.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R135
+  x_mm: 28.0
+  y_mm: 21.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C123
+  x_mm: 31.0
+  y_mm: 41.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C136
+  x_mm: 31.0
+  y_mm: 25.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R114
+  x_mm: 33.0
+  y_mm: 64.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C104
+  x_mm: 33.0
+  y_mm: 86.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R116
+  x_mm: 36.0
+  y_mm: 60.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C12
+  x_mm: 34.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C10
+  x_mm: 35.0
+  y_mm: 87.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R104
+  x_mm: 30.0
+  y_mm: 90.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C111
+  x_mm: 35.0
+  y_mm: 60.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R111
+  x_mm: 33.0
+  y_mm: 65.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C116
+  x_mm: 31.0
+  y_mm: 65.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C102
+  x_mm: 29.0
+  y_mm: 88.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R101
+  x_mm: 36.0
+  y_mm: 87.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R12
+  x_mm: 28.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C133
+  x_mm: 28.0
+  y_mm: 19.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R13
+  x_mm: 30.0
+  y_mm: 19.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C101
+  x_mm: 34.0
+  y_mm: 89.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C105
+  x_mm: 31.0
+  y_mm: 86.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: D3
+  x_mm: 30.0
+  y_mm: 60.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: D5
+  x_mm: 36.0
+  y_mm: 22.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R133
+  x_mm: 30.0
+  y_mm: 21.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R112
+  x_mm: 37.0
+  y_mm: 62.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: C131
+  x_mm: 32.0
+  y_mm: 22.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: R10
+  x_mm: 33.0
+  y_mm: 87.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: R134
+  x_mm: 32.0
+  y_mm: 22.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch3 passive cluster
+- ref: C106
+  x_mm: 32.0
+  y_mm: 91.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C124
+  x_mm: 28.0
+  y_mm: 42.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: R115
+  x_mm: 33.0
+  y_mm: 62.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R121
+  x_mm: 35.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: R126
+  x_mm: 31.0
+  y_mm: 39.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: C114
+  x_mm: 29.0
+  y_mm: 59.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch1 passive cluster
+- ref: R106
+  x_mm: 35.0
+  y_mm: 89.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C121
+  x_mm: 28.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+- ref: D2
+  x_mm: 32.0
+  y_mm: 88.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch0 passive cluster
+- ref: C126
+  x_mm: 34.0
+  y_mm: 37.0
+  rotation_deg: 0.0
+  locked: false
+  notes: AFE ch2 passive cluster
+regions:
+- name: sipm_edge
+  x_min_mm: 4.800000000000001
+  y_min_mm: 6.0
+  x_max_mm: 22.0
+  y_max_mm: 104.0
+  preferred_refs:
+  - J2
+  - J3
+  - J4
+  - J5
+  preferred_net_classes:
+  - analog
+  - power
+  notes: SiPM / panel connectors — left edge, short SIPM_AN / HV_SIPM escape.
+- name: afe_ch0
+  x_min_mm: 18.0
+  y_min_mm: 70.0
+  x_max_mm: 52.0
+  y_max_mm: 105.2
+  preferred_refs:
+  - U101
+  - U102
+  - D2
+  - C101
+  - C102
+  - C103
+  - C104
+  - C105
+  - C106
+  - R101
+  - R102
+  - R103
+  - R104
+  - R105
+  - R106
+  preferred_net_classes:
+  - analog
+  notes: Channel 0 TIA+comparator island (quiet).
+- name: afe_ch1
+  x_min_mm: 18.0
+  y_min_mm: 52.0
+  x_max_mm: 52.0
+  y_max_mm: 72.0
+  preferred_refs:
+  - U111
+  - U112
+  - D3
+  - C111
+  - C112
+  - C113
+  - C114
+  - C115
+  - C116
+  - R111
+  - R112
+  - R113
+  - R114
+  - R115
+  - R116
+  preferred_net_classes:
+  - analog
+  notes: Channel 1 AFE island.
+- name: afe_ch2
+  x_min_mm: 18.0
+  y_min_mm: 34.0
+  x_max_mm: 52.0
+  y_max_mm: 54.0
+  preferred_refs:
+  - U121
+  - U122
+  - D4
+  - C121
+  - C122
+  - C123
+  - C124
+  - C125
+  - C126
+  - R121
+  - R122
+  - R123
+  - R124
+  - R125
+  - R126
+  preferred_net_classes:
+  - analog
+  notes: Channel 2 AFE island.
+- name: afe_ch3
+  x_min_mm: 18.0
+  y_min_mm: 6.0
+  x_max_mm: 52.0
+  y_max_mm: 36.0
+  preferred_refs:
+  - U131
+  - U132
+  - D5
+  - C131
+  - C132
+  - C133
+  - C134
+  - C135
+  - C136
+  - R131
+  - R132
+  - R133
+  - R134
+  - R135
+  - R136
+  preferred_net_classes:
+  - analog
+  notes: Channel 3 AFE island.
+- name: digital_core
+  x_min_mm: 50.0
+  y_min_mm: 28.0
+  x_max_mm: 95.0
+  y_max_mm: 82.0
+  preferred_refs:
+  - U3
+  - U4
+  - U5
+  - U6
+  - X1
+  - C20
+  - C21
+  - C22
+  - C30
+  - C31
+  - C32
+  - C33
+  - R20
+  - R30
+  - R31
+  - R32
+  - R33
+  - R35
+  - R36
+  - R37
+  preferred_net_classes:
+  - signal
+  - clock
+  - differential
+  notes: FPGA iCE40, flash, DAC, env sensor, TCXO — central digital.
+- name: power_hv
+  x_min_mm: 50.0
+  y_min_mm: 4.800000000000001
+  x_max_mm: 135.2
+  y_max_mm: 32.0
+  preferred_refs:
+  - U10
+  - U11
+  - U12
+  - L1
+  - L2
+  - D10
+  - C10
+  - C11
+  - C12
+  - C13
+  - R10
+  - R11
+  - R12
+  - R13
+  - R14
+  - R15
+  - R16
+  - J1
+  preferred_net_classes:
+  - power
+  - ground
+  notes: VSYS input, 3V3/1V2 bucks, LT3482 HV boost — hot loops, away from AFE.
+- name: thermal_io
+  x_min_mm: 55.0
+  y_min_mm: 75.0
+  x_max_mm: 95.0
+  y_max_mm: 105.2
+  preferred_refs:
+  - J9
+  - J10
+  preferred_net_classes:
+  - analog
+  notes: NTC headers / thermal telemetry.
+- name: expansion_radio
+  x_min_mm: 112.0
+  y_min_mm: 12.0
+  x_max_mm: 136.4
+  y_max_mm: 98.0
+  preferred_refs:
+  - J6
+  - J7
+  - J8
+  preferred_net_classes:
+  - signal
+  - rf
+  notes: Debug / nRF / GNSS / expansion headers — right edge. RF keepout near antenna end.
+lock_ref_prefixes:
+- H
+physics:
+  weighted_wirelength: 1.2
+  power_loop_area: 4.0
+  critical_net_length: 3.0
+  overlap_penalty: 50.0
+  region_violation: 12.0
+  density_congestion: 1.5
+  thermal_spread: 0.5
+  emi_proxy: 3.0
+  spice_score: 4.0
+  openems_score: 4.0
+  ir_drop: 3.5
+  loop_inductance: 4.0
+  return_path: 3.0
+  matrix_length_match: 3.0
+num_candidates: 6
+sa_iterations: 2500
+use_spice: true
+use_openems: false

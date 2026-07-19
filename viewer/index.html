@@ -312,7 +312,7 @@
   };
 
   const STEPS = [
-    { title: 'Board', hint: 'Pick a preset. The 2D viewer shows footprints and outline. HALO-90 locks the LED ring.' },
+    { title: 'Board', hint: 'Pick a preset. 2D follows that board’s Edge.Cuts (rect or ring) and footprints.' },
     { title: 'Place', hint: 'Optional. Moves only unlocked parts. Skip if the layout is already fixed.' },
     { title: 'Route', hint: 'Auto-route on the 2D board. Improve keeps trying until the grade and DRC goal (or timeout).' },
     { title: '3D', hint: 'Inspect the board in 3D after routing. Optional OpenEMS / EMI volumes.' },
@@ -1207,10 +1207,16 @@
     $('#btnLoadPreset')?.addEventListener('click', async () => {
       if (!state.live) return alert('physics-router serve');
       state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: $('#presetSel').value }) });
-      state.viewer = await api('/api/viewer-data');
+      // Prefer viewer embedded in preset response; always re-fetch for disk write
+      state.viewer = state.snap?.viewer || await api('/api/viewer-data');
+      try { state.viewer = await api('/api/viewer-data'); } catch (_) { /* keep embedded */ }
       state.layersBuilt = false;
       state.sceneKey = '';
       state.chartKey = '';
+      // Force 3D reload (drop cached GLB URL even if path string matches)
+      three.glbUrl = null;
+      three.glbLoading = false;
+      if (three.gKicad) clearGroup(three.gKicad);
       updateLayers();
       updateRouteSelect();
       updateMetrics();
@@ -1218,6 +1224,20 @@
       else drawRoute2d();
       renderStepPanel();
       updateHeader();
+      // 3D export may still be running — poll once for new glb
+      setTimeout(async () => {
+        try {
+          const v = await api('/api/viewer-data');
+          const prev = state.viewer?.assets?.glb;
+          state.viewer = v;
+          state.snap = await api('/api/snapshot');
+          if (v?.assets?.glb && v.assets.glb !== prev) {
+            three.glbUrl = null;
+            if (state.vizMode === '3d') rebuildScene();
+          } else if (state.vizMode === '2d') drawRoute2d();
+          updateHeader();
+        } catch (_) { /* ignore */ }
+      }, 4000);
     });
     $('#btnApplyYaml')?.addEventListener('click', async () => {
       if (!state.live) return;
@@ -1866,47 +1886,61 @@
       }
     }
 
-    // Board substrate fill from Edge.Cuts (circle or max arc radius) else LED ring
+    // Board substrate fill — fully driven by loaded board Edge.Cuts (no HALO-only defaults)
     const showEdge = !layersOn || layersOn.has('Edge.Cuts');
     const outlineEarly = board?.outline || [];
     if (showEdge) {
-      let cxB = 0, cyB = 0, rBoard = Math.max(bw, bh) / 2 - pad;
-      const circ = outlineEarly.find(g => g.kind === 'circle' && (g.r || 0) > 5);
+      const fillStyle = 'rgba(20, 55, 40, 0.88)';
+      const strokeStyle = 'rgba(208, 216, 224, 0.9)';
+      const circ = outlineEarly.find(g => g.kind === 'circle' && (g.r || 0) > 1);
+      const polys = outlineEarly.filter(g => g.kind === 'poly' && g.pts?.length >= 3);
+      const lines = outlineEarly.filter(g => g.kind === 'line');
+      ctx.fillStyle = fillStyle;
+
       if (circ) {
-        cxB = circ.cx; cyB = circ.cy; rBoard = circ.r;
+        // Circular board (e.g. HALO disk)
+        const [bcx, bcy] = tx(circ.cx, circ.cy);
+        ctx.beginPath();
+        ctx.arc(bcx, bcy, (circ.r || 1) * scale, 0, Math.PI * 2);
+        ctx.fill();
+        if (!polys.length) {
+          ctx.strokeStyle = strokeStyle;
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+        }
+      } else if (polys.length) {
+        // Closed polygon / teardrop arc rings from Edge.Cuts
+        for (const g of polys) {
+          const p0 = tx(g.pts[0][0], g.pts[0][1]);
+          ctx.beginPath();
+          ctx.moveTo(p0[0], p0[1]);
+          for (let i = 1; i < g.pts.length; i++) {
+            const p = tx(g.pts[i][0], g.pts[i][1]);
+            ctx.lineTo(p[0], p[1]);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
       } else {
-        // Classic HALO arcs are centered near origin with r≈12
-        for (const g of outlineEarly) {
-          if (g.kind === 'poly' && g.pts?.length > 8) {
-            let sx = 0, sy = 0;
-            for (const p of g.pts) { sx += p[0]; sy += p[1]; }
-            const n = g.pts.length;
-            const mx = sx / n, my = sy / n;
-            let rr = 0;
-            for (const p of g.pts) rr = Math.max(rr, Math.hypot(p[0] - mx, p[1] - my));
-            if (rr > rBoard) { rBoard = rr; cxB = mx; cyB = my; }
+        // Rectangular (or multi-line) outline: fill axis-aligned bbox of Edge.Cuts lines
+        // or board width×height — never invent a circle at the origin
+        let x0 = minX, y0 = minY, x1 = maxX, y1 = maxY;
+        if (lines.length) {
+          x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity;
+          for (const g of lines) {
+            x0 = Math.min(x0, g.x1, g.x2);
+            y0 = Math.min(y0, g.y1, g.y2);
+            x1 = Math.max(x1, g.x1, g.x2);
+            y1 = Math.max(y1, g.y1, g.y2);
           }
+        } else if (Number.isFinite(bw) && Number.isFinite(bh) && bw > 0 && bh > 0) {
+          // Origin-bottom-left style boards use 0..w, 0..h when no outline graphics
+          x0 = 0; y0 = 0; x1 = bw; y1 = bh;
         }
-        if (rBoard < 8) {
-          const leds = comps.filter(c => /^D\d+$/i.test(c.ref));
-          if (leds.length > 10) rBoard = Math.max(...leds.map(c => Math.hypot(c.x, c.y))) + 1.2;
-          if (comps.length) {
-            cxB = comps.reduce((s, c) => s + c.x, 0) / comps.length;
-            cyB = comps.reduce((s, c) => s + c.y, 0) / comps.length;
-          }
-        }
-      }
-      const [bcx, bcy] = tx(cxB, cyB);
-      ctx.beginPath();
-      ctx.arc(bcx, bcy, rBoard * scale, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(20, 55, 40, 0.88)';
-      ctx.fill();
-      // Stroke full circle only when no arc polylines (teardrop uses polys)
-      const hasOutlinePolys = outlineEarly.some(g => g.kind === 'poly' && g.pts?.length);
-      if (!hasOutlinePolys) {
-        ctx.strokeStyle = 'rgba(208, 216, 224, 0.9)';
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
+        const a = tx(x0, y0), b = tx(x1, y1);
+        const rx = Math.min(a[0], b[0]), ry = Math.min(a[1], b[1]);
+        const rw = Math.abs(b[0] - a[0]), rh = Math.abs(b[1] - a[1]);
+        ctx.fillRect(rx, ry, rw, rh);
       }
     }
 

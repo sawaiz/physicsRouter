@@ -210,8 +210,7 @@ def load_board_from_kicad_pcb(
                 rot = _as_float(at[3])
         fp_name = fp[1] if len(fp) > 1 and isinstance(fp[1], str) else ""
         w, h = _estimate_size(fp)
-        # Pose always comes from the .kicad_pcb (at x y [rot]) — YAML fixed
-        # placements must not override geometry (they only mark lock flags).
+        # Default pose from .kicad_pcb; YAML fixed may override (floorplan).
         locked = False
         if config:
             for fix in config.fixed:
@@ -245,14 +244,28 @@ def load_board_from_kicad_pcb(
         for fix in config.fixed:
             if fix.ref in components:
                 c = components[fix.ref]
-                # Keep PCB x/y/rot; only propagate lock flag from YAML
+                # Floorplan: YAML fixed placement overrides PCB pose when given
+                c.x_mm = float(fix.x_mm)
+                c.y_mm = float(fix.y_mm)
+                c.rotation_deg = float(fix.rotation_deg)
                 c.locked = bool(fix.locked or c.locked)
+                if fix.notes and not c.notes:
+                    c.notes = fix.notes
         # Prefix locks (e.g. HALO LED ring D1–D90) — keep PCB coordinates, mark immovable
+        # only when no explicit fixed entry already repositioned the ref
+        fixed_refs = {f.ref for f in config.fixed}
         prefixes = [p for p in (config.lock_ref_prefixes or []) if p]
         if prefixes:
             for ref, c in components.items():
+                if ref in fixed_refs:
+                    continue
                 if any(ref.startswith(p) for p in prefixes):
                     c.locked = True
+        # Prefer config board size when larger (generous outline / floorplan)
+        if config.board_width_mm and config.board_width_mm > width:
+            width = float(config.board_width_mm)
+        if config.board_height_mm and config.board_height_mm > height:
+            height = float(config.board_height_mm)
 
     copper_layers = ["F.Cu", "B.Cu"]
     rules_dict = None
@@ -262,6 +275,53 @@ def load_board_from_kicad_pcb(
         dr = load_design_rules(pcb_path=path)
         copper_layers = list(dr.copper_layers) or copper_layers
         rules_dict = dr.summary()
+
+    # Generous rectangular outline when config expands the board envelope
+    if config and (
+        abs(width - (config.board_width_mm or width)) < 1e-6
+        and abs(height - (config.board_height_mm or height)) < 1e-6
+        and (width > 110 or height > 90)
+    ):
+        # Replace tight PCB Edge.Cuts with config-sized rectangle if expanded
+        if config.board_width_mm >= 120 or config.board_height_mm >= 100:
+            outline = [
+                {
+                    "kind": "line",
+                    "layer": "Edge.Cuts",
+                    "x1": 0.0,
+                    "y1": 0.0,
+                    "x2": width,
+                    "y2": 0.0,
+                    "width": 0.2,
+                },
+                {
+                    "kind": "line",
+                    "layer": "Edge.Cuts",
+                    "x1": width,
+                    "y1": 0.0,
+                    "x2": width,
+                    "y2": height,
+                    "width": 0.2,
+                },
+                {
+                    "kind": "line",
+                    "layer": "Edge.Cuts",
+                    "x1": width,
+                    "y1": height,
+                    "x2": 0.0,
+                    "y2": height,
+                    "width": 0.2,
+                },
+                {
+                    "kind": "line",
+                    "layer": "Edge.Cuts",
+                    "x1": 0.0,
+                    "y1": height,
+                    "x2": 0.0,
+                    "y2": 0.0,
+                    "width": 0.2,
+                },
+            ]
 
     return BoardModel(
         width_mm=width,

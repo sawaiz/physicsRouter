@@ -57,6 +57,18 @@ EXAMPLES = ROOT / "examples"
 CI_SCRIPT = ROOT / "scripts" / "ci_regression.py"
 HALO_PCB = ROOT / "third_party/halo-90/pcb/halo-90.kicad_pcb"
 HALO_CFG = ROOT / "examples/halo-90/placement_config.yaml"
+# Sibling ../physics Muon3 project (main pcb/muon3.kicad_pcb is an empty shell)
+PHYSICS_CFG = EXAMPLES / "physics" / "placement_config.yaml"
+PHYSICS_PCB = (
+    ROOT.parent
+    / "physics"
+    / "reference_documentation"
+    / "next_generation"
+    / "nextgen_review"
+    / "hardware"
+    / "muon_telescope_v10"
+    / "muon_telescope.kicad_pcb"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -146,11 +158,16 @@ class AppState:
         self.routed_pcb_path: str | None = None  # last applied copper PCB
         # JLCPCB fab profile: 2layer_* / 4layer_* / 6layer_* (recommended|capability)
         self.fab_profile: str = "4layer_recommended"
-        # Prefer HALO-90 when the open test project is present
-        if HALO_CFG.exists() and HALO_PCB.exists():
+        # Prefer explicit PHYSICS_PRESET=1 / MUON3, else HALO-90, else synthetic
+        env_preset = (os.environ.get("PHYSICS_ROUTER_PRESET") or "").strip().lower()
+        if env_preset in ("physics", "muon3", "muon"):
+            self._load_preset("physics")
+        elif HALO_CFG.exists() and HALO_PCB.exists():
             self._load_preset("halo-90")
         elif HALO_CFG.exists():
             self._load_preset("halo-90")
+        elif PHYSICS_CFG.exists() and PHYSICS_PCB.exists():
+            self._load_preset("physics")
         else:
             self._load_preset("synthetic")
 
@@ -173,7 +190,12 @@ class AppState:
         )
 
     def _load_preset(self, name: str) -> None:
-        if name == "halo-90" and HALO_CFG.exists():
+        if name in ("physics", "muon3", "muon") and PHYSICS_CFG.exists():
+            self.config = load_config(PHYSICS_CFG)
+            self.preset = "physics"
+            self.pcb_path = str(PHYSICS_PCB) if PHYSICS_PCB.exists() else None
+            self.board_source = "pcb" if self.pcb_path else "synthetic"
+        elif name == "halo-90" and HALO_CFG.exists():
             self.config = load_config(HALO_CFG)
             self.preset = "halo-90"
             self.pcb_path = str(HALO_PCB) if HALO_PCB.exists() else None
@@ -195,12 +217,14 @@ class AppState:
         self.routed_pcb_path = None
         self.last_score = None
         self.last_placement = None
+        self.glb_url = None  # drop previous preset model before rediscover
+        self.step_url = None
         self._discover_assets()
         self._refresh_viewer()
-        # Kick off full KiCad 3D (STEP models + mask/silk) if PCB present and GLB missing
-        if self.pcb_path and Path(self.pcb_path).exists() and not self.glb_url:
+        # Always re-export 3D when PCB present so layout/model match the active preset
+        if self.pcb_path and Path(self.pcb_path).exists():
             try:
-                self.enqueue("export_board_3d", {"also_step": False})
+                self.enqueue("export_board_3d", {"also_step": False, "force": True})
             except Exception:
                 pass
 
@@ -222,26 +246,35 @@ class AppState:
         self._board = self._build_board()
 
     def _discover_assets(self) -> None:
-        """Point session at viewer/assets/*.glb / *.step if present."""
+        """Point session at viewer/assets/*.glb / *.step for **this preset only**.
+
+        Never fall through to another preset's model (e.g. halo-90.glb while on physics).
+        Cache-bust with file mtime so the UI reloads after re-export.
+        """
         self.glb_url = None
         self.step_url = None
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
         candidates: list[Path] = []
         if self.preset:
             candidates.append(ASSETS_DIR / f"{self.preset}.glb")
+            candidates.append(ASSETS_DIR / f"{self.preset}_routed.glb")
         if self.pcb_path:
             candidates.append(ASSETS_DIR / f"{Path(self.pcb_path).stem}.glb")
-        candidates.append(ASSETS_DIR / "board.glb")
+        # Only generic board.glb when preset is synthetic/demo
+        if self.preset in ("synthetic", "demo", "board"):
+            candidates.append(ASSETS_DIR / "board.glb")
         for p in candidates:
             if p.is_file() and p.stat().st_size > 1000:
-                self.glb_url = f"/assets/{p.name}"
+                mtime = int(p.stat().st_mtime)
+                self.glb_url = f"/assets/{p.name}?v={mtime}"
                 break
-        for p in [
-            ASSETS_DIR / f"{self.preset}_full.step" if self.preset else None,
-            ASSETS_DIR / "board_full.step",
-        ]:
-            if p and p.is_file():
-                self.step_url = f"/assets/{p.name}"
+        step_candidates = []
+        if self.preset:
+            step_candidates.append(ASSETS_DIR / f"{self.preset}_full.step")
+        step_candidates.append(ASSETS_DIR / "board_full.step")
+        for p in step_candidates:
+            if p.is_file():
+                self.step_url = f"/assets/{p.name}?v={int(p.stat().st_mtime)}"
                 break
 
     def _refresh_viewer(self) -> None:
@@ -1687,11 +1720,21 @@ def _fab_profiles_payload() -> list[dict[str, Any]]:
 
 def list_presets() -> list[dict[str, Any]]:
     presets: list[dict[str, Any]] = []
+    if PHYSICS_CFG.exists():
+        presets.append(
+            {
+                "id": "physics",
+                "label": "Muon3 / physics (../physics telescope v10)",
+                "has_pcb": PHYSICS_PCB.exists(),
+                "config": str(PHYSICS_CFG.relative_to(ROOT)),
+                "pcb": str(PHYSICS_PCB) if PHYSICS_PCB.exists() else None,
+            }
+        )
     if HALO_CFG.exists():
         presets.append(
             {
                 "id": "halo-90",
-                "label": "HALO-90 wearable (default)",
+                "label": "HALO-90 wearable",
                 "has_pcb": HALO_PCB.exists(),
                 "config": str(HALO_CFG.relative_to(ROOT)),
                 "pcb": str(HALO_PCB.relative_to(ROOT)) if HALO_PCB.exists() else None,
@@ -2024,6 +2067,11 @@ class Handler(SimpleHTTPRequestHandler):
                 with STATE.lock:
                     STATE._load_preset(name)
                     snap = STATE.snapshot()
+                # Include fresh viewer payload so UI 2D/3D update without stale cache
+                try:
+                    snap["viewer"] = STATE.viewer_payload
+                except Exception:
+                    pass
                 return self._json(200, snap)
             if path == "/api/config/apply":
                 # Apply JSON config object or YAML text
