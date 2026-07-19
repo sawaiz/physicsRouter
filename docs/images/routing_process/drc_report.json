@@ -1,709 +1,296 @@
 {
-  "boards": {
-    "halo90": {
-      "time_s": 59.26,
-      "clearance_mm": 0.15,
-      "grid_mm": 0.5,
-      "segments": 162,
-      "vias": 22,
-      "length_mm": 746.52,
-      "unrouted": [],
-      "unrouted_count": 0,
-      "nets": 23,
-      "components": 111,
-      "grade": "D",
-      "score": 42.4,
-      "summary": "grade D (42/100) \u00b7 38 soft viol \u00b7 22 vias \u00b7 0 unrouted \u00b7 746.5 mm",
-      "drc": {
-        "violations": 38,
-        "shorts": 25,
-        "spacing": 13,
-        "outline_outside": 0,
-        "items": [
-          {
-            "kind": "short",
-            "net_a": "CPX-0",
-            "net_b": "CPX-8",
-            "layer": "F.Cu",
-            "x": -2.41,
-            "y": -9.666,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-0",
-            "net_b": "CPX-9",
-            "layer": "F.Cu",
-            "x": -2.41,
-            "y": -9.666,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-0",
-            "net_b": "CPX-8",
-            "layer": "F.Cu",
-            "x": -7.632,
-            "y": -6.404,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-2",
-            "net_b": "CPX-7",
-            "layer": "F.Cu",
-            "x": 5.321,
-            "y": 8.291,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-2",
-            "net_b": "CPX-8",
-            "layer": "F.Cu",
-            "x": -9.294,
-            "y": 4.847,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-4",
-            "net_b": "CPX-9",
-            "layer": "In2.Cu",
-            "x": 9.362,
-            "y": -3.407,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-4",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": 9.576,
-            "y": 2.746,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-5",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": -6.946,
-            "y": -8.391,
-            "dist_mm": 0.1615,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-5",
-            "net_b": "CPX-8",
-            "layer": "In2.Cu",
-            "x": -9.101,
-            "y": -4.052,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-5",
-            "net_b": "CPX-9",
-            "layer": "In2.Cu",
-            "x": -9.745,
-            "y": 2.071,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-5",
-            "net_b": "CPX-8",
-            "layer": "In2.Cu",
-            "x": -6.666,
-            "y": 7.403,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-8",
-            "layer": "In2.Cu",
-            "x": -7.25,
-            "y": 7.5,
-            "dist_mm": 0.0142,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": -7.25,
-            "y": 7.5,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-6",
-            "net_b": "CPX-9",
-            "layer": "In2.Cu",
-            "x": -10.5,
-            "y": 1.25,
-            "dist_mm": 0.2704,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": 4.981,
-            "y": 8.628,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-8",
-            "layer": "In2.Cu",
-            "x": 4.981,
-            "y": 8.628,
-            "dist_mm": 0.0,
-            "need_mm": 0.277
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-3",
-            "net_b": "CPX-0",
-            "layer": "F.Cu",
-            "x": 2.0,
-            "y": -9.5,
-            "dist_mm": 0.0886,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-6",
-            "net_b": "CPX-0",
-            "layer": "F.Cu",
-            "x": -2.5,
-            "y": -10.0,
-            "dist_mm": 0.3455,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-4",
-            "layer": "In1.Cu",
-            "x": -2.5,
-            "y": -10.0,
-            "dist_mm": 0.2139,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": -2.5,
-            "y": -10.0,
-            "dist_mm": 0.0,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-6",
-            "net_b": "CPX-4",
-            "layer": "In1.Cu",
-            "x": -2.0,
-            "y": -9.0,
-            "dist_mm": 0.1751,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-7",
-            "net_b": "CPX-1",
-            "layer": "B.Cu",
-            "x": 8.0,
-            "y": -3.5,
-            "dist_mm": 0.4201,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-7",
-            "net_b": "CPX-0",
-            "layer": "F.Cu",
-            "x": 3.5,
-            "y": -8.0,
-            "dist_mm": 0.0963,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-7",
-            "net_b": "CPX-6",
-            "layer": "In1.Cu",
-            "x": 3.5,
-            "y": -8.0,
-            "dist_mm": 0.4083,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-7",
-            "net_b": "CPX-2",
-            "layer": "F.Cu",
-            "x": -11.0,
-            "y": 3.0,
-            "dist_mm": 0.3712,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-7",
-            "net_b": "CPX-2",
-            "layer": "F.Cu",
-            "x": -11.0,
-            "y": 3.0,
-            "dist_mm": 0.3409,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-7",
-            "net_b": "CPX-5",
-            "layer": "In1.Cu",
-            "x": 4.5,
-            "y": 8.0,
-            "dist_mm": 0.0781,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-8",
-            "net_b": "+3V",
-            "layer": "In1.Cu",
-            "x": -6.0,
-            "y": 1.5,
-            "dist_mm": 0.3793,
-            "need_mm": 0.575
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-8",
-            "net_b": "CPX-0",
-            "layer": "F.Cu",
-            "x": -7.0,
-            "y": 6.5,
-            "dist_mm": 0.1099,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-8",
-            "net_b": "CPX-7",
-            "layer": "In2.Cu",
-            "x": -3.5,
-            "y": -8.0,
-            "dist_mm": 0.3922,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-8",
-            "net_b": "CPX-2",
-            "layer": "F.Cu",
-            "x": 8.5,
-            "y": 3.5,
-            "dist_mm": 0.319,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-9",
-            "net_b": "CPX-6",
-            "layer": "In2.Cu",
-            "x": -2.5,
-            "y": 2.0,
-            "dist_mm": 0.0981,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-9",
-            "net_b": "CPX-6",
-            "layer": "In2.Cu",
-            "x": 1.0,
-            "y": -9.5,
-            "dist_mm": 0.1815,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-9",
-            "net_b": "CPX-1",
-            "layer": "B.Cu",
-            "x": 7.0,
-            "y": -7.0,
-            "dist_mm": 0.4136,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-9",
-            "net_b": "CPX-4",
-            "layer": "In1.Cu",
-            "x": 9.0,
-            "y": 6.0,
-            "dist_mm": 0.3465,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-9",
-            "net_b": "CPX-4",
-            "layer": "In2.Cu",
-            "x": 9.0,
-            "y": 6.0,
-            "dist_mm": 0.3465,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "spacing",
-            "net_a": "CPX-9",
-            "net_b": "CPX-5",
-            "layer": "In1.Cu",
-            "x": 9.0,
-            "y": 6.0,
-            "dist_mm": 0.3,
-            "need_mm": 0.4385
-          },
-          {
-            "kind": "short",
-            "net_a": "CPX-9",
-            "net_b": "CPX-6",
-            "layer": "In2.Cu",
-            "x": 9.0,
-            "y": 6.0,
-            "dist_mm": 0.1016,
-            "need_mm": 0.4385
-          }
-        ]
+  "tag": "halo90",
+  "native": {
+    "available": true,
+    "version": "1.8.0-graph-topology",
+    "gpu": {
+      "available": false,
+      "device_name": "cpu",
+      "backend": "none"
+    },
+    "features": {
+      "isotropic": true,
+      "post_rubberband": true,
+      "via_minimize": true,
+      "via_reasons": true,
+      "atomic_nets": true,
+      "copper_areas": true,
+      "topology_safe_rubberband": true,
+      "matrix_bundle": true,
+      "oriented_pad_obstacles": true,
+      "anchor_layer_reachability": true,
+      "width_aware_obstacle_inflation": true,
+      "hypergraph_topology": true,
+      "crossing_aware_mst": true,
+      "dsatur_layer_coloring": true
+    }
+  },
+  "timings_s": {
+    "guide": 0.247,
+    "clearance_raw": 34.482,
+    "regeometry": 3.034
+  },
+  "metrics": {
+    "graph_plan": {
+      "vertices": 240,
+      "hyperedges": 23,
+      "tree_edges": 217,
+      "conflict_edges": 67,
+      "layer_assignment": {
+        "CPX-5": "F.Cu",
+        "CPX-4": "In1.Cu",
+        "CPX-9": "In2.Cu",
+        "CPX-6": "B.Cu",
+        "CPX-2": "F.Cu",
+        "CPX-0": "In1.Cu",
+        "CPX-3": "In2.Cu",
+        "CPX-7": "B.Cu",
+        "CPX-8": "F.Cu",
+        "CPX-1": "B.Cu",
+        "+3V": "F.Cu",
+        "GND": "B.Cu",
+        "XL-INT1": "In1.Cu",
+        "XL-INT2": "In2.Cu",
+        "SDA": "F.Cu",
+        "SW-B": "F.Cu",
+        "Net-(TP2-Pad1)": "In1.Cu",
+        "TX": "F.Cu",
+        "SCL": "F.Cu",
+        "RX": "F.Cu",
+        "Net-(R3-Pad2)": "F.Cu",
+        "SW-A": "F.Cu",
+        "MIC": "F.Cu"
       },
-      "geometry": {
-        "total_length_mm": 746.524,
-        "via_count": 22,
-        "bend_count": 156,
-        "multi_bend_nets": 14,
-        "arc_corners": 0,
-        "min_spacing_mm": -0.12,
-        "segment_count": 162,
-        "net_count_routed": 23,
-        "notes": []
+      "projected_same_layer_crossings": 92,
+      "projected_crossings": 596,
+      "guide_length_mm": 791.259,
+      "layers_used": 4,
+      "max_tree_degree": 3,
+      "max_conflict_degree": 14,
+      "annular_nets": [
+        "CPX-0",
+        "CPX-1",
+        "CPX-2",
+        "CPX-3",
+        "CPX-4",
+        "CPX-8",
+        "CPX-9"
+      ],
+      "annular_net_count": 7,
+      "planner": "hypergraph+crossing_mst+dsatur"
+    },
+    "route_graph": {
+      "vertices": 211,
+      "edges": 225,
+      "connected_components": 11,
+      "cycle_rank": 25,
+      "crossing_number": 0,
+      "crossing_conflict_edges": 0,
+      "max_degree": 6,
+      "articulation_points": 114,
+      "bridges": 122,
+      "layer_edge_counts": {
+        "F.Cu": 206,
+        "B.Cu": 7
       },
-      "outline_outside_endpoints": 0,
-      "outline_outside_midpoints": 0,
-      "max_radius_mm": 12.258,
-      "winner": "small_first",
-      "variants_ranked": [
-        {
-          "name": "small_first",
-          "score": 42.4,
-          "grade": "D",
-          "length_mm": 761.8,
-          "vias": 22,
-          "unrouted": 0,
-          "violations": 15,
-          "si_mfg": 179.724,
-          "pareto": true
+      "per_net": {
+        "GND": {
+          "vertices": 37,
+          "edges": 36,
+          "via_edges": 12,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 35,
+          "bridges": 36,
+          "max_degree": 2
         },
-        {
-          "name": "planner",
-          "score": 15.0,
-          "grade": "D",
-          "length_mm": 707.34,
-          "vias": 34,
-          "unrouted": 0,
-          "violations": 57,
-          "si_mfg": 271.14,
-          "pareto": true
+        "MIC": {
+          "vertices": 2,
+          "edges": 1,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 0,
+          "bridges": 1,
+          "max_degree": 1
+        },
+        "Net-(R3-Pad2)": {
+          "vertices": 4,
+          "edges": 3,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 2,
+          "bridges": 3,
+          "max_degree": 2
+        },
+        "SCL": {
+          "vertices": 4,
+          "edges": 3,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 2,
+          "bridges": 3,
+          "max_degree": 2
+        },
+        "SDA": {
+          "vertices": 3,
+          "edges": 2,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 1,
+          "bridges": 2,
+          "max_degree": 2
+        },
+        "Net-(TP2-Pad1)": {
+          "vertices": 3,
+          "edges": 2,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 1,
+          "bridges": 2,
+          "max_degree": 2
+        },
+        "SW-A": {
+          "vertices": 3,
+          "edges": 2,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 1,
+          "bridges": 2,
+          "max_degree": 2
+        },
+        "SW-B": {
+          "vertices": 3,
+          "edges": 2,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 1,
+          "bridges": 2,
+          "max_degree": 2
+        },
+        "RX": {
+          "vertices": 6,
+          "edges": 5,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 4,
+          "bridges": 5,
+          "max_degree": 2
+        },
+        "CPX-2": {
+          "vertices": 39,
+          "edges": 38,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 0,
+          "articulation_points": 36,
+          "bridges": 38,
+          "max_degree": 3
+        },
+        "CPX-5": {
+          "vertices": 107,
+          "edges": 131,
+          "via_edges": 0,
+          "connected_components": 1,
+          "cycle_rank": 25,
+          "articulation_points": 31,
+          "bridges": 28,
+          "max_degree": 6
         }
-      ],
-      "si_mfg": {
-        "si": {
-          "parallel_run_mm": 10.686,
-          "layer_hop_penalty": 55.0,
-          "return_path_proxy": 8.045,
-          "length_excess_mm": 6.831,
-          "pair_skew_mm": 0.011,
-          "total": 124.017
-        },
-        "mfg": {
-          "acute_angle_count": 14,
-          "short_stub_count": 0,
-          "via_near_pad_count": 22,
-          "tiny_segment_count": 0,
-          "copper_density_imbalance": 0.448,
-          "neck_risk": 3.75,
-          "total": 60.886
-        },
-        "combined": 184.903,
-        "notes": [
-          "crosstalk_proxy: 10.7 mm parallel exposure",
-          "mfg: 14 acute copper angles",
-          "mfg: 22 via(s) near pads",
-          "si: weak return-path proximity on some signals"
-        ]
-      },
-      "notes_tail": [
-        "pair:SDA+SCL prefer same layer / matched length",
-        "pair:SCL+SDA prefer same layer / matched length",
-        "elastic: reverted (drc 38\u219254 violations)",
-        "crosstalk_proxy: 10.7 mm parallel exposure",
-        "mfg: 14 acute copper angles",
-        "mfg: 22 via(s) near pads",
-        "si: weak return-path proximity on some signals",
-        "planner: linear feature policy (power/critical first, pairs co-ordered)",
-        "planner: 23 nets, mean K-homotopy=2.5",
-        "topology_signatures: 23 net class(es) recorded",
-        "variants: small_first=D/42.4 L=761.8 V=22 U=0, planner=D/15.0 L=707.34 V=34 U=0",
-        "router_drc: 38 violation(s) (25 short, 13 spacing) @ clearance 0.15mm"
-      ],
-      "drc_samples": [
-        {
-          "kind": "short",
-          "net_a": "CPX-0",
-          "net_b": "CPX-8",
-          "layer": "F.Cu",
-          "x": -2.41,
-          "y": -9.666,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-0",
-          "net_b": "CPX-9",
-          "layer": "F.Cu",
-          "x": -2.41,
-          "y": -9.666,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-0",
-          "net_b": "CPX-8",
-          "layer": "F.Cu",
-          "x": -7.632,
-          "y": -6.404,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-2",
-          "net_b": "CPX-7",
-          "layer": "F.Cu",
-          "x": 5.321,
-          "y": 8.291,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-2",
-          "net_b": "CPX-8",
-          "layer": "F.Cu",
-          "x": -9.294,
-          "y": 4.847,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-4",
-          "net_b": "CPX-9",
-          "layer": "In2.Cu",
-          "x": 9.362,
-          "y": -3.407,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-4",
-          "net_b": "CPX-7",
-          "layer": "In2.Cu",
-          "x": 9.576,
-          "y": 2.746,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "spacing",
-          "net_a": "CPX-5",
-          "net_b": "CPX-7",
-          "layer": "In2.Cu",
-          "x": -6.946,
-          "y": -8.391,
-          "dist_mm": 0.1615,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-5",
-          "net_b": "CPX-8",
-          "layer": "In2.Cu",
-          "x": -9.101,
-          "y": -4.052,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-5",
-          "net_b": "CPX-9",
-          "layer": "In2.Cu",
-          "x": -9.745,
-          "y": 2.071,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-5",
-          "net_b": "CPX-8",
-          "layer": "In2.Cu",
-          "x": -6.666,
-          "y": 7.403,
-          "dist_mm": 0.0,
-          "need_mm": 0.277
-        },
-        {
-          "kind": "short",
-          "net_a": "CPX-6",
-          "net_b": "CPX-8",
-          "layer": "In2.Cu",
-          "x": -7.25,
-          "y": 7.5,
-          "dist_mm": 0.0142,
-          "need_mm": 0.277
-        }
-      ],
-      "methods": {
-        "los": 18,
-        "detour": 1,
-        "via": 3,
-        "unrouted_edge": 1
       }
     },
-    "synthetic": {
-      "time_s": 0.75,
-      "clearance_mm": 0.2,
-      "grid_mm": 0.5,
-      "segments": 29,
-      "vias": 6,
-      "length_mm": 154.74,
-      "unrouted": [],
-      "unrouted_count": 0,
-      "nets": 7,
-      "components": 9,
-      "grade": "A",
-      "score": 95.2,
-      "summary": "grade A (95/100) \u00b7 0 soft viol \u00b7 6 vias \u00b7 0 unrouted \u00b7 154.7 mm",
-      "drc": {
-        "violations": 0,
-        "shorts": 0,
-        "spacing": 0,
-        "outline_outside": 0,
-        "items": []
-      },
-      "geometry": {
-        "total_length_mm": 154.735,
-        "via_count": 6,
-        "bend_count": 20,
-        "multi_bend_nets": 6,
-        "arc_corners": 0,
-        "min_spacing_mm": 0.2039,
-        "segment_count": 29,
-        "net_count_routed": 7,
-        "notes": []
-      },
-      "outline_outside_endpoints": 0,
-      "outline_outside_midpoints": 0,
-      "max_radius_mm": 48.279,
-      "winner": "planner",
-      "variants_ranked": [
-        {
-          "name": "planner",
-          "score": 95.2,
-          "grade": "A",
-          "length_mm": 158.44,
-          "vias": 6,
-          "unrouted": 0,
-          "violations": 0,
-          "si_mfg": 52.123,
-          "pareto": true
-        }
-      ],
-      "si_mfg": {
-        "si": {
-          "parallel_run_mm": 0.0,
-          "layer_hop_penalty": 11.0,
-          "return_path_proxy": 8.573,
-          "length_excess_mm": 11.56,
-          "pair_skew_mm": 4.362,
-          "total": 37.182
-        },
-        "mfg": {
-          "acute_angle_count": 0,
-          "short_stub_count": 0,
-          "via_near_pad_count": 4,
-          "tiny_segment_count": 0,
-          "copper_density_imbalance": 0.94,
-          "neck_risk": 0.0,
-          "total": 13.519
-        },
-        "combined": 50.701,
-        "notes": [
-          "mfg: 4 via(s) near pads",
-          "si: pair skew 4.36 mm",
-          "si: weak return-path proximity on some signals"
-        ]
-      },
-      "notes_tail": [
-        "pair:USB_DP+USB_DM prefer same layer / matched length",
-        "pair:USB_DM+USB_DP prefer same layer / matched length",
-        "elastic: optimized 5 chain(s), 16 iters",
-        "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.2mm",
-        "mfg: 4 via(s) near pads",
-        "si: pair skew 4.36 mm",
-        "si: weak return-path proximity on some signals",
-        "planner: linear feature policy (power/critical first, pairs co-ordered)",
-        "planner: 7 nets, mean K-homotopy=3.0",
-        "topology_signatures: 7 net class(es) recorded",
-        "variants: planner=A/95.2 L=158.44 V=6 U=0",
-        "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.2mm"
-      ],
-      "drc_samples": [],
-      "methods": {
-        "via": 3,
-        "homotopy_detour": 3,
-        "homotopy_los": 1
-      }
+    "raw": {
+      "total_length_mm": 287.838,
+      "via_count": 12,
+      "bend_count": 221,
+      "multi_bend_nets": 10,
+      "arc_corners": 0,
+      "min_spacing_mm": 0.3101,
+      "segment_count": 213,
+      "net_count_routed": 11,
+      "notes": []
+    },
+    "regeometry": {
+      "total_length_mm": 287.838,
+      "via_count": 12,
+      "bend_count": 221,
+      "multi_bend_nets": 10,
+      "arc_corners": 0,
+      "min_spacing_mm": 0.3101,
+      "segment_count": 213,
+      "net_count_routed": 11,
+      "notes": []
+    },
+    "guide_segs": 217,
+    "polished_segs": 213
+  },
+  "drc": {
+    "violations": 0,
+    "shorts": 0,
+    "spacing": 0,
+    "outline_outside": 0,
+    "area_outside": 0,
+    "areas_deferred_to_kicad": 1
+  },
+  "route": {
+    "segments": 213,
+    "vias": 12,
+    "areas": 1,
+    "length_mm": 287.838,
+    "unrouted_nets": [
+      "+3V",
+      "XL-INT1",
+      "XL-INT2",
+      "TX",
+      "CPX-0",
+      "CPX-1",
+      "CPX-3",
+      "CPX-4",
+      "CPX-6",
+      "CPX-7",
+      "CPX-8",
+      "CPX-9"
+    ],
+    "net_status": {
+      "GND": "ok",
+      "+3V": "unrouted",
+      "MIC": "ok",
+      "Net-(R3-Pad2)": "ok",
+      "SCL": "ok",
+      "SDA": "ok",
+      "Net-(TP2-Pad1)": "ok",
+      "SW-A": "ok",
+      "SW-B": "ok",
+      "XL-INT1": "unrouted",
+      "XL-INT2": "unrouted",
+      "TX": "unrouted",
+      "RX": "ok",
+      "CPX-0": "unrouted",
+      "CPX-1": "unrouted",
+      "CPX-2": "ok",
+      "CPX-3": "unrouted",
+      "CPX-4": "unrouted",
+      "CPX-5": "ok",
+      "CPX-6": "unrouted",
+      "CPX-7": "unrouted",
+      "CPX-8": "unrouted",
+      "CPX-9": "unrouted"
     }
-  }
+  },
+  "images": [
+    "halo90_1_placement_outline.png",
+    "halo90_2_guide_topology.png",
+    "halo90_3_clearance_raw.png",
+    "halo90_4_regeometry.png",
+    "halo90_5_by_layer.png",
+    "halo90_6_process_strip.png",
+    "halo90_7_drc_map.png"
+  ]
 }

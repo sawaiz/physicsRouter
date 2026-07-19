@@ -8,7 +8,6 @@ import pytest
 
 from physics_router.models import BoardModel, Component
 from physics_router.router import (
-    ObstacleMap,
     build_obstacle_map,
     clearance_aware_route,
     free_angle_route,
@@ -176,3 +175,16 @@ def test_halo_outline_polygon_contains_components():
     # Far exterior rejected
     assert not om.in_bounds(20.0, 0.0)
     assert not om.in_bounds(0.0, 20.0)
+
+
+@pytest.mark.skipif(
+    not __import__("pathlib").Path("third_party/halo-90/pcb/halo-90.kicad_pcb").exists(),
+    reason="HALO-90 PCB not cloned",
+)
+def test_halo_arc_outline_sets_board_dimensions_without_yaml():
+    """Arc-only Edge.Cuts must not fall back to the old 100x80 default."""
+    from physics_router.kicad_io import load_board_from_kicad_pcb
+
+    board = load_board_from_kicad_pcb("third_party/halo-90/pcb/halo-90.kicad_pcb")
+    assert 23.5 <= board.width_mm <= 26.0
+    assert 25.5 <= board.height_mm <= 27.0

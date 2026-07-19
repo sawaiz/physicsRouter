@@ -207,9 +207,13 @@ def spacing_repel_polyline(
             if not om.in_bounds(nx, ny) or om.blocked(nx, ny, layer, net):
                 continue
             prev, nxt = pts[i - 1], pts[i + 1]
-            if om.segment_blocked(prev[0], prev[1], nx, ny, layer, net, width_mm=width_mm):
+            if om.segment_blocked(
+                prev[0], prev[1], nx, ny, layer, net, width_mm=width_mm
+            ):
                 continue
-            if om.segment_blocked(nx, ny, nxt[0], nxt[1], layer, net, width_mm=width_mm):
+            if om.segment_blocked(
+                nx, ny, nxt[0], nxt[1], layer, net, width_mm=width_mm
+            ):
                 continue
             new_pts[i] = (nx, ny)
         pts = new_pts
@@ -498,6 +502,7 @@ def post_connect_regeometry(
     out = RouteResult(
         segments=new_segs,
         vias=list(result.vias),
+        areas=list(result.areas),
         via_count=result.via_count,
         total_length_mm=total_len,
         unrouted_nets=list(result.unrouted_nets),
@@ -530,7 +535,9 @@ def post_connect_regeometry(
     by_net_len: dict[str, float] = {}
     by_net_seg: dict[str, int] = {}
     for s in new_segs:
-        by_net_len[s.net] = by_net_len.get(s.net, 0.0) + _dist((s.x1, s.y1), (s.x2, s.y2))
+        by_net_len[s.net] = by_net_len.get(s.net, 0.0) + _dist(
+            (s.x1, s.y1), (s.x2, s.y2)
+        )
         by_net_seg[s.net] = by_net_seg.get(s.net, 0) + 1
     for rep in out.net_reports:
         if rep.net in by_net_len:

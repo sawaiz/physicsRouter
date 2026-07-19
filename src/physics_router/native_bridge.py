@@ -1,14 +1,16 @@
-"""Optional C++ core (`pr_native`). Falls back silently if not built.
+"""Required C++ core (``pr_native``) bridge.
 
 Build: ``bash scripts/build_native.sh`` then add ``native/build`` to ``PYTHONPATH``.
 
-Native v1.1: isotropic free-angle detours, multi-site vias with reasons,
-post-rubberband, via minimize. Python remains the full TopoR pipeline host
-(K-homotopy, CBS, elastic, SI/MFG); native accelerates the hot path.
+Native v1.8: graph-planned atomic layer-reachable routing, oriented pad
+obstacles, topology-safe multipin polish, organic copper areas, and bounded
+parallel bucket-rebuild variants.
+Python remains the TopoR policy/file-format host; C++ owns geometry.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 _native = None
@@ -47,6 +49,16 @@ def info() -> dict[str, Any]:
             "post_rubberband": True,
             "via_minimize": True,
             "via_reasons": True,
+            "atomic_nets": True,
+            "copper_areas": True,
+            "topology_safe_rubberband": True,
+            "matrix_bundle": True,
+            "oriented_pad_obstacles": True,
+            "anchor_layer_reachability": True,
+            "width_aware_obstacle_inflation": True,
+            "hypergraph_topology": True,
+            "crossing_aware_mst": True,
+            "dsatur_layer_coloring": True,
         },
     }
 
@@ -67,6 +79,7 @@ def route_board_native(
     exclusive_nets: bool = False,
     seed_segments: list[Any] | None = None,
     max_expansions: int | None = None,
+    use_copper_areas: bool = False,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``.
 
@@ -77,15 +90,35 @@ def route_board_native(
     if m is None:
         return None
 
-    from physics_router.router import board_extent, fanout_anchor
+    from physics_router.router import (
+        board_extent,
+        fanout_anchor,
+        outline_polygon_from_board,
+    )
 
     x0, x1, y0, y1 = board_extent(board)
     layers = list(getattr(board, "copper_layers", None) or ["F.Cu", "B.Cu"])
 
     cfg = m.RouteConfig()
     cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max = x0, x1, y0, y1
+    outline = outline_polygon_from_board(board)
+    if outline:
+        cfg.board_outline = [m.Vec2(x, y) for x, y in outline]
     cfg.grid_mm = float(grid_mm)
     cfg.clearance_mm = float(clearance_mm)
+    rules = dict(getattr(board, "design_rules", None) or {})
+    if hasattr(cfg, "via_diameter_mm"):
+        cfg.via_diameter_mm = float(rules.get("min_via_diameter_mm") or 0.8)
+    if hasattr(cfg, "via_drill_mm"):
+        cfg.via_drill_mm = float(rules.get("min_via_drill_mm") or 0.4)
+    if hasattr(cfg, "min_hole_to_hole_mm"):
+        cfg.min_hole_to_hole_mm = float(
+            rules.get("min_hole_to_hole_mm") or 0.25
+        )
+    if hasattr(cfg, "allow_blind_buried_vias"):
+        cfg.allow_blind_buried_vias = bool(
+            rules.get("allow_blind_buried_vias", False)
+        )
     cfg.num_layers = max(1, len(layers))
     cfg.soft_fallback = bool(soft_fallback)
     cfg.allow_vias = bool(allow_vias)
@@ -122,90 +155,242 @@ def route_board_native(
     else:
         net_names = [n for n in net_names if n in board.nets]
     name_to_id = {n: i for i, n in enumerate(net_names)}
+    layer_to_id = {layer: index for index, layer in enumerate(layers)}
+
+    graph_plan = None
+    graph_plan_error = ""
+    try:
+        from physics_router.graph_theory import plan_graph_topology
+
+        # A one-net atomic retry still needs the board-level conflict coloring;
+        # coloring a singleton always returns F.Cu and destroys the layer plan
+        # that motivated the retry. Topology edges are consumed only for the
+        # selected net, while assignment sees all competing nets.
+        planning_names = (
+            list(board.nets)
+            if exclusive_nets and len(net_names) == 1
+            else net_names
+        )
+        graph_plan = plan_graph_topology(
+            board,
+            config,
+            net_names=planning_names,
+            layers=layers,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Topology is advisory: geometry remains available if incomplete board
+        # metadata makes planning impossible.
+        graph_plan_error = str(exc)
 
     nets = []
+    default_class = dict((rules.get("net_classes") or {}).get("Default") or {})
+    board_track_width = max(
+        float(rules.get("min_track_width_mm") or 0.15),
+        float(default_class.get("track_width_mm") or 0.15),
+    )
     for name in net_names:
         if name not in board.nets:
             continue
         anchors = []
-        seen: set[tuple[float, float]] = set()
+        anchor_layers: list[set[int]] = []
+        seen: dict[tuple[float, float], int] = {}
         for ref, _pad in board.nets[name]:
             if ref not in board.components:
                 continue
             # Real pad XY when available (matches Python path)
             ax, ay = fanout_anchor(board, ref, name, pad_num=str(_pad))
             key = (round(ax, 3), round(ay, 3))
+            component = board.components[ref]
+            pad_data = next(
+                (
+                    value
+                    for value in component.pads or []
+                    if str(value.get("num")) == str(_pad)
+                ),
+                {},
+            )
+            raw_layers = list(pad_data.get("layers") or [])
+            if "*.Cu" in raw_layers:
+                allowed = set(range(cfg.num_layers))
+            else:
+                allowed = {
+                    layer_to_id[layer] for layer in raw_layers if layer in layer_to_id
+                }
+            if not allowed:
+                # Missing pad metadata is kept compatible but conservative for
+                # the common front-SMD case.
+                allowed = {0}
             if key in seen:
+                anchor_layers[seen[key]].update(allowed)
                 continue
-            seen.add(key)
+            seen[key] = len(anchors)
             anchors.append(m.Vec2(ax, ay))
+            anchor_layers.append(set(allowed))
         ns = m.NetSpec()
         ns.net_id = name_to_id[name]
         ns.name = name
         ns.anchors = anchors
-        ns.priority = float(config.weight_for_net(name)) if config else 1.0
+        ns.anchor_layers = [sorted(value) for value in anchor_layers]
+        if graph_plan is not None and hasattr(ns, "topology_edges"):
+            ns.topology_edges = graph_plan.topology_edges(name)
+        # An exclusive bucket's caller order is the routing policy (and may be
+        # a deliberate rebuild variant). Full-board calls still use semantic
+        # net weights. Keeping bucket priorities equal lets the C++ stable sort
+        # honor the exact supplied order.
+        ns.priority = (
+            1.0
+            if exclusive_nets and net_order is not None
+            else float(config.weight_for_net(name)) if config else 1.0
+        )
         lab = config.net_by_name().get(name) if config else None
         if lab is not None:
-            nc = lab.net_class.value if hasattr(lab.net_class, "value") else str(lab.net_class)
+            nc = (
+                lab.net_class.value
+                if hasattr(lab.net_class, "value")
+                else str(lab.net_class)
+            )
             if nc in ("power", "ground"):
-                ns.width_mm = 0.5
+                ns.width_mm = max(board_track_width, 0.3)
             elif nc in ("high_speed", "differential", "rf"):
-                ns.width_mm = 0.2
+                ns.width_mm = board_track_width
             else:
-                ns.width_mm = 0.25
-            if lab.critical:
+                ns.width_mm = board_track_width
+            if lab.critical and not (exclusive_nets and net_order is not None):
                 ns.priority *= 1.5
         else:
-            ns.width_mm = 0.25
-        # Stripe multipin matrix / CPX nets across layers to reduce same-layer crossings
+            ns.width_mm = board_track_width
+            nc = ""
+        graph_layer = (
+            graph_plan.layer_assignment.get(name) if graph_plan is not None else None
+        )
+        # Graph coloring replaces name-based striping: nets whose straight-line
+        # trees cross are assigned distinct preferred layers when possible.
         is_matrix = name.upper().startswith("CPX") or len(anchors) >= 12
+        fallback_primary = 0
         if is_matrix and cfg.num_layers >= 2:
-            try:
-                idx = int("".join(ch for ch in name if ch.isdigit()) or "0")
-            except ValueError:
-                idx = abs(hash(name)) % cfg.num_layers
-            primary = idx % cfg.num_layers
-            ns.preferred_layers = [primary] + [
-                i for i in range(cfg.num_layers) if i != primary
+            digits = "".join(ch for ch in name if ch.isdigit())
+            fallback_primary = (
+                int(digits) if digits else sum(ord(ch) for ch in name)
+            ) % cfg.num_layers
+        graph_primary = layer_to_id.get(graph_layer, fallback_primary)
+        if is_matrix and cfg.num_layers >= 2:
+            ns.preferred_layers = [graph_primary] + [
+                i for i in range(cfg.num_layers) if i != graph_primary
             ]
             # Slight priority demotion for dense buses so sparse nets paint first
             ns.priority *= 0.85
         else:
-            ns.preferred_layers = list(range(cfg.num_layers))
+            ns.preferred_layers = [graph_primary] + [
+                i for i in range(cfg.num_layers) if i != graph_primary
+            ]
+        is_power_area = nc in ("power", "ground") or name.upper() in (
+            "GND",
+            "VSS",
+            "PGND",
+            "+3V",
+            "+5V",
+            "VCC",
+            "VDD",
+            "VBAT",
+        )
+        if use_copper_areas and is_power_area and len(anchors) >= 2:
+            ns.use_copper_area = True
+            if cfg.num_layers >= 4:
+                ns.area_layer = 1 if nc == "ground" or "GND" in name.upper() else 2
+            elif cfg.num_layers >= 2:
+                ns.area_layer = cfg.num_layers - 1 if nc == "ground" else 0
+            else:
+                ns.area_layer = 0
+            ns.area_margin_mm = max(0.8, float(clearance_mm) * 3.0)
+            ns.area_priority = 10 if nc == "ground" else 20
         nets.append(ns)
 
-    # Sort nets for native by priority (already handled in C++ too)
-    nets.sort(key=lambda n: (-n.priority, len(n.anchors), n.name))
+    # Exclusive bucket calls carry an exact policy order, including rebuild
+    # variants. Full-board calls retain semantic priority/few-pin ordering.
+    if not (exclusive_nets and net_order is not None):
+        nets.sort(key=lambda n: (-n.priority, len(n.anchors)))
+
+    from physics_router.kicad_io import local_to_board
 
     obstacles = []
-    for _ref, c in board.components.items():
-        nets_on = {p.get("net") for p in (c.pads or []) if p.get("net")}
-        # Single-net parts: keepout owned by that net (same-net may pass)
-        # Multi-net ICs: hard keepout (net_id=-1) so free-angle cannot cross the package
-        if len(nets_on) == 1:
-            nid = name_to_id.get(next(iter(nets_on)), -1)
-        elif len(nets_on) > 1:
-            nid = -1
-        else:
-            continue
-        ob = m.RectObs()
-        ob.cx, ob.cy = c.x_mm, c.y_mm
-        # Slightly larger body keepout for multi-net packages
-        scale = 0.45 if nid < 0 else 0.35
-        ob.w = max(min(c.width_mm, c.height_mm) * scale, 0.4)
-        ob.h = ob.w
-        ob.net_id = nid
-        obstacles.append(ob)
+    for _ref, component in board.components.items():
+        # Pads are copper obstacles owned by their net. Package bodies are not
+        # net-agnostic copper keepouts: painting a multi-pin IC body blocked the
+        # pad anchors inside it and made every U1 signal impossible to start.
+        for pad in component.pads or []:
+            pad_net = str(pad.get("net") or "")
+            x, y = local_to_board(
+                component.x_mm,
+                component.y_mm,
+                component.rotation_deg,
+                float(pad.get("x") or 0.0),
+                float(pad.get("y") or 0.0),
+            )
+            pad_layers = list(pad.get("layers") or [])
+            if "*.Cu" in pad_layers:
+                copper_layer_ids = list(range(cfg.num_layers))
+            else:
+                copper_layer_ids = [
+                    layer_to_id[layer] for layer in pad_layers if layer in layer_to_id
+                ]
+            if not copper_layer_ids:
+                continue
+            ob = m.RectObs()
+            ob.cx, ob.cy = x, y
+            # KiCad's parsed pad rotation is already the board-space angle;
+            # preserve it in the native oriented obstacle. An AABB joins the
+            # clearance envelopes of diagonal fine-pitch pads into a false
+            # wall even though their outward fanout corridors are legal.
+            ob.w = max(float(pad.get("w") or 0.0), 0.2)
+            ob.h = max(float(pad.get("h") or 0.0), 0.2)
+            if hasattr(ob, "rotation_deg"):
+                ob.rotation_deg = -float(pad.get("rot") or 0.0)
+            # Unassigned copper is still copper and blocks every routed net.
+            ob.net_id = name_to_id.get(pad_net, -1)
+            ob.layers = copper_layer_ids
+            obstacles.append(ob)
+
+            # KiCad custom pads may carry copper far outside their anchor
+            # ``size`` (HALO's coin-cell contacts are wide stroked arcs). Add
+            # each sampled primitive segment as an oriented copper obstacle.
+            pad_angle = math.radians(-float(pad.get("rot") or 0.0))
+            cosine, sine = math.cos(pad_angle), math.sin(pad_angle)
+            for stroke in pad.get("custom_strokes") or []:
+                points = list(stroke.get("pts") or [])
+                stroke_width = abs(float(stroke.get("width") or 0.0))
+                if len(points) < 2 or stroke_width <= 0.0:
+                    continue
+                transformed = [
+                    (
+                        x + float(point[0]) * cosine - float(point[1]) * sine,
+                        y + float(point[0]) * sine + float(point[1]) * cosine,
+                    )
+                    for point in points
+                ]
+                for start, end in zip(transformed, transformed[1:]):
+                    length = math.hypot(end[0] - start[0], end[1] - start[1])
+                    primitive = m.RectObs()
+                    primitive.cx = 0.5 * (start[0] + end[0])
+                    primitive.cy = 0.5 * (start[1] + end[1])
+                    primitive.w = length + stroke_width
+                    primitive.h = stroke_width
+                    if hasattr(primitive, "rotation_deg"):
+                        primitive.rotation_deg = math.degrees(
+                            math.atan2(end[1] - start[1], end[0] - start[0])
+                        )
+                    primitive.net_id = ob.net_id
+                    primitive.layers = copper_layer_ids
+                    obstacles.append(primitive)
 
     # Seed prior hybrid-phase copper as net-aware keepouts (approx. along segments)
     if seed_segments:
-        import math
-
-        layer_to_id = {ly: i for i, ly in enumerate(layers)}
         for s in seed_segments:
             nid = name_to_id.get(getattr(s, "net", ""), -1)
-            # Unknown nets block everyone
-            w = float(getattr(s, "width_mm", 0.25) or 0.25) + float(clearance_mm)
+            # Seed samples describe physical copper width. The native grid adds
+            # the new track half-width plus clearance exactly once when it
+            # paints every RectObs; pre-inflating here double-counted clearance
+            # and starved later hybrid phases.
+            w = float(getattr(s, "width_mm", 0.25) or 0.25)
             x1, y1 = float(s.x1), float(s.y1)
             x2, y2 = float(s.x2), float(s.y2)
             length = math.hypot(x2 - x1, y2 - y1)
@@ -218,6 +403,7 @@ def route_board_native(
                 ob.w = w
                 ob.h = w
                 ob.net_id = nid
+                ob.layers = [layer_to_id.get(getattr(s, "layer", ""), 0)]
                 obstacles.append(ob)
 
     result = m.route_board(nets, cfg, obstacles)
@@ -245,7 +431,7 @@ def route_board_native(
                 "x": v.x,
                 "y": v.y,
                 "size_mm": v.size_mm,
-                "drill_mm": v.size_mm * 0.5,
+                "drill_mm": getattr(v, "drill_mm", v.size_mm * 0.5),
                 "layers": [
                     layers[v.layer_a] if 0 <= v.layer_a < len(layers) else layers[0],
                     layers[v.layer_b] if 0 <= v.layer_b < len(layers) else layers[-1],
@@ -255,6 +441,17 @@ def route_board_native(
                 "blocked_same_layer": [],
             }
         )
+    areas = [
+        {
+            "net": id_to_name.get(area.net_id, str(area.net_id)),
+            "layer": layers[area.layer] if 0 <= area.layer < len(layers) else layers[0],
+            "outline": [[point.x, point.y] for point in area.outline],
+            "clearance_mm": area.clearance_mm,
+            "min_thickness_mm": area.min_thickness_mm,
+            "priority": area.priority,
+        }
+        for area in getattr(result, "areas", [])
+    ]
     net_reports = [
         {
             "net": nr.name,
@@ -275,7 +472,15 @@ def route_board_native(
         "unrouted_nets": list(result.unrouted),
         "clearance_violations": result.clearance_violations,
         "notes": list(result.notes)
-        + [f"native={result.used_native}", f"gpu={result.used_gpu}"],
+        + [
+            f"native={result.used_native}",
+            f"gpu={result.used_gpu}",
+            (
+                "graph_topology=" + str(graph_plan.to_dict())
+                if graph_plan is not None
+                else "graph_topology=fallback " + graph_plan_error
+            ),
+        ],
         "quality": {
             "score": result.quality_score,
             "grade": result.quality_grade,
@@ -284,6 +489,9 @@ def route_board_native(
                 f"native {result.elapsed_ms:.1f}ms"
             ),
             "pipeline": "native_isotropic",
+            "graph_topology_plan": (
+                graph_plan.to_dict() if graph_plan is not None else None
+            ),
             "explanations": {
                 "vias": [
                     {
@@ -303,6 +511,7 @@ def route_board_native(
         "net_reports": net_reports,
         "segments": segments,
         "vias": vias,
+        "areas": areas,
         "elapsed_ms": result.elapsed_ms,
         "backend": "native",
     }
@@ -317,7 +526,11 @@ def polish_native_with_python(
     via_minimize: bool = False,
 ) -> Any:
     """Apply Python elastic + SI/MFG + via explain polish to a native route dict."""
-    from physics_router.router import _route_result_from_dict, rubberband_cleanup, remove_redundant_vias
+    from physics_router.router import (
+        _route_result_from_dict,
+        rubberband_cleanup,
+        remove_redundant_vias,
+    )
     from physics_router.elastic import elastic_optimize_route
     from physics_router.si_mfg import evaluate_si_mfg
 

@@ -164,6 +164,8 @@ class DesignRules(BaseModel):
             "min_clearance_mm": self.constraints.min_clearance_mm,
             "min_track_width_mm": self.constraints.min_track_width_mm,
             "min_via_diameter_mm": self.constraints.min_via_diameter_mm,
+            "min_via_drill_mm": self.constraints.min_via_drill_mm,
+            "min_hole_to_hole_mm": self.constraints.min_hole_to_hole_mm,
             "allow_microvias": self.constraints.allow_microvias,
             "allow_blind_buried_vias": self.constraints.allow_blind_buried_vias,
             "net_classes": {
@@ -644,7 +646,9 @@ def load_design_rules(
 
     When ``manufacturer`` is JLCPCB (default), rule floors are raised to the
     selected profile (``2layer_*`` / ``4layer_*`` / ``6layer_*``).
-    Pass ``manufacturer=None`` to keep pure KiCad numbers.
+    Pass ``manufacturer=None`` to keep the source KiCad project's numbers.
+    KiCad validation still copies and uses the source project rules; the
+    manufacturing profile is a deliberately more conservative route target.
     """
     rules = default_design_rules()
     if pcb_path:
@@ -758,8 +762,6 @@ def _merge_from_pcb(rules: DesignRules, path: Path) -> None:
 
 
 def _parse_stackup(stack_node: list[Any]) -> list[StackupLayer]:
-    layers: list[StackupLayer] = []
-    z = 0.0
     # Walk from bottom-ish: KiCad lists top-to-bottom in file often F.Silk first
     # We accumulate thickness top→bottom then reassign z0 from bottom.
     raw: list[StackupLayer] = []
@@ -818,7 +820,6 @@ def _parse_stackup(stack_node: list[Any]) -> list[StackupLayer]:
             )
         )
     # KiCad stackup is typically listed top→bottom; set z0 from bottom of board
-    total = sum(s.thickness_mm for s in raw) or 1.6
     # z=0 at bottom copper underside
     z = 0.0
     # reverse: build bottom-up

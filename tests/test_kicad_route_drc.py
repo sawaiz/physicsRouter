@@ -66,6 +66,24 @@ def test_kicad_drc_detects_crossing_shorts(tmp_path: Path):
     )
     out = kicad_drc_route(HALO_PCB, r, work_dir=tmp_path / "drc", keep_files=True)
     assert out["available"] is True
+    assert (tmp_path / "drc" / "routed.kicad_pro").exists()
     # Should report shorts / clearance / track errors
     assert out["copper_violation_count"] + out["error_count"] >= 1
     assert out["copper_passed"] is False or out["passed"] is False
+
+
+@pytest.mark.skipif(find_kicad_cli() is None, reason="kicad-cli not installed")
+@pytest.mark.skipif(not HALO_PCB.exists(), reason="halo pcb missing")
+def test_kicad_route_drc_excludes_donor_board_copper_findings(tmp_path: Path):
+    """Fixed pad/edge findings must not be charged to an empty candidate."""
+    out = kicad_drc_route(
+        HALO_PCB,
+        RouteResult(),
+        work_dir=tmp_path / "drc-empty",
+        keep_files=True,
+    )
+
+    assert out["available"] is True
+    assert out["copper_passed"] is True
+    assert out["copper_violation_count"] == 0
+    assert out["by_type"].get("copper_edge_clearance", 0) >= 1

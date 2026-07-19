@@ -113,8 +113,6 @@ def test_apply_route_pcb_synthetic_fails_without_kicad(httpd):
 @pytest.mark.skipif(not HALO_PCB.exists(), reason="halo-90 PCB missing")
 def test_apply_route_to_halo_pcb_with_seeded_topor(httpd, tmp_path):
     """Seed a small TopoR-like result and apply — full HALO route is too slow for CI."""
-    from physics_router.config_io import load_config
-    from physics_router.kicad_io import load_board_from_kicad_pcb
     from physics_router.router import topological_guide_route
 
     with STATE.lock:

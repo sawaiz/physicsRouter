@@ -21,8 +21,6 @@ from physics_router.router import (
     ObstacleMap,
     RouteResult,
     RouteSegment,
-    Via,
-    build_obstacle_map,
     clearance_aware_route,
 )
 from physics_router.routing_strategies import topor_style_route

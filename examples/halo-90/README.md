@@ -78,11 +78,12 @@ physics-router place \
   --candidates 2 --iterations 200 \
   --out-json examples/halo-90/placement_result.json
 
-# Route (use coarser grid; board is small but dense)
+# Route (build the native module first; there is no Python geometry fallback)
+bash scripts/build_native.sh
 physics-router route \
   --config examples/halo-90/placement_config.yaml \
   --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
-  --clearance 0.15 --grid 0.5 \
+  --clearance 0.15 --grid 0.15 \
   --out-json examples/halo-90/route_result.json
 
 # OpenEMS geometry export
@@ -92,9 +93,38 @@ physics-router export-openems \
   --out-dir examples/halo-90/openems_export
 ```
 
+## Current native-router snapshot
+
+The v1.8 checkpoint uses graph/annular topology, atomic multipin transactions,
+layer-aware oriented and custom-pad obstacles, explicit rule-size through
+vias, a separate drilled-hole occupancy map, dense-grid matrix rebuilds and
+project-aware KiCad validation. It commits **11/23 nets**, including two
+complete CPX nets and GND, as 213 segments (287.8 mm), 12 vias and one native
+GND area.
+
+Fast DRC reports zero committed-copper shorts, spacing violations,
+foreign-pad hits and outline escapes. KiCad 10.0.4, with the matching project
+loaded, reports zero errors attributable to generated tracks/vias. The donor
+board still has two fixed battery-pad/Edge.Cuts errors plus non-routing
+footprint/text issues. KiCad reports 163 unconnected items because twelve nets
+are honestly open.
+
+This remains a legal partial route, not fabrication sign-off. See the
+[detailed failure analysis](../../docs/AUTOROUTER_FAILURE_ANALYSIS.md). The
+older 19/23 Python experiment is preserved in
+[`python_multipin_experiment.json`](python_multipin_experiment.json), but it is
+not the current correctness baseline.
+
 ## Checked-in results & figures
 
-Regenerate with `python scripts/generate_docs_images.py` from the repo root (needs `third_party/halo-90` + `matplotlib`).
+Regenerate the current process and DRC figures with:
+
+```bash
+bash scripts/build_native.sh
+PYTHONPATH=native/build:src python scripts/render_routing_process.py --halo
+```
+
+This needs `third_party/halo-90` and matplotlib.
 
 | File | Description |
 |------|-------------|
@@ -107,13 +137,13 @@ Regenerate with `python scripts/generate_docs_images.py` from the repo root (nee
 | `../../docs/images/score_breakdown.png` | Cost bar chart |
 | `../../docs/images/runtimes.png` | Timing bar chart |
 
-### Snapshot (last generate)
+### Legacy benchmark snapshot
 
 | Step | Time | Notes |
 |------|------|--------|
 | score | ~0.04 s | ngspice + EMI proxies |
 | route-guide | ~11 s | 207 segs, 854 mm |
-| route (grid 1 mm) | ~35 s | 208 segs, 4-layer DRC policy |
+| route (grid 1 mm) | ~35 s | 208 segs, pre-v1.5 route policy |
 
 ## KiCad DRC + official renders
 

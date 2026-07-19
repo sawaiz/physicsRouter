@@ -240,11 +240,11 @@ class GeometricSpiceProxy(SimulationBackend):
 def _run_ngspice_rail_check(l_nh: float, r_mohm_proxy: float) -> tuple[float, str]:
     """Minimal ngspice: step current into RL of estimated rail parasitics."""
     r = max(0.001, r_mohm_proxy * 0.001)  # crude map length→ohms
-    l = max(1e-10, l_nh * 1e-9)
+    inductance_h = max(1e-10, l_nh * 1e-9)
     netlist = f"""* physics-router rail check
 Vsrc vin 0 DC 5
 Rpar vin vload {r}
-Lpar vload 0 {l}
+Lpar vload 0 {inductance_h}
 .tran 1n 100n
 .print tran v(vload)
 .end

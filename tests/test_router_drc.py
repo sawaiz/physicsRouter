@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
+
+import pytest
 
 from physics_router.config_io import example_config
 from physics_router.kicad_io import board_from_synthetic
 from physics_router.models import BoardModel, Component
 from physics_router.router import (
+    CopperArea,
     RouteResult,
     RouteSegment,
     Via,
     attach_router_drc,
     clearance_aware_route,
     native_drc_check,
+    _net_fully_connected,
 )
 
 
@@ -50,6 +55,108 @@ def test_native_drc_via_near_foreign_track():
     assert rep["violations"] >= 1
 
 
+def _fixed_pad_board() -> BoardModel:
+    return BoardModel(
+        width_mm=20,
+        height_mm=20,
+        copper_layers=["F.Cu", "In1.Cu", "B.Cu"],
+        components={
+            "U1": Component(
+                ref="U1",
+                x_mm=5.0,
+                y_mm=5.0,
+                rotation_deg=0.0,
+                width_mm=2.0,
+                height_mm=2.0,
+                pads=[
+                    {
+                        "num": "1",
+                        "net": "PAD_NET",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "rot": 0.0,
+                        "w": 1.0,
+                        "h": 1.0,
+                        "shape": "rect",
+                        "layers": ["F.Cu"],
+                    }
+                ],
+            )
+        },
+        nets={"PAD_NET": [("U1", "1")]},
+    )
+
+
+def test_native_drc_detects_track_crossing_foreign_pad():
+    board = _fixed_pad_board()
+    route = RouteResult(
+        segments=[RouteSegment(3.0, 5.0, 7.0, 5.0, "F.Cu", "OTHER", 0.2)]
+    )
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+    assert rep["pad_shorts"] == 1
+    assert any(item.get("object_b") == "pad:U1" for item in rep["items"])
+
+
+def test_native_drc_pad_is_net_and_layer_aware():
+    board = _fixed_pad_board()
+    route = RouteResult(
+        segments=[
+            # Owning-net copper may terminate on its pad.
+            RouteSegment(3.0, 5.0, 7.0, 5.0, "F.Cu", "PAD_NET", 0.2),
+            # Foreign inner copper does not collide with a front-only SMD pad.
+            RouteSegment(3.0, 5.0, 7.0, 5.0, "In1.Cu", "OTHER", 0.2),
+        ]
+    )
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+    assert rep["pad_shorts"] == 0
+    assert rep["pad_spacing"] == 0
+
+
+def test_native_drc_detects_through_via_on_foreign_front_pad():
+    board = _fixed_pad_board()
+    route = RouteResult(
+        vias=[
+            Via(
+                5.0,
+                5.0,
+                net="OTHER",
+                size_mm=0.6,
+                layers=("F.Cu", "B.Cu"),
+            )
+        ],
+        via_count=1,
+    )
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+    assert rep["pad_shorts"] == 1
+
+
+@pytest.mark.skipif(
+    not Path("third_party/halo-90/pcb/halo-90.kicad_pcb").exists(),
+    reason="HALO-90 PCB not cloned",
+)
+def test_halo_custom_battery_arc_blocks_through_via():
+    """Custom-pad primitives extend far beyond the pad anchor's base size."""
+    from physics_router.kicad_io import load_board_from_kicad_pcb
+
+    board = load_board_from_kicad_pcb("third_party/halo-90/pcb/halo-90.kicad_pcb")
+    route = RouteResult(
+        vias=[
+            Via(
+                11.4,
+                1.5,
+                net="CPX-2",
+                size_mm=0.6,
+                drill_mm=0.3,
+                layers=("F.Cu", "B.Cu"),
+            )
+        ],
+        via_count=1,
+    )
+    rep = native_drc_check(route, clearance_mm=0.15, board=board)
+    assert rep["pad_shorts"] >= 1
+    assert any(item["net_b"] == "+3V" for item in rep["items"])
+
+
 def test_attach_router_drc_sets_clearance_violations():
     r = RouteResult(
         segments=[
@@ -75,7 +182,17 @@ def test_purge_shorting_copper_removes_cross():
         net_reports=[],
     )
     # Without config, priorities are equal — purge still removes one side of short
-    out = purge_shorting_copper(r, board=BoardModel(width_mm=20, height_mm=20, copper_layers=["F.Cu"], components={}, nets={"HIGH": [], "LOW": []}), clearance_mm=0.2)
+    out = purge_shorting_copper(
+        r,
+        board=BoardModel(
+            width_mm=20,
+            height_mm=20,
+            copper_layers=["F.Cu"],
+            components={},
+            nets={"HIGH": [], "LOW": []},
+        ),
+        clearance_mm=0.2,
+    )
     rep = native_drc_check(out, clearance_mm=0.2)
     assert rep["shorts"] == 0
     assert len(out.segments) < len(r.segments)
@@ -101,9 +218,7 @@ def test_outline_outside_counts_as_drc():
         ],
     )
     # Segment clearly outside the disk
-    route = RouteResult(
-        segments=[RouteSegment(14, -2, 16, 2, "F.Cu", "ESC", 0.25)]
-    )
+    route = RouteResult(segments=[RouteSegment(14, -2, 16, 2, "F.Cu", "ESC", 0.25)])
     rep = native_drc_check(route, clearance_mm=0.2, board=board)
     assert rep.get("outline_outside", 0) >= 1
     assert rep["violations"] >= 1
@@ -141,9 +256,7 @@ def test_sequential_zero_violation_no_shorts_python():
         prefer_native=False,
         allow_vias=True,
     )
-    assert any(
-        "zero-violation" in n or "full-net commit" in n for n in r.notes
-    )
+    assert any("zero-violation" in n or "full-net commit" in n for n in r.notes)
     assert r.clearance_violations == 0
     rep = native_drc_check(r, clearance_mm=0.2, board=board)
     assert rep["shorts"] == 0
@@ -216,3 +329,71 @@ def test_drc_guard_reverts_worse_regeometry():
     assert out.clearance_violations == (out.quality or {}).get("drc", {}).get(
         "violations", out.clearance_violations
     )
+
+
+def test_connectivity_requires_via_between_layers():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["F.Cu", "B.Cu"],
+        components={
+            "A": Component(
+                ref="A",
+                x_mm=0,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["F.Cu"]}],
+            ),
+            "B": Component(
+                ref="B",
+                x_mm=10,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["B.Cu"]}],
+            ),
+        },
+        nets={"N": [("A", "1"), ("B", "1")]},
+    )
+    segments = [
+        RouteSegment(0, 0, 5, 0, "F.Cu", "N", 0.25),
+        RouteSegment(5, 0, 10, 0, "B.Cu", "N", 0.25),
+    ]
+    assert not _net_fully_connected(board, "N", segments, [])
+    assert _net_fully_connected(board, "N", segments, [Via(5, 0, net="N")])
+
+
+def test_connectivity_rejects_inner_copper_at_front_smd_anchor():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["F.Cu", "In1.Cu"],
+        components={
+            ref: Component(
+                ref=ref,
+                x_mm=x,
+                y_mm=0,
+                pads=[{"num": "1", "net": "N", "layers": ["F.Cu"]}],
+            )
+            for ref, x in (("A", 0), ("B", 10))
+        },
+        nets={"N": [("A", "1"), ("B", "1")]},
+    )
+    inner_only = [RouteSegment(0, 0, 10, 0, "In1.Cu", "N", 0.25)]
+    assert not _net_fully_connected(board, "N", inner_only, [])
+
+
+def test_copper_area_connects_contained_anchors():
+    board = BoardModel(
+        width_mm=20,
+        height_mm=10,
+        copper_layers=["B.Cu"],
+        components={
+            "A": Component(ref="A", x_mm=0, y_mm=0),
+            "B": Component(ref="B", x_mm=10, y_mm=0),
+        },
+        nets={"GND": [("A", "1"), ("B", "1")]},
+    )
+    area = CopperArea(
+        outline=[(-1, -2), (11, -2), (11, 2), (-1, 2)],
+        layer="B.Cu",
+        net="GND",
+    )
+    assert _net_fully_connected(board, "GND", [], [], areas=[area])

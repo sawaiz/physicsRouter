@@ -14,12 +14,18 @@ public:
 
   void clear();
   void paint_rect(double cx, double cy, double w, double h, int layer, int net_id);
+  void paint_rotated_rect(double cx, double cy, double w, double h,
+                          double rotation_deg, int layer, int net_id);
   void paint_trace(double x1, double y1, double x2, double y2, double width_mm, int layer,
                    int net_id);
+  void paint_hole_keepout(double x, double y, double radius_mm);
 
   bool in_bounds(double x, double y) const;
   bool cell_blocked(int ix, int iy, int layer, int net_id) const;
   bool point_blocked(double x, double y, int layer, int net_id) const;
+  bool disk_blocked(double x, double y, double radius_mm, int layer,
+                    int net_id) const;
+  bool hole_blocked(double x, double y) const;
   bool segment_blocked(double x1, double y1, double x2, double y2, int layer,
                        int net_id) const;
 
@@ -48,6 +54,7 @@ private:
   double x_min_ = 0, x_max_ = 1, y_min_ = 0, y_max_ = 1, grid_ = 0.5;
   int w_ = 1, h_ = 1, layers_ = 1;
   std::vector<uint8_t> cells_;
+  std::vector<uint8_t> hole_cells_;
 };
 
 } // namespace pr

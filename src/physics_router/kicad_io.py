@@ -179,8 +179,11 @@ def load_board_from_kicad_pcb(
     width = config.board_width_mm if config else 100.0
     height = config.board_height_mm if config else 80.0
 
-    # Board outline from Edge.Cuts lines if present (rough bbox)
-    bbox = _edge_bbox(root)
+    # Build the complete Edge.Cuts model before deriving dimensions.  HALO-90
+    # is predominantly arc/circle based, so the old line-only bbox silently
+    # fell back to 100x80 mm and gave the router a fictitious exterior region.
+    outline = _board_outline_graphics(root)
+    bbox = _outline_bbox(outline)
     if bbox is not None:
         # Prefer true outline size when available
         width = max(bbox[2] - bbox[0], 1.0)
@@ -260,8 +263,6 @@ def load_board_from_kicad_pcb(
         copper_layers = list(dr.copper_layers) or copper_layers
         rules_dict = dr.summary()
 
-    outline = _board_outline_graphics(root)
-
     return BoardModel(
         width_mm=width,
         height_mm=height,
@@ -334,6 +335,39 @@ def _pad_geometry(pad: list[Any]) -> dict[str, Any]:
     pf = _find_first(pad, "pinfunction")
     if pf and len(pf) >= 2:
         pinfunction = str(pf[1])
+    custom_strokes: list[dict[str, Any]] = []
+    primitives = _find_first(pad, "primitives")
+    if primitives is not None:
+        for arc in _find_all(primitives, "gr_arc"):
+            start = _find_first(arc, "start")
+            end = _find_first(arc, "end")
+            angle = _find_first(arc, "angle")
+            if start and end and angle and len(start) >= 3 and len(end) >= 3:
+                custom_strokes.append(
+                    {
+                        "pts": _arc_to_polyline(
+                            _as_float(start[1]),
+                            _as_float(start[2]),
+                            _as_float(end[1]),
+                            _as_float(end[2]),
+                            _as_float(angle[1]),
+                        ),
+                        "width": _width_mm(arc, 0.0),
+                    }
+                )
+        for line in _find_all(primitives, "gr_line"):
+            start = _find_first(line, "start")
+            end = _find_first(line, "end")
+            if start and end and len(start) >= 3 and len(end) >= 3:
+                custom_strokes.append(
+                    {
+                        "pts": [
+                            [_as_float(start[1]), _as_float(start[2])],
+                            [_as_float(end[1]), _as_float(end[2])],
+                        ],
+                        "width": _width_mm(line, 0.0),
+                    }
+                )
     return {
         "shape": shape,
         "type": pad_type,
@@ -345,18 +379,13 @@ def _pad_geometry(pad: list[Any]) -> dict[str, Any]:
         "drill": drill_mm,
         "layers": layers,
         "pinfunction": pinfunction,
+        "custom_strokes": custom_strokes,
     }
 
 
 def _footprint_graphics(fp: list[Any]) -> list[dict[str, Any]]:
     """Extract local-coordinate silk/fab/copper outline graphics from a footprint."""
     gfx: list[dict[str, Any]] = []
-    # Prefer silk + fab for body outline; include courtyard lightly
-    want_layers = (
-        "F.SilkS", "B.SilkS", "F.Fab", "B.Fab",
-        "F.CrtYd", "B.CrtYd", "F.Cu", "B.Cu",
-    )
-
     for line in _find_all(fp, "fp_line"):
         layer = _layer_name(line)
         if layer and not any(w in layer for w in ("Silk", "Fab", "CrtYd", ".Cu")):
@@ -687,17 +716,34 @@ def _estimate_size(fp: list[Any]) -> tuple[float, float]:
 
 
 def _edge_bbox(root: Any) -> tuple[float, float, float, float] | None:
+    """Compatibility wrapper returning bounds for every Edge.Cuts primitive."""
+    return _outline_bbox(_board_outline_graphics(root))
+
+
+def _outline_bbox(
+    outline: list[dict[str, Any]],
+) -> tuple[float, float, float, float] | None:
+    """Exact-enough bbox for sampled lines, polygons, rectangles, and circles."""
     xs: list[float] = []
     ys: list[float] = []
-    for gr in _find_all(root, "gr_line") + _find_all(root, "gr_rect"):
-        layer = _find_first(gr, "layer")
-        if layer and len(layer) >= 2 and "Edge.Cuts" not in str(layer[1]):
-            continue
-        for tag in ("start", "end"):
-            pt = _find_first(gr, tag)
-            if pt and len(pt) >= 3:
-                xs.append(_as_float(pt[1]))
-                ys.append(_as_float(pt[2]))
+    for item in outline:
+        kind = str(item.get("kind") or "")
+        if kind == "circle":
+            cx = float(item.get("cx") or 0.0)
+            cy = float(item.get("cy") or 0.0)
+            radius = abs(float(item.get("r") or 0.0))
+            xs.extend((cx - radius, cx + radius))
+            ys.extend((cy - radius, cy + radius))
+        elif kind == "poly":
+            for point in item.get("pts") or []:
+                if len(point) >= 2:
+                    xs.append(float(point[0]))
+                    ys.append(float(point[1]))
+        elif kind in ("line", "rect", "arc"):
+            for x_key, y_key in (("x1", "y1"), ("x2", "y2"), ("mx", "my")):
+                if x_key in item and y_key in item:
+                    xs.append(float(item[x_key]))
+                    ys.append(float(item[y_key]))
     if not xs:
         return None
     return min(xs), min(ys), max(xs), max(ys)

@@ -136,7 +136,6 @@ def optimize_placement(
     openems_backend: OpenEMSBackend | None = None,
 ) -> PlacementResult:
     """Generate multiple placement candidates; rank with geometry then physics sims."""
-    rng = random.Random(config.random_seed)
     spice = spice_backend or GeometricSpiceProxy()
     openems = openems_backend or OpenEMSBackend()
 

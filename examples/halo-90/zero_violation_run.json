@@ -1,368 +1,44 @@
 {
-  "time_s": 625.44,
-  "segments": 204,
-  "vias": 0,
-  "length_mm": 563.24,
-  "ok_nets": 19,
+  "mode": "native_pad_legal_parallel_bucket_bundle",
+  "native_version": "1.7.0-pad-legal-bundle",
+  "time_s": 3.215,
+  "completed_nets": 9,
   "total_nets": 23,
+  "segments": 144,
+  "vias": 21,
+  "areas": 1,
+  "length_mm": 265.148,
   "unrouted": [
-    "CPX-2",
+    "+3V",
+    "SDA",
+    "MIC",
+    "SCL",
+    "Net-(TP2-Pad1)",
+    "TX",
     "CPX-3",
+    "CPX-7",
+    "CPX-9",
+    "CPX-0",
+    "CPX-2",
     "CPX-4",
+    "CPX-6",
     "CPX-8"
   ],
   "drc": {
     "violations": 0,
     "shorts": 0,
     "spacing": 0,
-    "outline_outside": 0
+    "outline_outside": 0,
+    "area_outside": 0,
+    "areas_deferred_to_kicad": 1
   },
-  "score": 50.6,
-  "grade": "D",
-  "summary": "grade D (51/100) \u00b7 0 soft viol \u00b7 0 vias \u00b7 4 unrouted \u00b7 563.2 mm",
-  "net_reports": [
-    {
-      "net": "GND",
-      "pins": 8,
-      "length_mm": 17.6774,
-      "segments": 7,
-      "vias": 0,
-      "layers": [
-        "In1.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.150"
-      ]
-    },
-    {
-      "net": "+3V",
-      "pins": 16,
-      "length_mm": 33.6351,
-      "segments": 14,
-      "vias": 0,
-      "layers": [
-        "In1.Cu",
-        "In2.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.150"
-      ]
-    },
-    {
-      "net": "CPX-6",
-      "pins": 19,
-      "length_mm": 67.9157,
-      "segments": 19,
-      "vias": 0,
-      "layers": [
-        "F.Cu",
-        "In1.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_detour+homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.150"
-      ]
-    },
-    {
-      "net": "CPX-5",
-      "pins": 19,
-      "length_mm": 68.8477,
-      "segments": 21,
-      "vias": 0,
-      "layers": [
-        "B.Cu",
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+homotopy_detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "MIC",
-      "pins": 2,
-      "length_mm": 1.7241,
-      "segments": 1,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "SDA",
-      "pins": 3,
-      "length_mm": 1.7331,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "SW-B",
-      "pins": 2,
-      "length_mm": 2.9201,
-      "segments": 1,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "TX",
-      "pins": 3,
-      "length_mm": 7.7924,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "CPX-0",
-      "pins": 19,
-      "length_mm": 77.3215,
-      "segments": 31,
-      "vias": 0,
-      "layers": [
-        "B.Cu",
-        "F.Cu",
-        "In1.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+homotopy_astar+homotopy_detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "Net-(R3-Pad2)",
-      "pins": 3,
-      "length_mm": 4.1008,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "In1.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "SCL",
-      "pins": 3,
-      "length_mm": 2.0072,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "Net-(TP2-Pad1)",
-      "pins": 2,
-      "length_mm": 3.863,
-      "segments": 1,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "SW-A",
-      "pins": 2,
-      "length_mm": 2.4114,
-      "segments": 1,
-      "vias": 0,
-      "layers": [
-        "In1.Cu"
-      ],
-      "status": "ok",
-      "method": "los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "XL-INT1",
-      "pins": 2,
-      "length_mm": 3.6954,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "XL-INT2",
-      "pins": 2,
-      "length_mm": 3.7451,
-      "segments": 2,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "RX",
-      "pins": 3,
-      "length_mm": 7.247,
-      "segments": 3,
-      "vias": 0,
-      "layers": [
-        "F.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_los+homotopy_detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "CPX-1",
-      "pins": 19,
-      "length_mm": 82.4059,
-      "segments": 29,
-      "vias": 0,
-      "layers": [
-        "B.Cu",
-        "F.Cu",
-        "In1.Cu",
-        "In2.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_astar+homotopy_detour+homotopy_los+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "CPX-7",
-      "pins": 19,
-      "length_mm": 69.1592,
-      "segments": 26,
-      "vias": 0,
-      "layers": [
-        "B.Cu",
-        "F.Cu",
-        "In1.Cu",
-        "In2.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_detour+homotopy_los+homotopy_astar+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "CPX-9",
-      "pins": 19,
-      "length_mm": 105.0364,
-      "segments": 38,
-      "vias": 0,
-      "layers": [
-        "B.Cu",
-        "F.Cu",
-        "In1.Cu",
-        "In2.Cu"
-      ],
-      "status": "ok",
-      "method": "homotopy_astar+homotopy_los+homotopy_detour+python_full",
-      "notes": [
-        "python_mst grid=0.120"
-      ]
-    },
-    {
-      "net": "CPX-2",
-      "pins": 19,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "native_seq",
-      "notes": []
-    },
-    {
-      "net": "CPX-3",
-      "pins": 19,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "native_seq",
-      "notes": []
-    },
-    {
-      "net": "CPX-4",
-      "pins": 19,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "native_seq",
-      "notes": []
-    },
-    {
-      "net": "CPX-8",
-      "pins": 19,
-      "length_mm": 0.0,
-      "segments": 0,
-      "vias": 0,
-      "layers": [],
-      "status": "unrouted",
-      "method": "native_seq",
-      "notes": []
-    }
-  ]
+  "notes": [
+    "backend: native C++ atomic batches with parallel power, critical, and matrix order variants",
+    "obstacles: oriented pad geometry, net ownership, physical copper layers, width-aware inflation",
+    "connectivity: F.Cu-only SMD anchors require explicit vias before inner-layer routing",
+    "policy: incomplete multipin trees roll back; open is preferred to illegal copper",
+    "GND uses a rounded native CopperArea polygon plus a pad-connected track/via backbone",
+    "KiCad refill and DRC remain authoritative for filled-zone polygons and thermals"
+  ],
+  "source": "docs/images/routing_process/drc_report.json"
 }

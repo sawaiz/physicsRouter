@@ -18,7 +18,7 @@ from physics_router.design_rules import load_design_rules
 from physics_router.dsn_export import export_dsn, write_freerouting_readme
 from physics_router.kicad_io import board_from_synthetic, load_board_from_kicad_pcb
 from physics_router.kicad_tools import export_step, find_kicad_cli
-from physics_router.openems_export import export_openems_bundle, geometry_from_board
+from physics_router.openems_export import geometry_from_board
 from physics_router.router import topological_guide_route
 from physics_router.routing_strategies import multilayer_route
 from physics_router.viewer_export import build_viewer_payload, write_viewer_data

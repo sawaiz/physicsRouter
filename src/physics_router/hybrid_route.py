@@ -32,8 +32,10 @@ from physics_router.router import (
 
 ProgressCallback = Callable[[int, int, str, str, dict], None]
 
-# Matrix (dense multipin) first so later power/critical see painted copper
-# Priority/weight first: power & critical before dense multipin matrix
+# Reserve the selected power plane/backbone first, then route constrained
+# sparse signals and rebuild the dense matrix bundle against the settled board.
+# HALO measurements show this schedule completes more full legal nets than
+# signal-first ordering; refill geometry remains deferred to KiCad.
 _STRATEGY_ORDER = ("power", "critical", "matrix", "general")
 
 
@@ -92,6 +94,36 @@ def _matrix_name(net: str) -> bool:
     return bool(re.match(r"^CPX[-_]?\d+$", u)) or u.startswith("MATRIX")
 
 
+def _matrix_order_variants(order: list[str], limit: int = 4) -> list[list[str]]:
+    """Deterministic whole-bucket rebuild orders for equal-priority matrix nets.
+
+    Each variant is routed atomically by the C++ core from the same non-matrix
+    seed. This captures the useful peer-rip/matrix-rebuild behavior without
+    growing a slow Python geometry fallback or accumulating partial stubs.
+    """
+    if not order:
+        return [[]]
+    candidates = [
+        list(order),
+        list(reversed(order)),
+        list(order[::2]) + list(order[1::2]),
+        list(order[1::2]) + list(order[::2]),
+    ]
+    for shift in (1, max(1, len(order) // 3)):
+        candidates.append(list(order[shift:]) + list(order[:shift]))
+    unique: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for candidate in candidates:
+        key = tuple(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+        if len(unique) >= max(1, limit):
+            break
+    return unique
+
+
 def classify_board(
     board: BoardModel,
     config: PlacementConfig | None = None,
@@ -121,13 +153,22 @@ def classify_board(
             strategy = "power"
             reason = f"net_class={lab.net_class.value}"
             w = max(w, 0.4 if lab.net_class == NetClass.POWER else 0.3)
-        elif any(k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS", "PGND")):
+        elif any(
+            k in nu for k in ("VCC", "VDD", "+3V", "+5V", "VBAT", "GND", "VSS", "PGND")
+        ):
             strategy = "power"
             reason = "name heuristic power/gnd"
             w = max(w, 0.3)
-        elif _matrix_name(net) or (pins >= 12 and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))):
+        elif _matrix_name(net) or (
+            pins >= 12
+            and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))
+        ):
             strategy = "matrix"
-            reason = f"dense multipin bus pins={pins}" if pins >= 12 else "charlieplex/matrix name"
+            reason = (
+                f"dense multipin bus pins={pins}"
+                if pins >= 12
+                else "charlieplex/matrix name"
+            )
             w = min(w, max(rules.constraints.min_track_width_mm, 0.2))
         elif lab and (
             lab.critical
@@ -162,11 +203,15 @@ def classify_board(
         )
 
     counts = {s: len(plan.nets_for(s)) for s in _STRATEGY_ORDER if plan.nets_for(s)}
-    plan.notes.append("strategy counts: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+    plan.notes.append(
+        "strategy counts: " + ", ".join(f"{k}={v}" for k, v in counts.items())
+    )
     return plan
 
 
-def _merge_route(dst: RouteResult, src: RouteResult, *, only_nets: set[str] | None = None) -> None:
+def _merge_route(
+    dst: RouteResult, src: RouteResult, *, only_nets: set[str] | None = None
+) -> None:
     for s in src.segments:
         if only_nets is not None and s.net not in only_nets:
             continue
@@ -177,6 +222,10 @@ def _merge_route(dst: RouteResult, src: RouteResult, *, only_nets: set[str] | No
             continue
         dst.vias.append(v)
         dst.via_count += 1
+    for area in src.areas:
+        if only_nets is not None and area.net not in only_nets:
+            continue
+        dst.areas.append(area)
     for rep in src.net_reports:
         if only_nets is not None and rep.net not in only_nets:
             continue
@@ -251,23 +300,72 @@ def _route_bucket(
         ),
     )
 
-    r = clearance_aware_route(
-        board,
-        config,
-        clearance_mm=cl,
-        grid_mm=grid,
-        soft_fallback=False,
-        prefer_native=prefer_native,
-        allow_vias=True,
-        net_order=order,
-        nets_filter=nets,
-        seed_result=seed,
-        style="isotropic",
-        design_rules=rules,
-        # No per-net progress_cb so native C++ early path is not disabled
-        progress_cb=None,
-        skip_hybrid=True,
-    )
+    # Rebuild every contested phase from the same immutable seed. Matrix gets
+    # the full four-order bundle; smaller power/critical buckets get two or
+    # four bounded attempts so an early legal net does not permanently starve
+    # a more useful peer corridor.
+    variant_limit = 6 if strategy == "matrix" else 4 if strategy == "critical" else 2
+    orders = _matrix_order_variants(order, limit=variant_limit)
+
+    def route_variant(variant_order: list[str]) -> RouteResult:
+        return clearance_aware_route(
+            board,
+            config,
+            clearance_mm=cl,
+            grid_mm=grid,
+            soft_fallback=False,
+            prefer_native=prefer_native,
+            allow_vias=True,
+            net_order=variant_order,
+            nets_filter=nets,
+            seed_result=seed,
+            style="isotropic",
+            design_rules=rules,
+            # No per-net progress_cb so native C++ early path is not disabled
+            progress_cb=None,
+            skip_hybrid=True,
+        )
+
+    if len(orders) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # route_board releases the GIL while its independent C++ GridMap runs.
+        # Four workers avoids oversubscription once native OpenMP is available.
+        with ThreadPoolExecutor(max_workers=min(4, len(orders))) as executor:
+            candidates = list(executor.map(route_variant, orders))
+    else:
+        candidates = [route_variant(orders[0])]
+
+    def candidate_key(candidate: RouteResult) -> tuple:
+        reports = {report.net: report for report in candidate.net_reports}
+        completed = sum(
+            1
+            for net in nets
+            if reports.get(net) is not None and reports[net].status == "ok"
+        )
+        drc = (candidate.quality or {}).get("drc") or {}
+        violations = int(drc.get("violations") or 0)
+        opens = len(set(candidate.unrouted_nets) & set(nets))
+        return (
+            violations == 0,
+            completed,
+            -violations,
+            -opens,
+            -candidate.via_count,
+            -candidate.total_length_mm,
+        )
+
+    best_index, r = max(enumerate(candidates), key=lambda item: candidate_key(item[1]))
+    if len(candidates) > 1:
+        completed = sum(
+            1
+            for report in r.net_reports
+            if report.net in nets and report.status == "ok"
+        )
+        r.notes.append(
+            f"{strategy}_bundle: selected order {best_index + 1}/{len(candidates)} "
+            f"with {completed}/{len(nets)} complete nets"
+        )
     r.notes.append(f"hybrid: {strategy} phase nets={len(nets)} cl={cl:.3f} grid={grid}")
     return r
 
@@ -311,7 +409,7 @@ def hybrid_route(
             rules,
             nets,
             strategy=strategy,
-            seed=result if result.segments else None,
+            seed=result if result.segments or result.areas else None,
             plan=plan,
             progress_cb=progress_cb,
             phase_i=pi,
@@ -320,7 +418,8 @@ def hybrid_route(
         _merge_route(result, partial, only_nets=set(nets))
         result.notes.append(
             f"hybrid phase {strategy}: +{len(partial.segments)} segs "
-            f"+{partial.via_count} vias unrouted={len(partial.unrouted_nets)}"
+            f"+{partial.via_count} vias +{len(partial.areas)} areas "
+            f"unrouted={len(partial.unrouted_nets)}"
         )
 
     cl_floor = rules.constraints.min_clearance_mm
@@ -352,6 +451,9 @@ def hybrid_route(
     q = result.quality or {}
     q["pipeline"] = "hybrid"
     q["hybrid_plan"] = plan.to_dict()
+    from physics_router.graph_theory import analyze_route_graph
+
+    q["graph_topology"] = analyze_route_graph(result)
     strat_by_net = {a.net: a.strategy for a in plan.assignments}
     for rep in result.net_reports:
         rep.notes = list(rep.notes or [])
@@ -360,5 +462,11 @@ def hybrid_route(
             if tag not in rep.notes:
                 rep.notes.append(tag)
     result.quality = q
+    graph = q["graph_topology"]
+    result.notes.append(
+        "route graph: "
+        f"components={graph['connected_components']} "
+        f"cycles={graph['cycle_rank']} crossings={graph['crossing_number']}"
+    )
     result.notes.append(q.get("summary", ""))
     return result

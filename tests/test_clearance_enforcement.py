@@ -6,7 +6,6 @@ from physics_router.config_io import example_config
 from physics_router.kicad_io import board_from_synthetic
 from physics_router.router import (
     ObstacleMap,
-    PaintedSeg,
     _seg_seg_min_dist,
     audit_same_layer_clearance,
     clearance_aware_route,

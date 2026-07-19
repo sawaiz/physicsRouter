@@ -27,7 +27,11 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 from physics_router import __version__
-from physics_router.compare import compare_metrics, load_route_metrics, write_comparison_markdown
+from physics_router.compare import (
+    compare_metrics,
+    load_route_metrics,
+    write_comparison_markdown,
+)
 from physics_router.config_io import example_config, load_config, save_config
 from physics_router.dashboard import write_dashboard
 from physics_router.design_rules import load_design_rules
@@ -42,7 +46,6 @@ from physics_router.physics import (
     geometric_score,
 )
 from physics_router.placement import apply_positions, optimize_placement, result_to_dict
-from physics_router.router import clearance_aware_route
 from physics_router.routing_strategies import multilayer_route, pre_route_analysis
 from physics_router.viewer_export import build_viewer_payload, write_viewer_data
 
@@ -163,7 +166,11 @@ class AppState:
     def _config_to_yaml(self) -> str:
         import yaml
 
-        return yaml.safe_dump(self.config.model_dump(mode="json"), sort_keys=False, default_flow_style=False)
+        return yaml.safe_dump(
+            self.config.model_dump(mode="json"),
+            sort_keys=False,
+            default_flow_style=False,
+        )
 
     def _load_preset(self, name: str) -> None:
         if name == "halo-90" and HALO_CFG.exists():
@@ -198,7 +205,11 @@ class AppState:
                 pass
 
     def _build_board(self):
-        if self.board_source == "pcb" and self.pcb_path and Path(self.pcb_path).exists():
+        if (
+            self.board_source == "pcb"
+            and self.pcb_path
+            and Path(self.pcb_path).exists()
+        ):
             return load_board_from_kicad_pcb(self.pcb_path, self.config)
         return board_from_synthetic(self.config)
 
@@ -234,7 +245,7 @@ class AppState:
                 break
 
     def _refresh_viewer(self) -> None:
-        from physics_router.router import RouteResult, RouteSegment, Via
+        from physics_router.router import CopperArea, RouteResult, RouteSegment, Via
 
         board = self.board()
         route_objs: dict[str, RouteResult] = {}
@@ -264,9 +275,21 @@ class AppState:
                     )
                     for v in r.get("vias") or []
                 ]
+                areas = [
+                    CopperArea(
+                        outline=[tuple(point) for point in area.get("outline") or []],
+                        layer=area.get("layer", "F.Cu"),
+                        net=area.get("net", ""),
+                        clearance_mm=area.get("clearance_mm", 0.2),
+                        min_thickness_mm=area.get("min_thickness_mm", 0.25),
+                        priority=area.get("priority", 0),
+                    )
+                    for area in r.get("areas") or []
+                ]
                 route_objs[name] = RouteResult(
                     segments=segs,
                     vias=vias,
+                    areas=areas,
                     via_count=int(r.get("via_count") or len(vias)),
                     total_length_mm=float(r.get("total_length_mm") or 0),
                     unrouted_nets=list(r.get("unrouted_nets") or []),
@@ -318,7 +341,9 @@ class AppState:
         if self._worker and self._worker.is_alive():
             return
         self._stop.clear()
-        self._worker = threading.Thread(target=self._worker_loop, name="pr-jobs", daemon=True)
+        self._worker = threading.Thread(
+            target=self._worker_loop, name="pr-jobs", daemon=True
+        )
         self._worker.start()
 
     def stop_worker(self) -> None:
@@ -495,7 +520,10 @@ class AppState:
             # write run artifact
             outp = WORK_DIR / f"place_{job.id}.json"
             outp.write_text(json.dumps(rd, indent=2) + "\n", encoding="utf-8")
-        self.log(job, f"Best candidate #{result.best.candidate_id} score={result.best.score.total:.3f}")
+        self.log(
+            job,
+            f"Best candidate #{result.best.candidate_id} score={result.best.score.total:.3f}",
+        )
         return {
             "best_candidate_id": result.best.candidate_id,
             "score_total": result.best.score.total,
@@ -506,9 +534,11 @@ class AppState:
             "movable": len(movable),
         }
 
-    def _publish_live_route(self, partial: dict[str, Any], label: str = "topor") -> None:
+    def _publish_live_route(
+        self, partial: dict[str, Any], label: str = "topor"
+    ) -> None:
         """Push partial route geometry into session so the UI can redraw mid-job."""
-        from physics_router.router import RouteResult, RouteSegment, Via
+        from physics_router.router import CopperArea, RouteResult, RouteSegment, Via
 
         segs = [
             RouteSegment(
@@ -533,9 +563,21 @@ class AppState:
             )
             for v in partial.get("vias") or []
         ]
+        areas = [
+            CopperArea(
+                outline=[tuple(point) for point in area.get("outline") or []],
+                layer=area.get("layer", "F.Cu"),
+                net=area.get("net", ""),
+                clearance_mm=area.get("clearance_mm", 0.2),
+                min_thickness_mm=area.get("min_thickness_mm", 0.25),
+                priority=area.get("priority", 0),
+            )
+            for area in partial.get("areas") or []
+        ]
         live = RouteResult(
             segments=segs,
             vias=vias,
+            areas=areas,
             via_count=int(partial.get("via_count") or len(vias)),
             total_length_mm=float(partial.get("total_length_mm") or 0),
             unrouted_nets=list(partial.get("unrouted_nets") or []),
@@ -549,7 +591,9 @@ class AppState:
 
     def _job_route_topor(self, job: Job) -> dict[str, Any]:
         """TopoR-style isotropic free-angle route (multi-variant + geometry polish)."""
-        from physics_router.routing_strategies import multilayer_route, topor_style_route
+        from physics_router.routing_strategies import (
+            topor_style_route,
+        )
 
         p = job.params
         with self.lock:
@@ -563,13 +607,13 @@ class AppState:
         )
 
         with self.lock:
-            fab_profile = str(p.get("fab_profile") or self.fab_profile or "4layer_recommended")
+            fab_profile = str(
+                p.get("fab_profile") or self.fab_profile or "4layer_recommended"
+            )
             self.fab_profile = fab_profile
         n_layers, aggressive = parse_jlc_profile(fab_profile)
         rules = (
-            load_design_rules(
-                pcb_path, manufacturer="JLCPCB", jlc_profile=fab_profile
-            )
+            load_design_rules(pcb_path, manufacturer="JLCPCB", jlc_profile=fab_profile)
             if pcb_path and Path(pcb_path).exists()
             else jlcpcb_design_rules(layers=n_layers, aggressive=aggressive)
         )
@@ -610,12 +654,17 @@ class AppState:
 
         last_pub = {"n": -1}
 
-        def on_progress(done_n: int, total: int, name: str, stage: str, detail: dict) -> None:
+        def on_progress(
+            done_n: int, total: int, name: str, stage: str, detail: dict
+        ) -> None:
             frac = 5 + 80 * (done_n / max(total, 1))
             self.set_progress(job, frac, f"TopoR {done_n}/{total} · {name} · {stage}")
             if isinstance(detail, dict):
                 if detail.get("variant"):
-                    self.log(job, f"  variant {detail.get('index', '?')}: {detail['variant']}")
+                    self.log(
+                        job,
+                        f"  variant {detail.get('index', '?')}: {detail['variant']}",
+                    )
                 if detail.get("length_mm") is not None:
                     self.log(
                         job,
@@ -695,7 +744,10 @@ class AppState:
             sub = Job(
                 id=f"{job.id}-apply",
                 type="apply_route_pcb",
-                params={"variant": "topor", "rebuild_3d": bool(p.get("rebuild_3d", False))},
+                params={
+                    "variant": "topor",
+                    "rebuild_3d": bool(p.get("rebuild_3d", False)),
+                },
             )
             try:
                 validation = self._job_apply_route_pcb(sub)
@@ -725,7 +777,9 @@ class AppState:
 
         p = job.params
         timeout_s = float(p.get("timeout_s", p.get("timeout", 120)))
-        target_grade = str(p.get("target_grade", p.get("grade", "A"))).upper()[:1] or "A"
+        target_grade = (
+            str(p.get("target_grade", p.get("grade", "A"))).upper()[:1] or "A"
+        )
         min_score = float(p.get("min_score", 0) or 0)
         if min_score <= 0:
             from physics_router.continuous_improve import min_score_for_grade
@@ -811,8 +865,7 @@ class AppState:
                     f"viol={ev.get('violations')} (S={ev.get('shorts')} "
                     f"sp={ev.get('spacing')} out={ev.get('outline')}) "
                     f"vias={ev.get('vias')} unrouted={ev.get('unrouted')}"
-                    f"{kicad_bit}"
-                    + (" ★BEST" if ev.get("is_best") else ""),
+                    f"{kicad_bit}" + (" ★BEST" if ev.get("is_best") else ""),
                 )
                 for s in (ev.get("kicad_samples") or [])[:4]:
                     self.log(job, f"    kicad: {s}")
@@ -821,7 +874,10 @@ class AppState:
                 if now - last_pub["t"] >= 0.35:
                     last_pub["t"] = now
                     partial = ev.get("partial")
-                    if isinstance(partial, dict) and partial.get("segments") is not None:
+                    if (
+                        isinstance(partial, dict)
+                        and partial.get("segments") is not None
+                    ):
                         try:
                             self._publish_live_route(partial, "topor")
                         except Exception as e:
@@ -894,10 +950,16 @@ class AppState:
                 self.selected_route = "topor"
                 self.last_score = {
                     "score": {
-                        "route_score": (result.best_snapshot.score if result.best_snapshot else None),
-                        "grade": (result.best_snapshot.grade if result.best_snapshot else None),
+                        "route_score": (
+                            result.best_snapshot.score if result.best_snapshot else None
+                        ),
+                        "grade": (
+                            result.best_snapshot.grade if result.best_snapshot else None
+                        ),
                         "violations": (
-                            result.best_snapshot.violations if result.best_snapshot else None
+                            result.best_snapshot.violations
+                            if result.best_snapshot
+                            else None
                         ),
                     },
                     "score_total": (
@@ -958,7 +1020,9 @@ class AppState:
         report = pre_route_analysis(board, cfg, rules)
         self.set_progress(job, 100, "done")
         out = report.to_dict() if hasattr(report, "to_dict") else {"report": report}
-        self.log(job, f"Pre-route: density={out.get('estimated_density_pins_per_cm2', '—')}")
+        self.log(
+            job, f"Pre-route: density={out.get('estimated_density_pins_per_cm2', '—')}"
+        )
         return out
 
     def _job_spice(self, job: Job) -> dict[str, Any]:
@@ -971,7 +1035,14 @@ class AppState:
         spice = GeometricSpiceProxy()
         sb = apply_simulation_scores(board, cfg, sb, spice=spice, openems=None)
         self.set_progress(job, 100, "done")
-        notes = [n for n in sb.notes if "spice" in n.lower() or "ngspice" in n.lower() or "L≈" in n or "induct" in n.lower()]
+        notes = [
+            n
+            for n in sb.notes
+            if "spice" in n.lower()
+            or "ngspice" in n.lower()
+            or "L≈" in n
+            or "induct" in n.lower()
+        ]
         out = {
             "score_total": sb.total,
             "spice_score": sb.spice_score,
@@ -1001,10 +1072,14 @@ class AppState:
             route_obj = self.routes.get("topor") or self.routes.get("guide")
         if route_obj is None:
             route_obj = RouteResult()
-        paths = export_openems_bundle(out_dir, board=board, routes=route_obj, config=cfg)
+        paths = export_openems_bundle(
+            out_dir, board=board, routes=route_obj, config=cfg
+        )
         self.set_progress(job, 70, "openems score proxy")
         sb = geometric_score(board, cfg)
-        sb = apply_simulation_scores(board, cfg, sb, spice=None, openems=OpenEMSBackend())
+        sb = apply_simulation_scores(
+            board, cfg, sb, spice=None, openems=OpenEMSBackend()
+        )
         # Attach EMI geometry for viewer (pad boxes only — avoid re-routing)
         try:
             prims = geometry_from_board(board, routes=None, config=None)
@@ -1030,7 +1105,9 @@ class AppState:
             with self.lock:
                 if self.viewer_payload is not None:
                     self.viewer_payload["emi_geometry"] = geom
-                    self.viewer_payload.setdefault("assets", {})["emi_geometry"] = "emi_geometry.json"
+                    self.viewer_payload.setdefault("assets", {})["emi_geometry"] = (
+                        "emi_geometry.json"
+                    )
         except Exception as e:
             self.log(job, f"EMI geometry attach skipped: {e}")
         with self.lock:
@@ -1068,7 +1145,10 @@ class AppState:
         path = export_dsn(board, out, config=cfg, rules=rules)
         write_freerouting_readme(out.parent)
         self.log(job, f"Wrote {path}")
-        return {"dsn": str(Path(path).relative_to(ROOT)), "readme": str((out.parent / "FREEROUTING.md").relative_to(ROOT))}
+        return {
+            "dsn": str(Path(path).relative_to(ROOT)),
+            "readme": str((out.parent / "FREEROUTING.md").relative_to(ROOT)),
+        }
 
     def _job_export_step(self, job: Job) -> dict[str, Any]:
         """Full STEP with component models + mask/silk/copper (not board-only)."""
@@ -1078,7 +1158,10 @@ class AppState:
             preset = self.preset
         if not pcb or not Path(pcb).exists():
             self.log(job, "No KiCad PCB in session — STEP needs a real .kicad_pcb")
-            return {"skipped": True, "reason": "no pcb path (use halo-90 preset or set pcb)"}
+            return {
+                "skipped": True,
+                "reason": "no pcb path (use halo-90 preset or set pcb)",
+            }
         from physics_router.kicad_tools import export_step
 
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1107,7 +1190,14 @@ class AppState:
             "step": str(path.relative_to(ROOT)),
             "url": f"/assets/{path.name}",
             "bytes": path.stat().st_size,
-            "includes": ["components STEP", "tracks", "pads", "soldermask", "silkscreen", "inner copper"],
+            "includes": [
+                "components STEP",
+                "tracks",
+                "pads",
+                "soldermask",
+                "silkscreen",
+                "inner copper",
+            ],
         }
 
     def _job_apply_route_pcb(self, job: Job) -> dict[str, Any]:
@@ -1127,30 +1217,51 @@ class AppState:
                 f"No route variant '{variant}'. Run Guide or Clearance route first."
             )
         if not base_pcb or not Path(base_pcb).exists():
-            raise RuntimeError("No .kicad_pcb in session — load HALO-90 or set pcb path")
+            raise RuntimeError(
+                "No .kicad_pcb in session — load HALO-90 or set pcb path"
+            )
 
         if not isinstance(route, RouteResult):
             # rebuild from dict if needed
-            from physics_router.router import RouteSegment, Via
+            from physics_router.router import CopperArea, RouteSegment, Via
 
             segs = [
                 RouteSegment(
-                    x1=s["x1"], y1=s["y1"], x2=s["x2"], y2=s["y2"],
-                    layer=s.get("layer", "F.Cu"), net=s.get("net", ""),
+                    x1=s["x1"],
+                    y1=s["y1"],
+                    x2=s["x2"],
+                    y2=s["y2"],
+                    layer=s.get("layer", "F.Cu"),
+                    net=s.get("net", ""),
                     width_mm=s.get("width_mm", 0.25),
                 )
                 for s in (route.get("segments") or [])
             ]
             vias = [
                 Via(
-                    x=v["x"], y=v["y"], net=v.get("net", ""),
-                    size_mm=v.get("size_mm", 0.8), drill_mm=v.get("drill_mm", 0.4),
+                    x=v["x"],
+                    y=v["y"],
+                    net=v.get("net", ""),
+                    size_mm=v.get("size_mm", 0.8),
+                    drill_mm=v.get("drill_mm", 0.4),
                 )
                 for v in (route.get("vias") or [])
+            ]
+            areas = [
+                CopperArea(
+                    outline=[tuple(point) for point in area.get("outline") or []],
+                    layer=area.get("layer", "F.Cu"),
+                    net=area.get("net", ""),
+                    clearance_mm=area.get("clearance_mm", 0.2),
+                    min_thickness_mm=area.get("min_thickness_mm", 0.25),
+                    priority=area.get("priority", 0),
+                )
+                for area in (route.get("areas") or [])
             ]
             route = RouteResult(
                 segments=segs,
                 vias=vias,
+                areas=areas,
                 via_count=int(route.get("via_count") or len(vias)),
                 total_length_mm=float(route.get("total_length_mm") or 0),
                 unrouted_nets=list(route.get("unrouted_nets") or []),
@@ -1167,7 +1278,9 @@ class AppState:
         out_pcb = ASSETS_DIR / f"{preset}_routed_{variant}.kicad_pcb"
         self.log(job, f"Writing copper from '{variant}' → {out_pcb.name}")
         self.set_progress(job, 40, "write kicad_pcb")
-        path = append_routes_to_kicad_pcb(str(source), str(out_pcb), route, replace_previous=True)
+        path = append_routes_to_kicad_pcb(
+            str(source), str(out_pcb), route, replace_previous=True
+        )
         with self.lock:
             self.selected_route = variant
             self.routed_pcb_path = str(path)
@@ -1188,7 +1301,8 @@ class AppState:
             "segments": len(route.segments),
             "vias": route.via_count,
             "total_length_mm": route.total_length_mm,
-            "quality": route.quality or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
+            "quality": route.quality
+            or (route.compute_quality() if hasattr(route, "compute_quality") else {}),
         }
 
         # Official KiCad DRC (+ ERC when schematic present) after every apply
@@ -1229,7 +1343,9 @@ class AppState:
         if rebuild_3d:
             self.set_progress(job, 75, "rebuild 3D GLB from routed PCB")
             self.log(job, "Re-exporting KiCad GLB with applied copper…")
-            sub = Job(id=f"{job.id}-glb", type="export_board_3d", params={"also_step": False})
+            sub = Job(
+                id=f"{job.id}-glb", type="export_board_3d", params={"also_step": False}
+            )
             glb_res = self._job_export_board_3d(sub)
             out["glb"] = glb_res
             self.log(job, f"GLB: {glb_res.get('url') or glb_res}")
@@ -1248,11 +1364,15 @@ class AppState:
         from physics_router.kicad_tools import export_board_visual_3d, find_kicad_cli
 
         if find_kicad_cli() is None:
-            raise FileNotFoundError("kicad-cli not found — install KiCad or set KICAD_CLI")
+            raise FileNotFoundError(
+                "kicad-cli not found — install KiCad or set KICAD_CLI"
+            )
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
         also_step = bool(job.params.get("also_step", False))
-        stem = f"{preset}_routed" if self.routed_pcb_path and Path(pcb).name.find("routed") >= 0 else (
-            preset if preset != "synthetic" else Path(pcb).stem
+        stem = (
+            f"{preset}_routed"
+            if self.routed_pcb_path and Path(pcb).name.find("routed") >= 0
+            else (preset if preset != "synthetic" else Path(pcb).stem)
         )
         self.set_progress(job, 15, "kicad-cli glb (STEP models + mask + silk + copper)")
         self.log(
@@ -1285,9 +1405,18 @@ class AppState:
                 self.step_url = f"/assets/{Path(result['step']).name}"
             self._refresh_viewer()
         self.set_progress(job, 100, "done")
-        self.log(job, f"GLB ready {glb_path.stat().st_size // 1024} KB → {self.glb_url}")
+        self.log(
+            job, f"GLB ready {glb_path.stat().st_size // 1024} KB → {self.glb_url}"
+        )
         return {
-            **{k: (str(Path(v).relative_to(ROOT)) if k in ("glb", "step", "pcb") and v else v) for k, v in result.items()},
+            **{
+                k: (
+                    str(Path(v).relative_to(ROOT))
+                    if k in ("glb", "step", "pcb") and v
+                    else v
+                )
+                for k, v in result.items()
+            },
             "url": self.glb_url,
             "viewer": "three.js GLTFLoader",
         }
@@ -1307,7 +1436,9 @@ class AppState:
         self.set_progress(job, 40, "kicad-cli pcb drc")
         report = run_drc(Path(pcb), out_json)
         self.set_progress(job, 100, "done")
-        summary = report.to_dict() if hasattr(report, "to_dict") else {"result": str(report)}
+        summary = (
+            report.to_dict() if hasattr(report, "to_dict") else {"result": str(report)}
+        )
         self.log(job, f"DRC summary: {summary}")
         return summary
 
@@ -1388,12 +1519,18 @@ class AppState:
             args.append("--update-baselines")
         env = os.environ.copy()
         env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-        proc = subprocess.run(args, cwd=str(ROOT), capture_output=True, text=True, env=env, timeout=600)
+        proc = subprocess.run(
+            args, cwd=str(ROOT), capture_output=True, text=True, env=env, timeout=600
+        )
         out = (proc.stdout or "") + (proc.stderr or "")
         for line in out.splitlines()[-50:]:
             self.log(job, line)
         self.set_progress(job, 100, "done")
-        return {"returncode": proc.returncode, "output": out[-6000:], "ok": proc.returncode == 0}
+        return {
+            "returncode": proc.returncode,
+            "output": out[-6000:],
+            "ok": proc.returncode == 0,
+        }
 
     def _job_rebuild_viewer(self, job: Job) -> dict[str, Any]:
         self.set_progress(job, 30, "rebuild")
@@ -1410,14 +1547,19 @@ class AppState:
                     viewer_url="index.html",
                 )
         self.set_progress(job, 100, "done")
-        return {"viewer_data": "viewer/viewer_data.json", "dashboard": "viewer/dashboard.html"}
+        return {
+            "viewer_data": "viewer/viewer_data.json",
+            "dashboard": "viewer/dashboard.html",
+        }
 
     def _job_compare(self, job: Job) -> dict[str, Any]:
         self.set_progress(job, 20, "compare")
         with self.lock:
             topor = self.routes.get("topor") or self.routes.get("guide")
         if topor is None:
-            raise RuntimeError("No route in session — run route_guide or route_clearance first")
+            raise RuntimeError(
+                "No route in session — run route_guide or route_clearance first"
+            )
         from physics_router.router import RouteResult
 
         if isinstance(topor, RouteResult):
@@ -1428,7 +1570,10 @@ class AppState:
         tmp = WORK_DIR / f"cmp_topor_{job.id}.json"
         tmp.write_text(json.dumps(td, indent=2) + "\n", encoding="utf-8")
         baseline = None
-        if job.params.get("baseline_json") and Path(job.params["baseline_json"]).exists():
+        if (
+            job.params.get("baseline_json")
+            and Path(job.params["baseline_json"]).exists()
+        ):
             baseline = load_route_metrics(job.params["baseline_json"])
         cmp = compare_metrics(load_route_metrics(tmp), baseline)
         with self.lock:
@@ -1454,12 +1599,20 @@ class AppState:
             base = 100.0 * i / n
             self.set_progress(job, base, f"pipeline: {step}")
             self.log(job, f"── pipeline step {i + 1}/{n}: {step}")
-            sub = Job(id=f"{job.id}-{step}", type=step, params=job.params.get(step + "_params") or {})
+            sub = Job(
+                id=f"{job.id}-{step}",
+                type=step,
+                params=job.params.get(step + "_params") or {},
+            )
             # Run sub-job inline sharing progress band
             try:
                 # Temporarily nest by calling runner with progress remap
                 child_result = self._run_job(sub)
-                results[step] = {"ok": True, "result": child_result, "log_tail": sub.log[-10:]}
+                results[step] = {
+                    "ok": True,
+                    "result": child_result,
+                    "log_tail": sub.log[-10:],
+                }
                 self.log(job, f"✓ {step}")
             except Exception as e:
                 results[step] = {"ok": False, "error": str(e)}
@@ -1474,7 +1627,9 @@ class AppState:
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             board = self.board()
-            jobs = [self.jobs[i].to_dict(full=False) for i in reversed(self.job_order[-50:])]
+            jobs = [
+                self.jobs[i].to_dict(full=False) for i in reversed(self.job_order[-50:])
+            ]
             return {
                 "version": __version__,
                 "preset": self.preset,
@@ -1503,16 +1658,14 @@ class AppState:
                     else None
                 ),
                 "routes": {
-                    k: (
-                        v.to_dict()
-                        if hasattr(v, "to_dict")
-                        else v
-                    )
+                    k: (v.to_dict() if hasattr(v, "to_dict") else v)
                     for k, v in self.routes.items()
                 },
                 "last_score": self.last_score,
                 "last_placement": {
-                    "best_candidate_id": (self.last_placement or {}).get("best_candidate_id"),
+                    "best_candidate_id": (self.last_placement or {}).get(
+                        "best_candidate_id"
+                    ),
                     "best_score": (self.last_placement or {}).get("best_score"),
                 }
                 if self.last_placement
@@ -1795,7 +1948,10 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             if path == "/api/jobs":
                 with STATE.lock:
-                    jobs = [STATE.jobs[i].to_dict(full=False) for i in reversed(STATE.job_order[-50:])]
+                    jobs = [
+                        STATE.jobs[i].to_dict(full=False)
+                        for i in reversed(STATE.job_order[-50:])
+                    ]
                 return self._json(200, {"jobs": jobs})
             if path.startswith("/api/jobs/"):
                 jid = path.split("/")[3]
@@ -1816,7 +1972,11 @@ class Handler(SimpleHTTPRequestHandler):
                 # List run artifacts
                 files = []
                 if WORK_DIR.exists():
-                    for p in sorted(WORK_DIR.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True)[:80]:
+                    for p in sorted(
+                        WORK_DIR.rglob("*"),
+                        key=lambda x: x.stat().st_mtime,
+                        reverse=True,
+                    )[:80]:
                         if p.is_file():
                             files.append(
                                 {
@@ -1829,7 +1989,9 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"files": files})
             return self._json(404, {"error": f"unknown api {path}"})
         except Exception as e:
-            return self._json(500, {"error": str(e), "trace": traceback.format_exc()[-1500:]})
+            return self._json(
+                500, {"error": str(e), "trace": traceback.format_exc()[-1500:]}
+            )
 
     def _api_post(self, path: str) -> None:
         try:
@@ -1845,10 +2007,18 @@ class Handler(SimpleHTTPRequestHandler):
                 name = body.get("variant") or body.get("name")
                 with STATE.lock:
                     if name and name not in STATE.routes:
-                        return self._json(404, {"error": f"unknown variant {name}", "known": list(STATE.routes)})
+                        return self._json(
+                            404,
+                            {
+                                "error": f"unknown variant {name}",
+                                "known": list(STATE.routes),
+                            },
+                        )
                     STATE.selected_route = name
                     snap = STATE.snapshot()
-                return self._json(200, {"selected_route": name, "session": snap.get("session")})
+                return self._json(
+                    200, {"selected_route": name, "session": snap.get("session")}
+                )
             if path == "/api/preset":
                 name = body.get("preset") or body.get("id") or "synthetic"
                 with STATE.lock:
@@ -1867,7 +2037,11 @@ class Handler(SimpleHTTPRequestHandler):
                     cfg = PlacementConfig.model_validate(body["config"])
                     import yaml
 
-                    text = yaml.safe_dump(cfg.model_dump(mode="json"), sort_keys=False, default_flow_style=False)
+                    text = yaml.safe_dump(
+                        cfg.model_dump(mode="json"),
+                        sort_keys=False,
+                        default_flow_style=False,
+                    )
                 else:
                     return self._json(400, {"error": "config or config_text required"})
                 with STATE.lock:
@@ -1886,7 +2060,10 @@ class Handler(SimpleHTTPRequestHandler):
                     save_config(STATE.config, dest)
                 return self._json(200, {"saved": dest})
             if path == "/api/fab-profile":
-                from physics_router.design_rules import JLCPCB_PROFILES, parse_jlc_profile
+                from physics_router.design_rules import (
+                    JLCPCB_PROFILES,
+                    parse_jlc_profile,
+                )
 
                 pid = str(body.get("profile") or body.get("id") or "").strip()
                 if not pid:
@@ -1915,7 +2092,9 @@ class Handler(SimpleHTTPRequestHandler):
                 )
             return self._json(404, {"error": f"unknown api {path}"})
         except Exception as e:
-            return self._json(500, {"error": str(e), "trace": traceback.format_exc()[-1500:]})
+            return self._json(
+                500, {"error": str(e), "trace": traceback.format_exc()[-1500:]}
+            )
 
     def _api_put(self, path: str) -> None:
         # alias to apply config

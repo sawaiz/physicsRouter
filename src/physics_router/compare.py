@@ -111,7 +111,6 @@ def write_comparison_markdown(comparison: dict[str, Any], out_path: str | Path) 
         "| Metric | TopoR | FreeRouting | Δ (TopoR − FR) | Winner |",
         "|--------|------:|------------:|---------------:|:------:|",
     ]
-    topor = comparison.get("topor") or comparison.get(list(comparison.keys())[0])
     # normalize keys
     a_key = "topor" if "topor" in comparison else [k for k in comparison if k not in ("winner", "deltas", "notes")][0]
     b_key = "freerouting" if "freerouting" in comparison else None

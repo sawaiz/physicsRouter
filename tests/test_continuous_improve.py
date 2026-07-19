@@ -5,12 +5,14 @@ from __future__ import annotations
 from physics_router.config_io import example_config
 from physics_router.continuous_improve import (
     ImproveConfig,
+    _apply_kicad_to_snapshot,
     continuous_improve,
     goal_met,
     ImproveSnapshot,
     min_score_for_grade,
 )
 from physics_router.kicad_io import board_from_synthetic
+from physics_router.router import RouteResult
 
 
 def test_min_score_for_grade():
@@ -33,6 +35,47 @@ def test_goal_met_requires_drc_clean():
     )
     assert not goal_met(dirty, cfg)
     assert goal_met(clean, cfg)
+
+
+def test_kicad_oracle_is_stamped_on_serialized_route(monkeypatch):
+    """A KiCad failure may never disappear from the returned route metrics."""
+    from physics_router import kicad_tools
+
+    monkeypatch.setattr(
+        kicad_tools,
+        "kicad_drc_route",
+        lambda *_args, **_kwargs: {
+            "available": True,
+            "copper_violation_count": 17,
+            "copper_error_count": 4,
+            "copper_passed": False,
+            "samples": [],
+            "by_type": {"clearance": 17},
+            "kicad_version": "test",
+        },
+    )
+    route = RouteResult()
+    snap = ImproveSnapshot(
+        round=1,
+        elapsed_s=1.0,
+        strategy="native",
+        score=100.0,
+        grade="A",
+        violations=0,
+        shorts=0,
+        spacing=0,
+        outline=0,
+        vias=0,
+        unrouted=0,
+        length_mm=0.0,
+        placement_cost=None,
+        stage="scored",
+    )
+    cfg = ImproveConfig(pcb_path="board.kicad_pcb", require_kicad_drc=True)
+    updated = _apply_kicad_to_snapshot(snap, route, cfg, force=True)
+    assert updated.violations == 17
+    assert route.clearance_violations == 17
+    assert route.quality["kicad_drc"]["passed"] is False
 
 
 def test_continuous_improve_timeout_and_live_score():

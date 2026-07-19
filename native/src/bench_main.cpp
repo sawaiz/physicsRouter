@@ -38,7 +38,7 @@ int main() {
 
   std::vector<pr::RectObs> obs;
   for (int i = 0; i < 20; ++i)
-    obs.push_back({dist(rng), dist(rng), 0.8, 0.8, -1});
+    obs.push_back({dist(rng), dist(rng), 0.8, 0.8, -1, {}});
 
   auto r = pr::route_board(nets, cfg, obs);
   std::printf("Route: segs=%zu vias=%d length=%.2f grade=%s ms=%.2f gpu=%d\n",

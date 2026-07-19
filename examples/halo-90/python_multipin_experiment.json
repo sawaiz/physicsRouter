@@ -1,0 +1,29 @@
+{
+  "source_commit": "887196831601b32782de6a42a73c7543d7de3fbe",
+  "mode": "historical_python_orchestrated_multipin_mst",
+  "time_s": 625.44,
+  "completed_nets": 19,
+  "total_nets": 23,
+  "segments": 204,
+  "vias": 0,
+  "areas": 0,
+  "length_mm": 563.24,
+  "unrouted": [
+    "CPX-2",
+    "CPX-3",
+    "CPX-4",
+    "CPX-8"
+  ],
+  "drc": {
+    "violations": 0,
+    "shorts": 0,
+    "spacing": 0,
+    "outline_outside": 0
+  },
+  "notes": [
+    "Preserved as policy evidence from main, not as the production router.",
+    "The run used Python edge-by-edge MST orchestration around native point searches.",
+    "The production goal remains C++-only geometry with organic copper areas.",
+    "Its full per-net report remains available in git commit 8871968."
+  ]
+}

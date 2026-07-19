@@ -1,14 +1,16 @@
 {
   "synthetic": {
     "score_total": 9472.96630542241,
-    "guide_length_mm": 180.2430475795562,
+    "guide_length_mm": 171.81332026876692,
     "components": 9,
     "nets": 7
   },
   "halo-90": {
-    "score_total": 153464.77825614356,
-    "guide_length_mm": 854.1043505865932,
+    "score_total": 199502.8764635435,
+    "guide_length_mm": 768.6943090954595,
     "components": 111,
-    "nets": 23
+    "nets": 23,
+    "pcb_sha256": "8d5115165db202140e77c76d0952ec02aa83648d2c0532c82fcc066098473105",
+    "config_sha256": "c1c3289b1c1484f96915ca5f4ad370238187ee9fdc1fd23fe45e2115a240b396"
   }
 }

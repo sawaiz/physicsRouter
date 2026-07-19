@@ -12,7 +12,11 @@ struct Vec2 {
 
 struct RectObs {
   double cx = 0, cy = 0, w = 0, h = 0;
+  // Board-space orientation. Keeping the real pad angle avoids turning
+  // fine-pitch rotated pads into an artificial axis-aligned keepout wall.
+  double rotation_deg = 0;
   int net_id = -1; // -1 = blocks all
+  std::vector<int> layers; // empty = all copper layers
 };
 
 struct Segment {
@@ -26,32 +30,64 @@ struct Via {
   double x = 0, y = 0;
   int net_id = 0;
   double size_mm = 0.8;
+  double drill_mm = 0.4;
   int layer_a = 0, layer_b = 1;
   std::string reason; // explainable: why this via was inserted
   int alternatives_considered = 0;
+};
+
+/** Refillable copper zone boundary.
+ *
+ * The polygon is native router output, while the PCB editor remains the fill
+ * authority so clearances, thermals, and same-layer cut-outs use fab rules.
+ */
+struct CopperArea {
+  std::vector<Vec2> outline;
+  int layer = 0;
+  int net_id = 0;
+  double clearance_mm = 0.2;
+  double min_thickness_mm = 0.25;
+  int priority = 0;
 };
 
 struct NetSpec {
   int net_id = 0;
   std::string name;
   std::vector<Vec2> anchors; // unique pin positions
+  // Copper layers physically reachable at each anchor (SMD pad vs plated hole).
+  // Empty outer vector or empty entry means all preferred layers.
+  std::vector<std::vector<int>> anchor_layers;
+  // Advisory graph-theory spanning tree. Each pair indexes anchors; the
+  // native router prefers these frontier edges and falls back to any legal
+  // edge when geometrization invalidates the abstract topology.
+  std::vector<std::pair<int, int>> topology_edges;
   double priority = 1.0;
   double width_mm = 0.25;
   std::vector<int> preferred_layers; // empty = all
+  bool use_copper_area = false;
+  int area_layer = -1; // -1 = first preferred layer
+  double area_margin_mm = 0.8;
+  int area_priority = 0;
 };
 
 struct RouteConfig {
   double x_min = 0, x_max = 100, y_min = 0, y_max = 100;
+  std::vector<Vec2> board_outline; // optional true Edge.Cuts polygon
   double grid_mm = 0.1; // fine free-angle default (matches Python pipeline)
   double clearance_mm = 0.2;
+  double via_diameter_mm = 0.8;
+  double via_drill_mm = 0.4;
+  double min_hole_to_hole_mm = 0.25;
   int num_layers = 2;
   int max_expansions = 4000;
   bool soft_fallback = false;
   bool allow_vias = true;
+  bool allow_blind_buried_vias = false;
   bool use_gpu = true;
   bool isotropic = true;     // any-angle detours (TopoR-style)
   bool post_rubberband = true;
   bool via_minimize = false; // connectivity/clearance beat via count
+  bool atomic_nets = true;   // commit a net only when every anchor connects
   int threads = 0; // 0 = auto
 };
 
@@ -69,6 +105,7 @@ struct NetReport {
 struct RouteResult {
   std::vector<Segment> segments;
   std::vector<Via> vias;
+  std::vector<CopperArea> areas;
   double total_length_mm = 0;
   int via_count = 0;
   int clearance_violations = 0;

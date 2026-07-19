@@ -23,14 +23,12 @@ exploration geometric routing.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 from physics_router.design_rules import DesignRules, default_design_rules
 from physics_router.models import BoardModel, NetClass, PlacementConfig
 from physics_router.router import (
     RouteResult,
-    Via,
     attach_router_drc,
     build_obstacle_map,
     clearance_aware_route,

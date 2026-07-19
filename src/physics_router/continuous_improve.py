@@ -160,7 +160,6 @@ class ImproveResult:
 
 def _route_score_key(snap: ImproveSnapshot) -> tuple:
     """Higher is better. Prefer KiCad-clean, then native-clean, score, completion."""
-    kicad_clean = 1 if (snap.kicad_passed is True) else (0 if snap.kicad_available else 0)
     # Unknown kicad ranks below known-clean, above known-fail
     if snap.kicad_available:
         kicad_rank = 2 if snap.kicad_passed else 0
@@ -223,32 +222,32 @@ def _apply_kicad_to_snapshot(
     snap.kicad_passed = bool(kd.get("copper_passed"))
     snap.kicad_samples = list(kd.get("samples") or [])[:8]
 
-    # Authoritative: inflate violations so grade cannot claim A with KiCad fails
+    # Authoritative: the serialized route must carry the same violation count as
+    # the snapshot.  Previously this was only applied when KiCad exceeded the
+    # native count and was later erased by the final native DRC pass.
     combined = max(snap.violations, copper, copper_err)
-    if combined > snap.violations:
-        route.clearance_violations = combined
-        q = route.compute_quality()
-        snap.score = float(q.get("score") or snap.score)
-        snap.grade = str(q.get("grade") or snap.grade)
-        snap.violations = combined
-        snap.summary = str(q.get("summary") or snap.summary)
+    route.clearance_violations = combined
+    q = route.compute_quality()
+    snap.score = float(q.get("score") or snap.score)
+    snap.grade = str(q.get("grade") or snap.grade)
+    snap.violations = combined
+    snap.summary = str(q.get("summary") or snap.summary)
     # Always annotate summary with KiCad oracle
     snap.summary = (
         f"{snap.summary} · KiCad DRC copper={copper} errors={copper_err} "
         f"({'PASS' if snap.kicad_passed else 'FAIL'})"
     )
-    if snap.kicad_samples:
-        route.quality = {
-            **(route.quality or {}),
-            "kicad_drc": {
-                "copper_violation_count": copper,
-                "error_count": copper_err,
-                "passed": snap.kicad_passed,
-                "samples": snap.kicad_samples,
-                "by_type": kd.get("by_type") or {},
-                "kicad_version": kd.get("kicad_version") or "",
-            },
-        }
+    route.quality = {
+        **(route.quality or {}),
+        "kicad_drc": {
+            "copper_violation_count": copper,
+            "error_count": copper_err,
+            "passed": snap.kicad_passed,
+            "samples": snap.kicad_samples,
+            "by_type": kd.get("by_type") or {},
+            "kicad_version": kd.get("kicad_version") or "",
+        },
+    }
     return snap
 
 
@@ -562,8 +561,6 @@ def continuous_improve(
 
         round_i += 1
         strat = strategies[(round_i - 1) % len(strategies)]
-        stage = "place" if (cfg.do_place and movable and round_i > 1) else "route"
-
         # --- Placement reseed (skip round 1 so first route uses current layout) ---
         if cfg.do_place and movable and round_i > 1:
             if _time_left() < 2.0:
@@ -741,6 +738,26 @@ def continuous_improve(
             if not best_snap.kicad_available:
                 best_snap = _apply_kicad_to_snapshot(
                     best_snap, best_route, cfg, force=True
+                )
+            else:
+                # Preserve the already-run KiCad oracle after the final native
+                # pass.  This is the count exposed by /api/jobs and route JSON.
+                combined = max(
+                    int(best_route.clearance_violations),
+                    int(best_snap.violations),
+                    int(best_snap.kicad_copper_violations),
+                    int(best_snap.kicad_errors),
+                )
+                best_route.clearance_violations = combined
+                quality = best_route.compute_quality()
+                best_snap.violations = combined
+                best_snap.score = float(quality.get("score") or 0.0)
+                best_snap.grade = str(quality.get("grade") or "F")
+                best_snap.summary = (
+                    f"{quality.get('summary', '')} · KiCad DRC "
+                    f"copper={best_snap.kicad_copper_violations} "
+                    f"errors={best_snap.kicad_errors} "
+                    f"({'PASS' if best_snap.kicad_passed else 'FAIL'})"
                 )
         if best_snap:
             best_snap.met_goal = goal_met(best_snap, cfg)

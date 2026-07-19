@@ -59,9 +59,12 @@ std::vector<Vec2> rubberband(const std::vector<Vec2> &path, const GridMap &g, in
 
 void paint_poly(GridMap &grid, const std::vector<Vec2> &poly, int layer, int net_id,
                 double width, double clearance) {
+  // Grid queries operate on centerlines. Reserve both track half-widths plus
+  // the required edge clearance (equal-width assumption for the fast map).
+  const double centerline_keepout_diameter = 2.0 * width + 2.0 * clearance;
   for (size_t i = 0; i + 1 < poly.size(); ++i)
     grid.paint_trace(poly[i].x, poly[i].y, poly[i + 1].x, poly[i + 1].y,
-                     width + clearance, layer, net_id);
+                     centerline_keepout_diameter, layer, net_id);
 }
 
 void emit_poly(const std::vector<Vec2> &poly, int layer, int net_id, double width,
@@ -79,9 +82,113 @@ void emit_poly(const std::vector<Vec2> &poly, int layer, int net_id, double widt
   }
 }
 
+double cross(Vec2 origin, Vec2 a, Vec2 b) {
+  return (a.x - origin.x) * (b.y - origin.y) -
+         (a.y - origin.y) * (b.x - origin.x);
+}
+
+std::vector<Vec2> convex_hull(std::vector<Vec2> points) {
+  if (points.size() < 3)
+    return points;
+  std::sort(points.begin(), points.end(), [](Vec2 a, Vec2 b) {
+    return a.x < b.x || (a.x == b.x && a.y < b.y);
+  });
+  points.erase(std::unique(points.begin(), points.end(), [](Vec2 a, Vec2 b) {
+                 return std::abs(a.x - b.x) < 1e-9 &&
+                        std::abs(a.y - b.y) < 1e-9;
+               }),
+               points.end());
+  if (points.size() < 3)
+    return points;
+  std::vector<Vec2> hull(points.size() * 2);
+  size_t k = 0;
+  for (const auto &point : points) {
+    while (k >= 2 && cross(hull[k - 2], hull[k - 1], point) <= 0)
+      --k;
+    hull[k++] = point;
+  }
+  for (size_t i = points.size() - 1, lower = k + 1; i > 0; --i) {
+    const auto &point = points[i - 1];
+    while (k >= lower && cross(hull[k - 2], hull[k - 1], point) <= 0)
+      --k;
+    hull[k++] = point;
+  }
+  hull.resize(k - 1);
+  return hull;
+}
+
+bool point_in_polygon(Vec2 point, const std::vector<Vec2> &polygon) {
+  bool inside = false;
+  if (polygon.size() < 3)
+    return true;
+  size_t previous = polygon.size() - 1;
+  for (size_t current = 0; current < polygon.size(); ++current) {
+    const auto &a = polygon[current];
+    const auto &b = polygon[previous];
+    if (((a.y > point.y) != (b.y > point.y)) &&
+        point.x < (b.x - a.x) * (point.y - a.y) /
+                          ((b.y - a.y) + 1e-18) +
+                      a.x)
+      inside = !inside;
+    previous = current;
+  }
+  return inside;
+}
+
+std::vector<Vec2> organic_area(const std::vector<Vec2> &anchors,
+                               double margin, const RouteConfig &cfg) {
+  if (anchors.empty())
+    return {};
+  // Convex hull of small circles is a rounded Minkowski expansion of the
+  // anchor hull: a stable organic boundary without a polygon clipping stack.
+  constexpr int circle_steps = 16;
+  std::vector<Vec2> cloud;
+  cloud.reserve(anchors.size() * circle_steps);
+  const double radius = std::max(margin, cfg.clearance_mm * 2.0);
+  for (const auto &anchor : anchors) {
+    for (int i = 0; i < circle_steps; ++i) {
+      double angle = 2.0 * M_PI * static_cast<double>(i) / circle_steps;
+      cloud.push_back(
+          {std::clamp(anchor.x + radius * std::cos(angle), cfg.x_min, cfg.x_max),
+           std::clamp(anchor.y + radius * std::sin(angle), cfg.y_min, cfg.y_max)});
+    }
+  }
+  auto hull = convex_hull(std::move(cloud));
+  if (cfg.board_outline.size() < 3)
+    return hull;
+
+  Vec2 center{};
+  for (const auto &anchor : anchors) {
+    center.x += anchor.x;
+    center.y += anchor.y;
+  }
+  center.x /= static_cast<double>(anchors.size());
+  center.y /= static_cast<double>(anchors.size());
+  if (!point_in_polygon(center, cfg.board_outline))
+    return {};
+
+  // Project rounded boundary samples back inside a non-rectangular Edge.Cuts
+  // polygon (HALO's teardrop is the motivating case).
+  for (auto &point : hull) {
+    if (point_in_polygon(point, cfg.board_outline))
+      continue;
+    Vec2 low = center;
+    Vec2 high = point;
+    for (int iteration = 0; iteration < 32; ++iteration) {
+      Vec2 mid{(low.x + high.x) * 0.5, (low.y + high.y) * 0.5};
+      if (point_in_polygon(mid, cfg.board_outline))
+        low = mid;
+      else
+        high = mid;
+    }
+    point = low;
+  }
+  return hull;
+}
+
 } // namespace
 
-const char *native_version() { return "1.1.0-native-isotropic"; }
+const char *native_version() { return "1.8.0-graph-topology"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -239,23 +346,85 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal, int la
 }
 
 static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, int net_id,
-                       const std::vector<int> &layers, double width,
+                       const std::vector<int> &layers,
+                       const std::vector<int> &start_allowed,
+                       const std::vector<int> &goal_allowed, double width,
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
                        std::string &method) {
   std::vector<int> blocked_layers;
   int alts = 0;
 
-  // try each preferred layer (isotropic free-angle)
-  for (int layer : layers) {
-    auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions, cfg.isotropic);
-    ++alts;
-    if (poly.size() >= 2) {
-      method = cfg.isotropic ? "isotropic" : "astar";
-      emit_poly(poly, layer, net_id, width, out_segs);
-      paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
-      return true;
+  auto allowed = [&](int layer, const std::vector<int> &physical) {
+    return physical.empty() ||
+           std::find(physical.begin(), physical.end(), layer) != physical.end();
+  };
+
+  auto via_layers = [&](int layer_a, int layer_b) {
+    std::vector<int> physical;
+    if (!cfg.allow_blind_buried_vias) {
+      for (int layer = 0; layer < cfg.num_layers; ++layer)
+        physical.push_back(layer);
+      return physical;
     }
-    blocked_layers.push_back(layer);
+    const int low = std::min(layer_a, layer_b);
+    const int high = std::max(layer_a, layer_b);
+    for (int layer = low; layer <= high; ++layer)
+      physical.push_back(layer);
+    return physical;
+  };
+
+  auto via_site_blocked = [&](Vec2 site, int layer_a, int layer_b) {
+    // Pads/tracks in GridMap are already inflated for track half-width and
+    // clearance. Check the additional via radius on every layer physically
+    // traversed by the hole, including intermediate layers for through vias.
+    const double extra_radius =
+        std::max(0.0, 0.5 * (cfg.via_diameter_mm - width));
+    for (int layer : via_layers(layer_a, layer_b))
+      if (grid.disk_blocked(site.x, site.y, extra_radius, layer, net_id))
+        return true;
+    return grid.hole_blocked(site.x, site.y);
+  };
+
+  auto configure_via = [&](Via &via, Vec2 site, int layer_a, int layer_b) {
+    via.x = site.x;
+    via.y = site.y;
+    via.net_id = net_id;
+    via.size_mm = cfg.via_diameter_mm;
+    via.drill_mm = cfg.via_drill_mm;
+    if (cfg.allow_blind_buried_vias) {
+      via.layer_a = layer_a;
+      via.layer_b = layer_b;
+    } else {
+      via.layer_a = 0;
+      via.layer_b = std::max(0, cfg.num_layers - 1);
+    }
+  };
+
+  // When graph coloring deliberately assigns an inner primary layer to two
+  // outer-SMD anchors, preserve that topology with explicit two-via fanout.
+  // Falling through to an easy F.Cu path made every colored net pile onto the
+  // front and rendered layer assignment purely cosmetic.
+  const bool prefer_layer_escape =
+      cfg.allow_vias && !layers.empty() &&
+      (!allowed(layers.front(), start_allowed) ||
+       !allowed(layers.front(), goal_allowed));
+
+  // A same-layer edge is legal only when both physical pads expose that layer.
+  if (!prefer_layer_escape) {
+    for (int layer : layers) {
+      if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
+        continue;
+      auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions,
+                              cfg.isotropic);
+      ++alts;
+      if (poly.size() >= 2) {
+        method = cfg.isotropic ? "isotropic" : "astar";
+        emit_poly(poly, layer, net_id, width, out_segs);
+        paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
+        return true;
+      }
+      blocked_layers.push_back(layer);
+    }
   }
   if (!cfg.allow_vias || layers.size() < 2)
     return false;
@@ -287,15 +456,11 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
 
   // Prefer primary layer to each other preferred layer (matrix/CPX striping)
   std::vector<std::pair<int, int>> layer_pairs;
-  if (layers.size() >= 2) {
-    for (size_t j = 1; j < layers.size(); ++j) {
-      layer_pairs.push_back({layers[0], layers[j]});
-      layer_pairs.push_back({layers[j], layers[0]});
-    }
-    if (layers.size() > 2) {
-      layer_pairs.push_back({layers[1], layers.back()});
-    }
-  }
+  for (int start_layer : layers)
+    if (allowed(start_layer, start_allowed))
+      for (int goal_layer : layers)
+        if (start_layer != goal_layer && allowed(goal_layer, goal_allowed))
+          layer_pairs.push_back({start_layer, goal_layer});
   int sites_tried = 0;
   int exp_budget = std::max(500, cfg.max_expansions / 2);
   for (const auto &lp : layer_pairs) {
@@ -308,9 +473,9 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         break;
       if (!grid.in_bounds(vx, vy))
         continue;
-      if (grid.point_blocked(vx, vy, l0, net_id) || grid.point_blocked(vx, vy, l1, net_id))
-        continue;
       Vec2 via_pt{vx, vy};
+      if (via_site_blocked(via_pt, l0, l1))
+        continue;
       auto p0 = route_point(grid, a, via_pt, l0, net_id, exp_budget, cfg.isotropic);
       auto p1 = route_point(grid, via_pt, b, l1, net_id, exp_budget, cfg.isotropic);
       if (p0.size() >= 2 && p1.size() >= 2) {
@@ -320,11 +485,7 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         emit_poly(p1, l1, net_id, width, out_segs);
         paint_poly(grid, p1, l1, net_id, width, cfg.clearance_mm);
         Via v;
-        v.x = vx;
-        v.y = vy;
-        v.net_id = net_id;
-        v.layer_a = l0;
-        v.layer_b = l1;
+        configure_via(v, via_pt, l0, l1);
         v.alternatives_considered = alts + sites_tried;
         {
           std::ostringstream oss;
@@ -335,6 +496,156 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         out_vias.push_back(v);
         return true;
       }
+    }
+  }
+
+  // Two-via escape: SMD pads at both ends may expose only F.Cu/B.Cu while a
+  // dense connection needs an inner-layer corridor. Keep both terminal stubs
+  // on their real pad layers and use a preferred routing layer between vias.
+  const double edge_len = std::max(dist(a, b), g);
+  const Vec2 unit{(b.x - a.x) / edge_len, (b.y - a.y) / edge_len};
+  const Vec2 perp{-unit.y, unit.x};
+  for (int terminal_layer : layers) {
+    if (!allowed(terminal_layer, start_allowed) ||
+        !allowed(terminal_layer, goal_allowed))
+      continue;
+    for (int route_layer : layers) {
+      if (route_layer == terminal_layer)
+        continue;
+      for (double along : {0.18, 0.28}) {
+        for (double offset_cells : {0.0, 2.0, -2.0, 5.0, -5.0}) {
+          const double offset = offset_cells * g;
+          Vec2 va{a.x + (b.x - a.x) * along + perp.x * offset,
+                  a.y + (b.y - a.y) * along + perp.y * offset};
+          Vec2 vb{b.x - (b.x - a.x) * along + perp.x * offset,
+                  b.y - (b.y - a.y) * along + perp.y * offset};
+          va.x = std::round(va.x / g) * g;
+          va.y = std::round(va.y / g) * g;
+          vb.x = std::round(vb.x / g) * g;
+          vb.y = std::round(vb.y / g) * g;
+          if (dist(va, vb) < cfg.via_drill_mm + cfg.min_hole_to_hole_mm)
+            continue;
+          if (!grid.in_bounds(va.x, va.y) || !grid.in_bounds(vb.x, vb.y))
+            continue;
+          if (via_site_blocked(va, terminal_layer, route_layer) ||
+              via_site_blocked(vb, terminal_layer, route_layer))
+            continue;
+          const int stub_budget = std::max(500, cfg.max_expansions / 3);
+          auto p0 = route_point(grid, a, va, terminal_layer, net_id,
+                                stub_budget, cfg.isotropic);
+          auto pm = route_point(grid, va, vb, route_layer, net_id,
+                                cfg.max_expansions, cfg.isotropic);
+          auto p1 = route_point(grid, vb, b, terminal_layer, net_id,
+                                stub_budget, cfg.isotropic);
+          if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
+            continue;
+          method = "two_via_escape";
+          emit_poly(p0, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p0, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          emit_poly(pm, route_layer, net_id, width, out_segs);
+          paint_poly(grid, pm, route_layer, net_id, width, cfg.clearance_mm);
+          emit_poly(p1, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p1, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          for (const auto &site : {va, vb}) {
+            Via via;
+            configure_via(via, site, terminal_layer, route_layer);
+            via.alternatives_considered = alts + sites_tried;
+            via.reason = "Two-via SMD escape to preferred inner layer";
+            out_vias.push_back(via);
+          }
+          return true;
+        }
+      }
+
+      struct EscapePath {
+        Vec2 site;
+        std::vector<Vec2> stub;
+      };
+      auto local_escapes = [&](Vec2 anchor) {
+        std::vector<EscapePath> escapes;
+        static const int directions[8][2] = {
+            {1, 0},  {-1, 0}, {0, 1},  {0, -1},
+            {1, 1},  {-1, 1}, {1, -1}, {-1, -1},
+        };
+        for (double cells : {2.0, 3.5, 5.0, 7.0}) {
+          for (const auto &direction : directions) {
+            Vec2 site{anchor.x + direction[0] * cells * g,
+                      anchor.y + direction[1] * cells * g};
+            site.x = std::round(site.x / g) * g;
+            site.y = std::round(site.y / g) * g;
+            if (!grid.in_bounds(site.x, site.y) ||
+                via_site_blocked(site, terminal_layer, route_layer))
+              continue;
+            auto stub = route_point(grid, anchor, site, terminal_layer, net_id,
+                                    std::max(500, cfg.max_expansions / 3),
+                                    cfg.isotropic);
+            if (stub.size() < 2)
+              continue;
+            escapes.push_back({site, std::move(stub)});
+            if (escapes.size() >= 8)
+              return escapes;
+          }
+        }
+        return escapes;
+      };
+
+      const auto start_escapes = local_escapes(a);
+      const auto goal_escapes = local_escapes(b);
+      for (const auto &start_escape : start_escapes) {
+        for (const auto &goal_escape : goal_escapes) {
+          if (dist(start_escape.site, goal_escape.site) <
+              cfg.via_drill_mm + cfg.min_hole_to_hole_mm)
+            continue;
+          auto middle = route_point(grid, start_escape.site,
+                                    goal_escape.site, route_layer, net_id,
+                                    cfg.max_expansions, cfg.isotropic);
+          if (middle.size() < 2)
+            continue;
+          method = "two_via_fanout";
+          emit_poly(start_escape.stub, terminal_layer, net_id, width,
+                    out_segs);
+          paint_poly(grid, start_escape.stub, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          emit_poly(middle, route_layer, net_id, width, out_segs);
+          paint_poly(grid, middle, route_layer, net_id, width,
+                     cfg.clearance_mm);
+          auto goal_stub = goal_escape.stub;
+          std::reverse(goal_stub.begin(), goal_stub.end());
+          emit_poly(goal_stub, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, goal_stub, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          for (const auto &site : {start_escape.site, goal_escape.site}) {
+            Via via;
+            configure_via(via, site, terminal_layer, route_layer);
+            via.alternatives_considered = alts + sites_tried;
+            via.reason = "Two-via SMD fanout to preferred inner layer";
+            out_vias.push_back(via);
+          }
+          return true;
+        }
+      }
+    }
+  }
+  // The colored layer is a strong preference, not a reason to discard an
+  // otherwise legal complete net. If rule-size through vias cannot escape a
+  // particular fine-pitch pad pair, retain that edge on a physically exposed
+  // terminal layer. Other edges in the same tree may still use inner lanes.
+  if (prefer_layer_escape) {
+    for (int layer : layers) {
+      if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
+        continue;
+      auto poly = route_point(grid, a, b, layer, net_id, cfg.max_expansions,
+                              cfg.isotropic);
+      ++alts;
+      if (poly.size() < 2)
+        continue;
+      method = cfg.isotropic ? "escape_fallback+isotropic"
+                             : "escape_fallback+astar";
+      emit_poly(poly, layer, net_id, width, out_segs);
+      paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
+      return true;
     }
   }
   return false;
@@ -411,8 +722,15 @@ int remove_redundant_vias(RouteResult &r, GridMap &grid, const RouteConfig &cfg)
 }
 
 static void post_rubberband(RouteResult &r, GridMap &grid) {
-  // Rebuild continuous chains per net/layer and rubberband
+  // Rebuild continuous chains per net/layer and rubberband. Multipin nets are
+  // spanning trees, not polylines: greedily chaining through a branch can
+  // collapse one arm and silently disconnect an anchor. Preserve those trees
+  // until a branch-aware graph rubberband is available.
   std::vector<Segment> out;
+  std::unordered_map<int, bool> preserve_tree;
+  for (const auto &report : r.net_reports)
+    preserve_tree[report.net_id] = report.pins > 2;
+  int preserved_trees = 0;
   // Group by net+layer
   std::unordered_map<long long, std::vector<Segment>> groups;
   for (const auto &s : r.segments) {
@@ -424,6 +742,14 @@ static void post_rubberband(RouteResult &r, GridMap &grid) {
     auto &segs = kv.second;
     if (segs.empty())
       continue;
+    const int group_net = segs.front().net_id;
+    if (preserve_tree[group_net]) {
+      out.insert(out.end(), segs.begin(), segs.end());
+      for (const auto &segment : segs)
+        total += dist({segment.x1, segment.y1}, {segment.x2, segment.y2});
+      ++preserved_trees;
+      continue;
+    }
     // Build polylines by chaining endpoints
     std::vector<char> used(segs.size(), 0);
     for (size_t seed = 0; seed < segs.size(); ++seed) {
@@ -474,6 +800,10 @@ static void post_rubberband(RouteResult &r, GridMap &grid) {
     r.total_length_mm = total;
     r.notes.push_back("post_rubberband: segs " + std::to_string(before) + "→" +
                       std::to_string(r.segments.size()));
+    if (preserved_trees > 0)
+      r.notes.push_back("post_rubberband: preserved " +
+                        std::to_string(preserved_trees) +
+                        " multipin tree layer(s)");
   }
 }
 
@@ -481,7 +811,7 @@ void compute_quality(RouteResult &r) {
   int n = std::max(1, static_cast<int>(r.net_reports.size()));
   int routed = 0;
   for (const auto &nr : r.net_reports)
-    if (nr.status == "ok" || nr.status == "partial" || nr.status == "soft_violation")
+    if (nr.status == "ok" || nr.status == "soft_violation")
       ++routed;
   double completion = static_cast<double>(routed) / n;
   double viol_pen = std::min(40.0, r.clearance_violations * 4.0);
@@ -525,21 +855,59 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
 
   GridMap grid(cfg.x_min, cfg.x_max, cfg.y_min, cfg.y_max, cfg.grid_mm, cfg.num_layers);
 
-  // paint pads
-  for (const auto &ob : pad_obstacles) {
-    for (int ly = 0; ly < cfg.num_layers; ++ly)
-      grid.paint_rect(ob.cx, ob.cy, ob.w + cfg.clearance_mm * 2, ob.h + cfg.clearance_mm * 2, ly,
-                      ob.net_id);
+  // RectObs stores physical copper dimensions. Inflate it for the widest
+  // centerline routed in this atomic bucket; using a hard-coded 0.25 mm made
+  // power tracks approach signal seeds too closely, while pre-inflating in
+  // Python double-counted clearance.
+  double obstacle_track_width = 0.0;
+  for (const auto &net : nets)
+    obstacle_track_width = std::max(obstacle_track_width, net.width_mm);
+  if (obstacle_track_width <= 0.0)
+    obstacle_track_width = 0.25;
+
+  if (cfg.board_outline.size() >= 3) {
+    auto &cells = grid.data();
+    for (int layer = 0; layer < grid.layers(); ++layer) {
+      for (int iy = 0; iy < grid.height(); ++iy) {
+        for (int ix = 0; ix < grid.width(); ++ix) {
+          Vec2 point{grid.ix_to_world(ix), grid.iy_to_world(iy)};
+          if (!point_in_polygon(point, cfg.board_outline)) {
+            size_t index = (static_cast<size_t>(layer) * grid.height() + iy) *
+                               grid.width() +
+                           ix;
+            cells[index] = 255;
+          }
+        }
+      }
+    }
   }
 
-  // sort nets by priority desc, then fewer pins first
+  // paint pads
+  for (const auto &ob : pad_obstacles) {
+    std::vector<int> obstacle_layers = ob.layers;
+    if (obstacle_layers.empty()) {
+      for (int ly = 0; ly < cfg.num_layers; ++ly)
+        obstacle_layers.push_back(ly);
+    }
+    for (int ly : obstacle_layers) {
+      if (ly < 0 || ly >= cfg.num_layers)
+        continue;
+      grid.paint_rotated_rect(
+          ob.cx, ob.cy,
+          ob.w + cfg.clearance_mm * 2 + obstacle_track_width,
+          ob.h + cfg.clearance_mm * 2 + obstacle_track_width,
+          ob.rotation_deg, ly, ob.net_id);
+    }
+  }
+
+  // Sort only by priority. The Python policy already supplies its preferred
+  // few-pin/default order, while stable equal-priority order is essential for
+  // deterministic whole-bucket rebuild variants.
   std::vector<int> order(nets.size());
   for (size_t i = 0; i < nets.size(); ++i)
     order[i] = static_cast<int>(i);
-  std::sort(order.begin(), order.end(), [&](int a, int b) {
-    if (nets[a].priority != nets[b].priority)
-      return nets[a].priority > nets[b].priority;
-    return nets[a].anchors.size() < nets[b].anchors.size();
+  std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+    return nets[a].priority > nets[b].priority;
   });
 
   int total = static_cast<int>(order.size());
@@ -562,82 +930,175 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
       continue;
     }
 
+    std::vector<CopperArea> net_areas;
+    if (net.use_copper_area) {
+      CopperArea area;
+      area.outline = organic_area(net.anchors, net.area_margin_mm, cfg);
+      area.layer = net.area_layer >= 0
+                       ? net.area_layer
+                       : (net.preferred_layers.empty()
+                              ? 0
+                              : net.preferred_layers.front());
+      area.layer = std::clamp(area.layer, 0, cfg.num_layers - 1);
+      area.net_id = net.net_id;
+      area.clearance_mm = cfg.clearance_mm;
+      area.min_thickness_mm = std::max(0.1, net.width_mm * 0.5);
+      area.priority = net.area_priority;
+      if (area.outline.size() >= 3) {
+        net_areas.push_back(std::move(area));
+        rep.method = "copper_area+tracks";
+      } else {
+        rep.method = "area_failed+tracks";
+      }
+    }
+
     std::vector<int> layers = net.preferred_layers;
     if (layers.empty()) {
       for (int i = 0; i < cfg.num_layers; ++i)
         layers.push_back(i);
     }
 
-    // Prim MST on anchors
+    // Prim-style tree on anchors.  Euclidean-nearest is only a preference:
+    // try every frontier edge until one can be legally geometrized.  An
+    // anchor is never admitted to the tree before copper reaches it.
     const size_t n = net.anchors.size();
     std::vector<char> in(n, 0);
     in[0] = 1;
     size_t in_count = 1;
     int open_edges = 0;
+    const std::string method_prefix = rep.method;
     std::string last_method;
+    std::vector<Segment> net_segments;
+    std::vector<Via> net_vias;
+    GridMap net_grid = grid;
 
     while (in_count < n) {
-      double best_d = 1e100;
-      size_t bi = 0, bj = 0;
+      struct Candidate {
+        double distance;
+        size_t from;
+        size_t to;
+        bool graph_preferred;
+      };
+      auto graph_edge = [&](size_t a, size_t b) {
+        return std::any_of(
+            net.topology_edges.begin(), net.topology_edges.end(),
+            [&](const std::pair<int, int> &edge) {
+              return (edge.first == static_cast<int>(a) &&
+                      edge.second == static_cast<int>(b)) ||
+                     (edge.first == static_cast<int>(b) &&
+                      edge.second == static_cast<int>(a));
+            });
+      };
+      std::vector<Candidate> candidates;
       for (size_t i = 0; i < n; ++i)
         if (in[i])
           for (size_t j = 0; j < n; ++j)
-            if (!in[j]) {
-              double d = dist(net.anchors[i], net.anchors[j]);
-              if (d < best_d) {
-                best_d = d;
-                bi = i;
-                bj = j;
-              }
-            }
-      in[bj] = 1;
-      ++in_count;
+            if (!in[j])
+              candidates.push_back(
+                  {dist(net.anchors[i], net.anchors[j]), i, j,
+                   graph_edge(i, j)});
+      std::sort(candidates.begin(), candidates.end(),
+                [](const Candidate &a, const Candidate &b) {
+                  if (a.graph_preferred != b.graph_preferred)
+                    return a.graph_preferred > b.graph_preferred;
+                  return a.distance < b.distance;
+                });
 
-      std::vector<Segment> segs;
-      std::vector<Via> vias;
-      std::string method;
-      bool ok = route_edge(grid, cfg, net.anchors[bi], net.anchors[bj], net.net_id, layers,
-                           net.width_mm, segs, vias, method);
-      if (!ok) {
-        if (cfg.soft_fallback) {
-          Segment s{net.anchors[bi].x, net.anchors[bi].y, net.anchors[bj].x, net.anchors[bj].y,
-                    layers.front(), net.net_id, net.width_mm};
-          result.segments.push_back(s);
-          result.total_length_mm += best_d;
-          result.clearance_violations++;
-          rep.segments++;
-          rep.length_mm += best_d;
-          last_method = "straight_fallback";
-        } else {
-          ++open_edges;
-          last_method = "unrouted_edge";
+      bool connected = false;
+      for (const auto &candidate : candidates) {
+        std::vector<Segment> edge_segments;
+        std::vector<Via> edge_vias;
+        std::string method;
+        static const std::vector<int> all_layers;
+        const auto &from_allowed =
+            candidate.from < net.anchor_layers.size()
+                ? net.anchor_layers[candidate.from]
+                : all_layers;
+        const auto &to_allowed =
+            candidate.to < net.anchor_layers.size()
+                ? net.anchor_layers[candidate.to]
+                : all_layers;
+        bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
+                             net.anchors[candidate.to], net.net_id, layers,
+                             from_allowed, to_allowed, net.width_mm,
+                             edge_segments, edge_vias, method);
+        if (!ok)
+          continue;
+        in[candidate.to] = 1;
+        ++in_count;
+        connected = true;
+        const std::string graph_method =
+            candidate.graph_preferred ? "graph_tree+" + method : method;
+        last_method = last_method.empty() ? graph_method
+                                           : last_method + "+" + graph_method;
+        net_segments.insert(net_segments.end(), edge_segments.begin(),
+                            edge_segments.end());
+        for (const auto &v : edge_vias) {
+            net_vias.push_back(v);
+            net_grid.paint_hole_keepout(
+                v.x, v.y,
+                v.drill_mm + cfg.min_hole_to_hole_mm);
+            for (int ly = 0; ly < cfg.num_layers; ++ly)
+              net_grid.paint_rect(
+                  v.x, v.y,
+                  v.size_mm + 2.0 * cfg.clearance_mm + net.width_mm,
+                  v.size_mm + 2.0 * cfg.clearance_mm + net.width_mm, ly,
+                  net.net_id);
         }
+        break;
+      }
+
+      if (connected)
+        continue;
+
+      if (cfg.soft_fallback && !candidates.empty()) {
+        const auto &candidate = candidates.front();
+        const auto &a = net.anchors[candidate.from];
+        const auto &b = net.anchors[candidate.to];
+        Segment s{a.x, a.y, b.x, b.y, layers.front(), net.net_id,
+                  net.width_mm};
+        net_segments.push_back(s);
+        net_grid.paint_trace(s.x1, s.y1, s.x2, s.y2,
+                             s.width_mm + cfg.clearance_mm, s.layer, s.net_id);
+        result.clearance_violations++;
+        in[candidate.to] = 1;
+        ++in_count;
+        last_method = "straight_fallback";
         continue;
       }
-      last_method = method;
-      for (auto &s : segs) {
-        result.segments.push_back(s);
-        double L = dist({s.x1, s.y1}, {s.x2, s.y2});
-        result.total_length_mm += L;
-        rep.length_mm += L;
-        rep.segments++;
-      }
-      for (auto &v : vias) {
-        result.vias.push_back(v);
-        result.via_count++;
-        rep.vias++;
-        // Keep via as soft keepout on all layers
-        for (int ly = 0; ly < cfg.num_layers; ++ly)
-          grid.paint_rect(v.x, v.y, v.size_mm + cfg.clearance_mm, v.size_mm + cfg.clearance_mm,
-                          ly, net.net_id);
-      }
+
+      open_edges = static_cast<int>(n - in_count);
+      last_method = "unrouted_edge";
+      break;
     }
 
-    rep.method = last_method;
-    if (open_edges && rep.segments == 0) {
+    rep.method = method_prefix.empty()
+                     ? last_method
+                     : method_prefix + "+" + last_method;
+    const bool complete = in_count == n;
+    const bool commit = complete || !cfg.atomic_nets || cfg.soft_fallback;
+    if (commit) {
+      grid = std::move(net_grid);
+      result.areas.insert(result.areas.end(), net_areas.begin(),
+                          net_areas.end());
+      for (const auto &s : net_segments) {
+        result.segments.push_back(s);
+        double length = dist({s.x1, s.y1}, {s.x2, s.y2});
+        result.total_length_mm += length;
+        rep.length_mm += length;
+        rep.segments++;
+      }
+      result.vias.insert(result.vias.end(), net_vias.begin(), net_vias.end());
+      result.via_count += static_cast<int>(net_vias.size());
+      rep.vias = static_cast<int>(net_vias.size());
+    }
+
+    if (!complete && (!commit || rep.segments == 0)) {
       rep.status = "unrouted";
       result.unrouted.push_back(net.name);
-    } else if (open_edges)
+      if (cfg.atomic_nets && !cfg.soft_fallback)
+        rep.method = "atomic_unrouted";
+    } else if (!complete || open_edges)
       rep.status = "partial";
     else if (last_method == "straight_fallback")
       rep.status = "soft_violation";

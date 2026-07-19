@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from physics_router.models import BoardModel, NetClass, PlacementConfig
-from physics_router.router import RouteResult, RouteSegment, Via, _dist, _point_seg_dist
+from physics_router.router import RouteResult, RouteSegment, _dist, _point_seg_dist
 
 
 @dataclass

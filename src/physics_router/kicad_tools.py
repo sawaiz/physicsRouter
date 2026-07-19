@@ -122,6 +122,8 @@ class DrcReport:
             "track_dangling",
             "copper_edge_clearance",
             "hole_clearance",
+            "hole_to_hole",
+            "holes_co_located",
             "annular_width",
             "drill_out_of_range",
             "too_many_vias",
@@ -293,6 +295,16 @@ def kicad_drc_route(
     try:
         routed = work / "routed.kicad_pcb"
         report_json = work / "drc.json"
+        # KiCad resolves board/netclass constraints from a same-basename
+        # project file. Without this copy, temp-route DRC silently used KiCad's
+        # generic 0.20 mm defaults instead of the source project's 0.127 mm
+        # HALO rules, inflating both track-width and clearance counts.
+        source_project = source_pcb.with_suffix(".kicad_pro")
+        if source_project.is_file():
+            shutil.copy2(source_project, work / "routed.kicad_pro")
+        source_rules = source_pcb.with_suffix(".kicad_dru")
+        if source_rules.is_file():
+            shutil.copy2(source_rules, work / "routed.kicad_dru")
         # Clear pre-existing tracks so DRC measures autorouter copper only
         append_routes_to_kicad_pcb(
             str(source_pcb),
@@ -316,6 +328,8 @@ def kicad_drc_route(
             "clearance",
             "copper_edge_clearance",
             "hole_clearance",
+            "hole_to_hole",
+            "holes_co_located",
             "track_width",
             "via_dangling",
             "track_dangling",
@@ -324,19 +338,32 @@ def kicad_drc_route(
             "zones_intersect",
             "connection_width",
             "starved_thermal",
-            "solder_mask_bridge",
         }
+        def involves_generated_route(violation: DrcViolation) -> bool:
+            # Existing board pads/graphics can already violate DRC. All tracks,
+            # vias and zones were cleared before appending this candidate, so a
+            # generated-route object in the item pair cleanly attributes the
+            # violation to the autorouter without subtracting aggregate counts.
+            route_prefixes = ("Track ", "Via ", "Zone ", "Filled area ")
+            return any(
+                str(item.get("description") or "").startswith(route_prefixes)
+                for item in violation.items
+            )
+
         copper_items = [
             v
             for v in rep.violations
-            if v.type in hard_types
-            or "short" in v.type
-            or "track" in v.type
-            or "via" in v.type
-            or (v.type == "clearance" or "copper" in v.type)
+            if involves_generated_route(v)
+            and (
+                v.type in hard_types
+                or "short" in v.type
+                or "track" in v.type
+                or "via" in v.type
+                or v.type == "clearance"
+            )
         ]
         copper_errors = [v for v in copper_items if v.severity == "error"]
-        copper_n = max(len(copper_items), int(d.get("copper_violation_count") or 0))
+        copper_n = len(copper_items)
         copper_err_n = len(copper_errors)
         samples = []
         for v in copper_errors[:12] or copper_items[:12]:

@@ -7,14 +7,13 @@ deduplicated by TopologySignature rather than coordinate similarity.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from physics_router.router import (
     ObstacleMap,
     free_angle_route,
     _dist,
-    _snap,
 )
 from physics_router.topology import TopologySignature, radar_scan_points, signature_for_polyline
 
@@ -107,7 +106,6 @@ def k_homotopy_paths(
             ):
                 return
         sig = signature_for_polyline(net, layer, pts, om)
-        key = sig.key()
         # For homotopy uniqueness ignore net prefix differences — use obstacle sides
         sig_key = f"{layer}|{sig.via_count}|{','.join(sig.obstacle_sides)}"
         if sig_key in seen_sig:
