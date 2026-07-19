@@ -120,9 +120,19 @@ def route_board_native(
             rules.get("min_copper_edge_clearance_mm") or 0.01
         )
     if hasattr(cfg, "via_diameter_mm"):
-        cfg.via_diameter_mm = float(rules.get("min_via_diameter_mm") or 0.8)
+        planned_diameter = getattr(
+            getattr(routing_plan, "pin_access", None), "via_diameter_mm", None
+        )
+        cfg.via_diameter_mm = float(
+            rules.get("min_via_diameter_mm") or planned_diameter or 0.8
+        )
     if hasattr(cfg, "via_drill_mm"):
-        cfg.via_drill_mm = float(rules.get("min_via_drill_mm") or 0.4)
+        planned_drill = getattr(
+            getattr(routing_plan, "pin_access", None), "via_drill_mm", None
+        )
+        cfg.via_drill_mm = float(
+            rules.get("min_via_drill_mm") or planned_drill or 0.4
+        )
     if hasattr(cfg, "min_hole_to_hole_mm"):
         cfg.min_hole_to_hole_mm = float(
             rules.get("min_hole_to_hole_mm") or 0.25

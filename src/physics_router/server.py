@@ -195,21 +195,28 @@ class AppState:
             self.preset = "physics"
             self.pcb_path = str(PHYSICS_PCB) if PHYSICS_PCB.exists() else None
             self.board_source = "pcb" if self.pcb_path else "synthetic"
+            self.fab_profile = "4layer_recommended"
         elif name == "halo-90" and HALO_CFG.exists():
             self.config = load_config(HALO_CFG)
             self.preset = "halo-90"
             self.pcb_path = str(HALO_PCB) if HALO_PCB.exists() else None
             self.board_source = "pcb" if self.pcb_path else "synthetic"
+            # The source board and KiCad rules use 0.45/0.20 mm through vias.
+            # A 0.60/0.30 profile leaves roughly half of HALO's dense SMD
+            # anchors without any legal inner-layer escape.
+            self.fab_profile = "4layer_capability"
         elif name == "demo" and (EXAMPLES / "placement_config.yaml").exists():
             self.config = load_config(EXAMPLES / "placement_config.yaml")
             self.preset = "demo"
             self.pcb_path = None
             self.board_source = "synthetic"
+            self.fab_profile = "4layer_recommended"
         else:
             self.config = example_config()
             self.preset = "synthetic"
             self.pcb_path = None
             self.board_source = "synthetic"
+            self.fab_profile = "4layer_recommended"
         self.config_text = self._config_to_yaml()
         self._board = self._build_board()
         self.routes = {}

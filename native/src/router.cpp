@@ -272,7 +272,7 @@ struct HistoryCostMap {
 
 } // namespace
 
-const char *native_version() { return "1.9.1-via-pad-clearance"; }
+const char *native_version() { return "2.0.0-production-flow"; }
 
 std::vector<Vec2> rubberband_path(const std::vector<Vec2> &path, const GridMap &g, int layer,
                                   int net_id) {
@@ -654,6 +654,52 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
     for (int route_layer : layers) {
       if (route_layer == terminal_layer)
         continue;
+      // Consume exact pin-access resources before inventing fractional
+      // geometry. The preflight has already checked all pad layers, holes and
+      // Edge.Cuts; GridMap remains the final authority after grid snapping and
+      // previously committed copper are considered.
+      for (const auto &start_site : start_access) {
+        for (const auto &goal_site : goal_access) {
+          Vec2 va{std::round(start_site.x / g) * g,
+                  std::round(start_site.y / g) * g};
+          Vec2 vb{std::round(goal_site.x / g) * g,
+                  std::round(goal_site.y / g) * g};
+          if (dist(va, vb) < cfg.via_drill_mm + cfg.min_hole_to_hole_mm)
+            continue;
+          if (!grid.in_bounds(va.x, va.y) || !grid.in_bounds(vb.x, vb.y))
+            continue;
+          if (via_site_blocked(va, terminal_layer, route_layer) ||
+              via_site_blocked(vb, terminal_layer, route_layer))
+            continue;
+          const int stub_budget = std::max(500, cfg.max_expansions / 3);
+          auto p0 = route_point_costed(grid, a, va, terminal_layer, net_id,
+                                       stub_budget, cfg.isotropic, history);
+          auto pm = route_point_costed(grid, va, vb, route_layer, net_id,
+                                       cfg.max_expansions, cfg.isotropic,
+                                       history);
+          auto p1 = route_point_costed(grid, vb, b, terminal_layer, net_id,
+                                       stub_budget, cfg.isotropic, history);
+          if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
+            continue;
+          method = "two_via_reserved_access";
+          emit_poly(p0, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p0, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          emit_poly(pm, route_layer, net_id, width, out_segs);
+          paint_poly(grid, pm, route_layer, net_id, width, cfg.clearance_mm);
+          emit_poly(p1, terminal_layer, net_id, width, out_segs);
+          paint_poly(grid, p1, terminal_layer, net_id, width,
+                     cfg.clearance_mm);
+          for (const auto &site : {va, vb}) {
+            Via via;
+            configure_via(via, site, terminal_layer, route_layer);
+            via.alternatives_considered = alts + sites_tried;
+            via.reason = "Reserved legal SMD access to planned inner section";
+            out_vias.push_back(via);
+          }
+          return true;
+        }
+      }
       for (double along : {0.18, 0.28}) {
         for (double offset_cells : {0.0, 2.0, -2.0, 5.0, -5.0}) {
           const double offset = offset_cells * g;

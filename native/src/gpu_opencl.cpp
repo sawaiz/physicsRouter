@@ -1,6 +1,7 @@
 #include "pr_native/gpu.hpp"
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <sstream>
 
 #ifdef PR_HAS_OPENCL
@@ -60,6 +61,10 @@ static cl_command_queue g_q = nullptr;
 static cl_program g_prog = nullptr;
 static cl_kernel g_kern = nullptr;
 static std::string g_dev_name;
+// The global queue and kernel argument slots are mutable OpenCL objects.
+// Bucket variants call the native router from parallel Python workers, so all
+// access (including lazy initialization) must be serialized.
+static std::mutex g_cl_mutex;
 
 static void cl_init() {
   static bool tried = false;
@@ -104,12 +109,15 @@ static void cl_init() {
 GpuStatus gpu_probe() {
   GpuStatus s;
 #ifdef PR_HAS_OPENCL
-  cl_init();
-  if (g_cl_ok) {
-    s.available = true;
-    s.backend = "opencl";
-    s.device_name = g_dev_name;
-    return s;
+  {
+    std::lock_guard<std::mutex> lock(g_cl_mutex);
+    cl_init();
+    if (g_cl_ok) {
+      s.available = true;
+      s.backend = "opencl";
+      s.device_name = g_dev_name;
+      return s;
+    }
   }
 #endif
   s.available = false;
@@ -128,6 +136,7 @@ std::vector<uint8_t> batch_segment_clearance(const GridMap &grid, int layer, int
 
 #ifdef PR_HAS_OPENCL
   if (prefer_gpu) {
+    std::lock_guard<std::mutex> lock(g_cl_mutex);
     cl_init();
     if (g_cl_ok) {
       cl_int err = 0;

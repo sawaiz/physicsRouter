@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from physics_router.config_io import example_config
-from physics_router.design_rules import default_design_rules, load_design_rules
+from physics_router.design_rules import (
+    default_design_rules,
+    jlcpcb_design_rules,
+    load_design_rules,
+)
 from physics_router.kicad_io import board_from_synthetic
 from physics_router.routing_strategies import (
     multilayer_route,
@@ -25,6 +29,13 @@ def test_default_rules() -> None:
     assert "F.Cu" in r.copper_layers
     assert r.clearance_for_net("GND") > 0
     assert r.track_width_for_net("SIG") > 0
+
+
+def test_dense_jlc_profile_keeps_documented_via_geometry() -> None:
+    rules = jlcpcb_design_rules(layers=4, aggressive=True)
+    assert rules.constraints.min_via_diameter_mm == pytest.approx(0.45)
+    assert rules.constraints.min_via_drill_mm == pytest.approx(0.2)
+    assert rules.constraints.min_via_annular_mm == pytest.approx(0.125)
 
 
 @pytest.mark.skipif(not HALO_PCB.exists(), reason="halo-90 not cloned")

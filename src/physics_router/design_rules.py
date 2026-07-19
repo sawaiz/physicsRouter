@@ -256,7 +256,7 @@ JLCPCB_PROFILES: dict[str, dict[str, Any]] = {
         "summary": "Multilayer capability floor (3.5/3.5 mil, small vias).",
         "suggestions": [
             "Reserve for BGA fanout or dense LED matrices",
-            "Watch annular ring (≥0.15 mm multi absolute min)",
+            "0.45/0.20 mm vias retain a 0.125 mm radial annulus",
         ],
         "limitations": [
             "Higher cost / DFM flags on tiny vias",
@@ -394,7 +394,10 @@ def jlcpcb_design_rules(
             min_track_width_mm=track,
             min_via_diameter_mm=0.45 if multi else 0.45,
             min_via_drill_mm=0.2,
-            min_via_annular_mm=0.15 if multi else 0.18,
+            # 0.45/0.20 mm leaves a 0.125 mm radial annulus. The former
+            # 0.15/0.18 floor silently inflated the advertised dense vias to
+            # 0.50/0.56 mm during finalization.
+            min_via_annular_mm=0.125,
             min_copper_edge_clearance_mm=0.2,
             min_hole_to_hole_mm=0.2,
             min_via_to_track_mm=0.2,
