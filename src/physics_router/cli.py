@@ -422,7 +422,8 @@ def improve_cmd(
     "--config",
     "config_path",
     type=click.Path(exists=True, path_type=Path),
-    required=True,
+    default=None,
+    help="placement_config.yaml (optional if --pcb; nets auto-imported)",
 )
 @click.option(
     "--pcb", "pcb_path", type=click.Path(exists=True, path_type=Path), default=None
@@ -483,8 +484,31 @@ def improve_cmd(
     show_default=True,
     help="Capacity-mesh effort 0..1 (depth / refinement)",
 )
+@click.option(
+    "--fail-on-drc",
+    is_flag=True,
+    help="Exit 2 if KiCad DRC reports copper errors (implies --drc when --out-pcb)",
+)
+@click.option(
+    "--fail-on-unrouted",
+    is_flag=True,
+    help="Exit 3 if any net remains unrouted",
+)
+@click.option(
+    "--fail-on-grade",
+    type=click.Choice(["A", "B", "C", "D", "F"], case_sensitive=False),
+    default=None,
+    help="Exit 4 if route grade is worse than this letter",
+)
+@click.option(
+    "--nets",
+    "nets_csv",
+    type=str,
+    default=None,
+    help="Comma-separated nets to route (others left alone; needs seed from existing copper in session only)",
+)
 def route_cmd(
-    config_path: Path,
+    config_path: Path | None,
     pcb_path: Path | None,
     out_json: Path,
     out_pcb: Path | None,
@@ -498,14 +522,32 @@ def route_cmd(
     drc_out: Path | None,
     pipeline: str,
     effort: float,
+    fail_on_drc: bool,
+    fail_on_unrouted: bool,
+    fail_on_grade: str | None,
+    nets_csv: str | None,
 ) -> None:
     """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish)."""
-    config = load_config(config_path)
+    if config_path is None and pcb_path is None:
+        raise click.UsageError("Provide --pcb and/or --config")
+    if config_path is not None:
+        config = load_config(config_path)
+    elif pcb_path is not None:
+        from physics_router.net_import import import_labels_to_config
+
+        config = import_labels_to_config(example_config(), pcb_path=pcb_path)
+        config.nets = [n for n in config.nets if n.name]  # keep imports
+        config.project_name = pcb_path.stem
+        click.echo(f"Auto-imported {len(config.nets)} nets from {pcb_path.name}")
+    else:
+        config = example_config()
     board = (
         load_board_from_kicad_pcb(pcb_path, config)
         if pcb_path
         else board_from_synthetic(config)
     )
+    if getattr(board, "zones", None):
+        click.echo(f"  zones/pours as obstacles: {len(board.zones)}")
 
     rules = None
     if pcb_path and not ignore_kicad_rules:
@@ -516,10 +558,14 @@ def route_cmd(
             f"min_track={rules.constraints.min_track_width_mm}mm"
         )
 
+    nets_filter = None
+    if nets_csv:
+        nets_filter = [n.strip() for n in nets_csv.split(",") if n.strip()]
+
     pipe = (pipeline or "auto").lower()
     if guide_only:
         routes = topological_guide_route(board, config)
-    elif pipe == "capacity" or (pipe == "auto" and rules is not None):
+    elif (pipe == "capacity" or (pipe == "auto" and rules is not None)) and nets_filter is None:
         from physics_router.route_pipeline import run_capacity_pipeline
         from physics_router.design_rules import default_design_rules
 
@@ -537,6 +583,7 @@ def route_cmd(
             grid_mm=grid,
             allow_vias=not no_vias,
             num_variants=variants,
+            nets_filter=nets_filter,
         )
     else:
         routes = topor_style_route(
@@ -547,7 +594,22 @@ def route_cmd(
             grid_mm=grid,
             allow_vias=not no_vias,
             num_variants=variants,
+            nets_filter=nets_filter,
         )
+
+    # Length-rule notes from NetLabel.max_length_mm
+    for lab in config.nets:
+        if not lab.max_length_mm:
+            continue
+        length = sum(
+            ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
+            for s in routes.segments
+            if s.net == lab.name
+        )
+        if length > lab.max_length_mm:
+            routes.notes.append(
+                f"length_rule: {lab.name} {length:.2f}mm > max {lab.max_length_mm:.2f}mm"
+            )
 
     out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
     q = routes.quality or routes.compute_quality()
@@ -565,28 +627,50 @@ def route_cmd(
         click.echo(f"  unrouted nets: {', '.join(routes.unrouted_nets[:20])}")
     click.echo(f"Wrote {out_json}")
 
+    drc_summary = None
     if out_pcb is not None:
         if pcb_path is None:
             click.echo("Cannot write --out-pcb without --pcb", err=True)
             sys.exit(2)
         append_routes_to_kicad_pcb(str(pcb_path), str(out_pcb), routes)
         click.echo(f"Wrote routed PCB to {out_pcb}")
-        if drc:
+        if drc or fail_on_drc:
             if find_kicad_cli() is None:
                 click.echo("kicad-cli not found — skip DRC (set KICAD_CLI)", err=True)
+                if fail_on_drc:
+                    sys.exit(2)
             else:
                 ddir = drc_out or (out_pcb.parent / f"{out_pcb.stem}_drc")
-                summary = validate_copper_board(out_pcb, ddir)
+                drc_summary = validate_copper_board(out_pcb, ddir)
                 click.echo(
-                    f"KiCad DRC: errors={summary['error_count']} "
-                    f"warnings={summary['warning_count']} "
-                    f"copper_issues={summary['copper_violation_count']} "
-                    f"passed={summary['passed']}"
+                    f"KiCad DRC: errors={drc_summary['error_count']} "
+                    f"warnings={drc_summary['warning_count']} "
+                    f"copper_issues={drc_summary['copper_violation_count']} "
+                    f"passed={drc_summary['passed']}"
                 )
                 click.echo(f"  report → {ddir / 'drc.json'}")
-                top = list(summary.get("by_type", {}).items())[:8]
+                top = list(drc_summary.get("by_type", {}).items())[:8]
                 if top:
                     click.echo("  top issues: " + ", ".join(f"{k}={v}" for k, v in top))
+
+    # CI exit codes
+    if fail_on_unrouted and routes.unrouted_nets:
+        click.echo(f"FAIL: {len(routes.unrouted_nets)} unrouted net(s)", err=True)
+        sys.exit(3)
+    if fail_on_grade:
+        order = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+        got = str(q.get("grade") or "F").upper()
+        need = fail_on_grade.upper()
+        if order.get(got, 4) > order.get(need, 0):
+            click.echo(f"FAIL: grade {got} worse than required {need}", err=True)
+            sys.exit(4)
+    if fail_on_drc:
+        if drc_summary is None:
+            click.echo("FAIL: --fail-on-drc requires --out-pcb and kicad-cli", err=True)
+            sys.exit(2)
+        if not drc_summary.get("passed"):
+            click.echo("FAIL: KiCad DRC did not pass", err=True)
+            sys.exit(2)
 
 
 @main.command("drc")
@@ -1078,6 +1162,226 @@ def viewer_data_cmd(
     payload = build_viewer_payload(board, config, routes=routes)
     write_viewer_data(payload, output)
     click.echo(f"Wrote {output} ({len(routes)} route variants)")
+
+
+@main.command("import-ses")
+@click.option(
+    "--ses",
+    "ses_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="FreeRouting / Specctra .ses session file",
+)
+@click.option(
+    "--pcb",
+    "pcb_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Base .kicad_pcb to receive copper",
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output .kicad_pcb path",
+)
+@click.option(
+    "--out-json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional RouteResult JSON",
+)
+def import_ses_cmd(
+    ses_path: Path, pcb_path: Path, output: Path, out_json: Path | None
+) -> None:
+    """Import FreeRouting SES wiring into a KiCad PCB (and optional JSON)."""
+    from physics_router.ses_import import import_ses_to_pcb, parse_ses_to_route
+
+    board = load_board_from_kicad_pcb(pcb_path, example_config())
+    route = parse_ses_to_route(ses_path, copper_layers=list(board.copper_layers or []))
+    import_ses_to_pcb(ses_path, pcb_path, output, copper_layers=list(board.copper_layers or []))
+    click.echo(
+        f"SES import: {len(route.segments)} segs, {route.via_count} vias → {output}"
+    )
+    if out_json:
+        out_json.write_text(json.dumps(route.to_dict(), indent=2) + "\n", encoding="utf-8")
+        click.echo(f"Wrote {out_json}")
+
+
+@main.command("smoke")
+@click.option(
+    "--pcb",
+    "pcb_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Any .kicad_pcb (nets auto-imported)",
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Artifact directory (default: viewer/runs/smoke_<stem>)",
+)
+@click.option("--out-pcb", type=click.Path(path_type=Path), default=None)
+@click.option("--out-json", type=click.Path(path_type=Path), default=None)
+@click.option("--timeout", "timeout_s", type=float, default=120.0)
+@click.option("--effort", type=float, default=0.45, show_default=True)
+@click.option(
+    "--fail-on-drc/--no-fail-on-drc",
+    default=True,
+    help="Exit 2 on KiCad DRC failure (default on)",
+)
+@click.option(
+    "--fail-on-unrouted/--allow-unrouted",
+    default=False,
+    help="Exit 3 if any net unrouted",
+)
+@click.option(
+    "--min-grade",
+    type=click.Choice(["A", "B", "C", "D", "F"], case_sensitive=False),
+    default="D",
+    show_default=True,
+)
+def smoke_cmd(
+    pcb_path: Path,
+    config_path: Path | None,
+    out_dir: Path | None,
+    out_pcb: Path | None,
+    out_json: Path | None,
+    timeout_s: float,
+    effort: float,
+    fail_on_drc: bool,
+    fail_on_unrouted: bool,
+    min_grade: str,
+) -> None:
+    """Headless any-board smoke: import nets → route → write PCB → optional DRC.
+
+    Intended for CI::
+
+        physics-router smoke --pcb path/to/board.kicad_pcb --fail-on-drc
+    """
+    import time as _time
+
+    from physics_router.net_import import import_labels_to_config
+    from physics_router.route_pipeline import run_capacity_pipeline
+    from physics_router.design_rules import default_design_rules
+
+    t0 = _time.time()
+    root = Path(__file__).resolve().parents[2]
+    out_dir = out_dir or (root / "viewer" / "runs" / f"smoke_{pcb_path.stem}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_pcb = out_pcb or (out_dir / f"{pcb_path.stem}_routed.kicad_pcb")
+    out_json = out_json or (out_dir / "route.json")
+
+    if config_path:
+        config = load_config(config_path)
+    else:
+        base = example_config()
+        base.nets = []
+        config = import_labels_to_config(base, pcb_path=pcb_path)
+        config.project_name = pcb_path.stem
+    board = load_board_from_kicad_pcb(pcb_path, config)
+    rules = load_design_rules(pcb_path=pcb_path) or default_design_rules()
+    click.echo(
+        f"smoke: {pcb_path.name} · {len(board.components)} parts · "
+        f"{len(board.nets)} nets · {len(board.zones)} zones · "
+        f"{len(rules.copper_layers)}L · effort={effort}"
+    )
+
+    # Prefer capacity pipeline; fall back to multilayer on failure
+    try:
+        routes = run_capacity_pipeline(
+            board, config, rules, effort=float(effort), raise_on_fail=False
+        )
+    except Exception as exc:
+        click.echo(f"capacity pipeline failed ({exc}); multilayer fallback", err=True)
+        routes = multilayer_route(board, config, rules)
+
+    elapsed = _time.time() - t0
+    if elapsed > timeout_s:
+        click.echo(f"warning: exceeded soft timeout {timeout_s:.0f}s (took {elapsed:.0f}s)", err=True)
+
+    out_json.write_text(json.dumps(routes.to_dict(), indent=2) + "\n", encoding="utf-8")
+    append_routes_to_kicad_pcb(str(pcb_path), str(out_pcb), routes)
+    q = routes.quality or routes.compute_quality()
+    click.echo(
+        f"route grade={q.get('grade')} score={q.get('score')} "
+        f"unrouted={len(routes.unrouted_nets)} vias={routes.via_count} "
+        f"L={routes.total_length_mm:.1f}mm t={elapsed:.1f}s"
+    )
+    click.echo(f"  pcb → {out_pcb}")
+    click.echo(f"  json → {out_json}")
+
+    summary = {
+        "pcb": str(pcb_path),
+        "out_pcb": str(out_pcb),
+        "grade": q.get("grade"),
+        "score": q.get("score"),
+        "unrouted": list(routes.unrouted_nets),
+        "via_count": routes.via_count,
+        "segments": len(routes.segments),
+        "zones": len(board.zones),
+        "elapsed_s": round(elapsed, 2),
+        "drc": None,
+        "passed": True,
+    }
+
+    if fail_on_unrouted and routes.unrouted_nets:
+        summary["passed"] = False
+        (out_dir / "smoke_summary.json").write_text(
+            json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+        )
+        click.echo(f"FAIL: unrouted {routes.unrouted_nets[:12]}", err=True)
+        sys.exit(3)
+
+    order = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+    got = str(q.get("grade") or "F").upper()
+    if order.get(got, 4) > order.get(min_grade.upper(), 3):
+        summary["passed"] = False
+        (out_dir / "smoke_summary.json").write_text(
+            json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+        )
+        click.echo(f"FAIL: grade {got} < min {min_grade}", err=True)
+        sys.exit(4)
+
+    if fail_on_drc:
+        if find_kicad_cli() is None:
+            click.echo("kicad-cli missing — cannot enforce --fail-on-drc", err=True)
+            summary["drc"] = {"error": "kicad-cli not found"}
+            summary["passed"] = False
+            (out_dir / "smoke_summary.json").write_text(
+                json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+            )
+            sys.exit(2)
+        ddir = out_dir / "drc"
+        drc_summary = validate_copper_board(out_pcb, ddir)
+        summary["drc"] = {
+            "passed": drc_summary.get("passed"),
+            "error_count": drc_summary.get("error_count"),
+            "copper_violation_count": drc_summary.get("copper_violation_count"),
+        }
+        click.echo(
+            f"DRC passed={drc_summary.get('passed')} "
+            f"copper={drc_summary.get('copper_violation_count')}"
+        )
+        if not drc_summary.get("passed"):
+            summary["passed"] = False
+            (out_dir / "smoke_summary.json").write_text(
+                json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+            )
+            sys.exit(2)
+
+    (out_dir / "smoke_summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    )
+    click.echo("smoke PASSED")
 
 
 if __name__ == "__main__":

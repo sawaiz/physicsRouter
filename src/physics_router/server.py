@@ -158,6 +158,10 @@ class AppState:
         self.routed_pcb_path: str | None = None  # last applied copper PCB
         # JLCPCB fab profile: 2layer_* / 4layer_* / 6layer_* (recommended|capability)
         self.fab_profile: str = "4layer_recommended"
+        # Interactive routing controls (viewer)
+        self.locked_nets: list[str] = []
+        self.keepouts: list[dict[str, Any]] = []
+        self.reroute_nets: list[str] = []  # empty = all unlocked
         # Prefer explicit PHYSICS_PRESET=1 / MUON3, else HALO-90, else synthetic
         env_preset = (os.environ.get("PHYSICS_ROUTER_PRESET") or "").strip().lower()
         if env_preset in ("physics", "muon3", "muon"):
@@ -201,6 +205,9 @@ class AppState:
         self.last_comparison = None
         self.glb_url = None
         self.step_url = None
+        self.locked_nets = []
+        self.keepouts = []
+        self.reroute_nets = []
         self._discover_assets()
         self._refresh_viewer()
         if self.pcb_path and Path(self.pcb_path).exists():
@@ -208,6 +215,74 @@ class AppState:
                 self.enqueue("export_board_3d", {"also_step": False, "force": True})
             except Exception:
                 pass
+
+    def _sync_config_routing_policy(self) -> None:
+        """Push session locked_nets / keepouts into PlacementConfig for the router."""
+        from physics_router.models import KeepoutRegion
+
+        self.config.locked_nets = list(self.locked_nets)
+        self.config.keepouts = [
+            KeepoutRegion.model_validate(k) if not isinstance(k, KeepoutRegion) else k
+            for k in self.keepouts
+        ]
+        # Mark NetLabel.locked for labeled nets
+        locked = set(self.locked_nets)
+        for lab in self.config.nets:
+            lab.locked = lab.name in locked
+
+    def _route_seed_and_filter(
+        self,
+    ) -> tuple[Any | None, list[str] | None]:
+        """Build seed copper (locked nets) + nets_filter for partial re-route."""
+        from physics_router.router import RouteResult, RouteSegment, Via
+
+        locked = set(self.locked_nets or [])
+        # Also respect NetLabel.locked
+        for lab in self.config.nets:
+            if getattr(lab, "locked", False):
+                locked.add(lab.name)
+        base = self.routes.get(self.selected_route or "") or self.routes.get("topor")
+        seed = None
+        if base is not None and locked:
+            if hasattr(base, "segments"):
+                segs = [s for s in base.segments if s.net in locked]
+                vias = [v for v in base.vias if v.net in locked]
+                seed = RouteResult(
+                    segments=list(segs),
+                    vias=list(vias),
+                    via_count=len(vias),
+                    areas=[a for a in getattr(base, "areas", []) or [] if getattr(a, "net", None) in locked],
+                )
+            elif isinstance(base, dict):
+                segs = [
+                    RouteSegment(
+                        x1=s["x1"], y1=s["y1"], x2=s["x2"], y2=s["y2"],
+                        layer=s.get("layer", "F.Cu"), net=s.get("net", ""),
+                        width_mm=s.get("width_mm", 0.25),
+                    )
+                    for s in (base.get("segments") or [])
+                    if s.get("net") in locked
+                ]
+                vias = [
+                    Via(
+                        x=v["x"], y=v["y"], net=v.get("net", ""),
+                        size_mm=v.get("size_mm", 0.6), drill_mm=v.get("drill_mm", 0.3),
+                        layers=tuple(v.get("layers") or ["F.Cu", "B.Cu"]),
+                    )
+                    for v in (base.get("vias") or [])
+                    if v.get("net") in locked
+                ]
+                seed = RouteResult(segments=segs, vias=vias, via_count=len(vias))
+
+        # Re-route selection (explicit) or all unlocked nets
+        if self.reroute_nets:
+            nets_filter = [n for n in self.reroute_nets if n not in locked]
+        elif locked:
+            board = self.board()
+            nets_filter = [n for n in board.nets if n not in locked]
+        else:
+            nets_filter = None
+        return seed, nets_filter
 
     def _load_preset(self, name: str) -> None:
         if name in ("custom", "import", "any"):
@@ -743,12 +818,23 @@ class AppState:
         from physics_router.routing_strategies import (
             topor_style_route,
         )
+        from physics_router.router import RouteResult
 
         p = job.params
         with self.lock:
+            self._sync_config_routing_policy()
+            # Job can override session selection
+            if p.get("locked_nets") is not None:
+                self.locked_nets = [str(n) for n in p["locked_nets"]]
+            if p.get("reroute_nets") is not None:
+                self.reroute_nets = [str(n) for n in p["reroute_nets"]]
+            if p.get("keepouts") is not None:
+                self.keepouts = list(p["keepouts"])
+            self._sync_config_routing_policy()
             board = copy.deepcopy(self.board())
-            cfg = self.config
+            cfg = copy.deepcopy(self.config)
             pcb_path = self.pcb_path
+            seed_result, nets_filter = self._route_seed_and_filter()
         from physics_router.design_rules import (
             jlcpcb_design_rules,
             list_jlcpcb_profiles,
@@ -775,6 +861,13 @@ class AppState:
         self.set_progress(job, 3, "TopoR isotropic free-angle")
         from physics_router.native_bridge import available as native_ok
 
+        if nets_filter is not None:
+            self.log(
+                job,
+                f"partial re-route: {len(nets_filter)} net(s), "
+                f"locked={len(self.locked_nets)}, keepouts={len(self.keepouts)}, "
+                f"seed_segs={len(seed_result.segments) if seed_result else 0}",
+            )
         self.log(
             job,
             f"TopoR pipeline: free-angle · clearance={clearance} mm · "
@@ -843,6 +936,8 @@ class AppState:
                         clearance_mm=clearance,
                         num_variants=num_variants,
                         progress_cb=on_progress,
+                        nets_filter=nets_filter,
+                        seed_result=seed_result,
                     )
                 else:
                     done["r"] = topor_style_route(
@@ -853,7 +948,31 @@ class AppState:
                         grid_mm=grid,
                         num_variants=num_variants,
                         progress_cb=on_progress,
+                        nets_filter=nets_filter,
+                        seed_result=seed_result,
                     )
+                # Merge locked seed copper into the published result
+                r = done["r"]
+                if seed_result is not None and r is not None:
+                    locked = set(self.locked_nets or [])
+                    new_segs = [s for s in r.segments if s.net not in locked]
+                    new_vias = [v for v in r.vias if v.net not in locked]
+                    merged = RouteResult(
+                        segments=list(seed_result.segments) + new_segs,
+                        vias=list(seed_result.vias) + new_vias,
+                        areas=list(getattr(seed_result, "areas", []) or [])
+                        + list(getattr(r, "areas", []) or []),
+                        via_count=len(seed_result.vias) + len(new_vias),
+                        unrouted_nets=list(r.unrouted_nets),
+                        notes=list(r.notes) + ["merged locked-net seed copper"],
+                        quality=dict(r.quality or {}),
+                    )
+                    merged.total_length_mm = sum(
+                        ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
+                        for s in merged.segments
+                    )
+                    merged.compute_quality()
+                    done["r"] = merged
             except Exception as e:
                 done["err"] = e
 
@@ -1206,8 +1325,57 @@ class AppState:
         return out
 
     def _job_openems(self, job: Job) -> dict[str, Any]:
+        """OpenEMS export — gated on route quality unless force=1."""
+        p = job.params or {}
+        force = bool(p.get("force") or p.get("force_export"))
+        min_grade = str(p.get("min_grade") or "C").upper()
+        order = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+
+        with self.lock:
+            route_obj = (
+                self.routes.get(self.selected_route or "")
+                or self.routes.get("topor")
+                or self.routes.get("guide")
+            )
+        grade = "F"
+        score = 0.0
+        viol = 999
+        if route_obj is not None:
+            q = getattr(route_obj, "quality", None) or {}
+            if not q and hasattr(route_obj, "compute_quality"):
+                q = route_obj.compute_quality()
+            if isinstance(route_obj, dict):
+                q = route_obj.get("quality") or {}
+            grade = str((q or {}).get("grade") or "F").upper()
+            score = float((q or {}).get("score") or 0)
+            viol = int(
+                getattr(route_obj, "clearance_violations", None)
+                if not isinstance(route_obj, dict)
+                else (route_obj.get("clearance_violations") or 0)
+            )
+
+        if not force:
+            if route_obj is None:
+                raise RuntimeError(
+                    "OpenEMS gated: no route yet. Run Route first, or pass force=1."
+                )
+            if order.get(grade, 4) > order.get(min_grade, 2):
+                raise RuntimeError(
+                    f"OpenEMS gated: grade {grade} (score {score}) worse than "
+                    f"min_grade={min_grade}. Improve the route or pass force=1."
+                )
+            if viol > 0:
+                raise RuntimeError(
+                    f"OpenEMS gated: {viol} clearance violation(s). "
+                    "Need clean copper or force=1."
+                )
+
         self.set_progress(job, 15, "openems geometry")
-        self.log(job, "Building OpenEMS mesh / geometry export…")
+        self.log(
+            job,
+            f"Building OpenEMS mesh (gate ok: grade={grade} score={score} viol={viol}"
+            f"{' FORCED' if force else ''})…",
+        )
         out_dir = WORK_DIR / f"openems_{job.id}"
         out_dir.mkdir(parents=True, exist_ok=True)
         with self.lock:
@@ -1217,8 +1385,6 @@ class AppState:
         # Prefer existing routes so export does not re-route internally
         from physics_router.router import RouteResult
 
-        with self.lock:
-            route_obj = self.routes.get("topor") or self.routes.get("guide")
         if route_obj is None:
             route_obj = RouteResult()
         paths = export_openems_bundle(
@@ -1825,6 +1991,10 @@ class AppState:
                 "presets": list_presets(),
                 "fab_profile": self.fab_profile,
                 "fab_profiles": _fab_profiles_payload(),
+                "locked_nets": list(self.locked_nets),
+                "keepouts": list(self.keepouts),
+                "reroute_nets": list(self.reroute_nets),
+                "net_names": sorted(self.board().nets.keys()),
             }
 
 
@@ -2238,6 +2408,34 @@ class Handler(SimpleHTTPRequestHandler):
                     except Exception:
                         pass
                 return self._json(200, {"ok": True, "board": info, **snap})
+            if path in ("/api/routing/policy", "/api/route-policy"):
+                # Lock nets, keep-outs, re-route selection
+                with STATE.lock:
+                    if "locked_nets" in body:
+                        STATE.locked_nets = [
+                            str(n) for n in (body.get("locked_nets") or []) if n
+                        ]
+                    if "reroute_nets" in body:
+                        STATE.reroute_nets = [
+                            str(n) for n in (body.get("reroute_nets") or []) if n
+                        ]
+                    if "keepouts" in body:
+                        STATE.keepouts = list(body.get("keepouts") or [])
+                    if body.get("add_keepout"):
+                        STATE.keepouts.append(dict(body["add_keepout"]))
+                    if body.get("clear_keepouts"):
+                        STATE.keepouts = []
+                    STATE._sync_config_routing_policy()
+                    snap = STATE.snapshot()
+                return self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "locked_nets": snap["locked_nets"],
+                        "keepouts": snap["keepouts"],
+                        "reroute_nets": snap["reroute_nets"],
+                    },
+                )
             if path == "/api/config/apply":
                 # Apply JSON config object or YAML text
                 if "config_text" in body:

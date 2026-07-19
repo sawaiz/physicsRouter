@@ -89,14 +89,24 @@ class DesignRules(BaseModel):
     def clearance_for_net(self, net: str, config: PlacementConfig | None = None) -> float:
         cls = self._class_for(net, config)
         c = max(self.constraints.min_clearance_mm, cls.clearance_mm if cls else 0.2)
+        if config:
+            lab = config.net_by_name().get(net)
+            if lab is not None and getattr(lab, "clearance_mm", None):
+                c = max(c, float(lab.clearance_mm))
         return c
 
     def track_width_for_net(self, net: str, config: PlacementConfig | None = None) -> float:
         cls = self._class_for(net, config)
         w = cls.track_width_mm if cls else self.constraints.min_track_width_mm
-        # Boost power from semantic labels if present
+        # Explicit label override (imported from KiCad netclass / schematic)
         if config:
             lab = config.net_by_name().get(net)
+            if lab is not None and getattr(lab, "track_width_mm", None):
+                w = max(w, float(lab.track_width_mm))
+            # Diff-pair preferred width when labeled
+            if lab is not None and lab.net_class == NetClass.DIFFERENTIAL and cls and cls.diff_pair_width_mm:
+                w = max(w, float(cls.diff_pair_width_mm))
+            # Boost power from semantic labels if present
             if lab and lab.net_class in (NetClass.POWER, NetClass.GROUND):
                 w = max(w, 0.3)
                 if self.track_width_presets_mm:

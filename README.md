@@ -161,10 +161,26 @@ python scripts/ci_regression.py
 ### CLI
 
 ```bash
+# Any board (auto net import) + CI gates
+physics-router smoke --pcb board.kicad_pcb --fail-on-drc --min-grade D
+
 physics-router import-nets --pcb board.kicad_pcb -o placement_config.yaml
-physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
-  --pipeline capacity --effort 0.55 --out route.json --out-pcb routed.kicad_pcb --drc
+physics-router route --pcb board.kicad_pcb \
+  --pipeline capacity --effort 0.55 --out-json route.json --out-pcb routed.kicad_pcb \
+  --fail-on-drc --fail-on-unrouted
+
+# FreeRouting baseline
+physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
+physics-router import-ses --ses board.ses --pcb board.kicad_pcb -o board_fr.kicad_pcb
 ```
+
+### Viewer (Board step)
+
+Drop any `.kicad_pcb`, or open a path / example chip. On **Route**: lock nets, re-route selection, keep-out rectangles. **3D / OpenEMS** is gated until route grade ≥ C and violations = 0 (force override available).
+
+### KiCad plugin
+
+See [`kicad_plugins/README.md`](kicad_plugins/README.md) — ActionPlugin runs `physics-router smoke` and reloads copper into pcbnew.
 
 ### Presets
 
@@ -173,8 +189,9 @@ physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
 | `halo-90` | Wearable charlieplex stress board (`third_party/halo-90`) |
 | `physics` | Muon3 telescope (`../physics` v10 layout, `examples/physics/`) |
 | `synthetic` | Built-in demo_buck |
+| *import* | Any `.kicad_pcb` via UI drop / `/api/board/import` / `smoke` |
 
-The 2D viewer substrate follows **loaded Edge.Cuts** (rectangle or ring) — not a hard-coded HALO circle.
+The 2D viewer substrate follows **loaded Edge.Cuts** (rectangle or ring) — not a hard-coded HALO circle. Copper **zones/pours** become routing obstacles (same-net may pass).
 
 ---
 
@@ -186,9 +203,11 @@ The 2D viewer substrate follows **loaded Edge.Cuts** (rectangle or ring) — not
 | `src/physics_router/capacity_mesh.py` | Mesh API (prefers C++) |
 | `src/physics_router/route_pipeline.py` | Step pipeline: access → mesh → detail → gate |
 | `src/physics_router/global_router.py` | Section layer negotiation |
-| `src/physics_router/pin_access.py` | Offset-via preflight |
+| `src/physics_router/pin_access.py` | Offset-via preflight (BGA/QFN denser fanout) |
 | `src/physics_router/hybrid_route.py` | Multi-strategy free-angle buckets |
-| `src/physics_router/router.py` | Orchestration, sequential zero-violation policy |
+| `src/physics_router/router.py` | Orchestration, sequential zero-violation policy, zones |
+| `src/physics_router/ses_import.py` | FreeRouting SES → copper |
+| `kicad_plugins/` | pcbnew ActionPlugin |
 | `viewer/` + `server.py` | Local UI / API |
 | `examples/halo-90/` · `examples/physics/` | Board configs + benches |
 

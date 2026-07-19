@@ -75,16 +75,26 @@ def extract_pcb_netclasses(pcb_path: str | Path) -> dict[str, dict[str, Any]]:
         note = str(nc[2]) if len(nc) > 2 and isinstance(nc[2], str) else ""
         clearance = None
         width = None
+        diff_w = None
+        diff_gap = None
         cl = _find_first(nc, "clearance")
         if cl and len(cl) >= 2:
             clearance = _as_float(cl[1])
         tw = _find_first(nc, "trace_width") or _find_first(nc, "track_width")
         if tw and len(tw) >= 2:
             width = _as_float(tw[1])
+        dw = _find_first(nc, "diff_pair_width")
+        if dw and len(dw) >= 2:
+            diff_w = _as_float(dw[1])
+        dg = _find_first(nc, "diff_pair_gap")
+        if dg and len(dg) >= 2:
+            diff_gap = _as_float(dg[1])
         class_meta[name] = {
             "notes": note,
             "clearance_mm": clearance,
             "track_width_mm": width,
+            "diff_pair_width_mm": diff_w,
+            "diff_pair_gap_mm": diff_gap,
         }
         for add in _find_all(nc, "add_net"):
             if len(add) >= 2:
@@ -99,6 +109,8 @@ def extract_pcb_netclasses(pcb_path: str | Path) -> dict[str, dict[str, Any]]:
             "notes": meta.get("notes") or "",
             "clearance_mm": meta.get("clearance_mm"),
             "track_width_mm": meta.get("track_width_mm"),
+            "diff_pair_width_mm": meta.get("diff_pair_width_mm"),
+            "diff_pair_gap_mm": meta.get("diff_pair_gap_mm"),
         }
     # Nets listed only in (net id name) without class → Default
     for _i, name in id_to_name.items():
@@ -108,8 +120,68 @@ def extract_pcb_netclasses(pcb_path: str | Path) -> dict[str, dict[str, Any]]:
                 "notes": "",
                 "clearance_mm": None,
                 "track_width_mm": None,
+                "diff_pair_width_mm": None,
+                "diff_pair_gap_mm": None,
             }
     return out
+
+
+_LENGTH_NOTE_RE = re.compile(
+    r"(?:max[_\s-]?len(?:gth)?|length\s*[≤<=]|maxlen)\s*[=:]?\s*([\d.]+)\s*(mm|mil)?",
+    re.I,
+)
+_PAIR_NOTE_RE = re.compile(
+    r"(?:pair(?:ed)?\s*(?:with|/)|diff(?:erential)?\s*(?:mate|pair)?)\s*[=:]?\s*"
+    r"([A-Za-z0-9_+/.-]+)",
+    re.I,
+)
+
+
+def _parse_length_mm(note: str) -> float | None:
+    m = _LENGTH_NOTE_RE.search(note or "")
+    if not m:
+        return None
+    val = float(m.group(1))
+    unit = (m.group(2) or "mm").lower()
+    if unit == "mil":
+        val *= 0.0254
+    return val if val > 0 else None
+
+
+def _infer_diff_pairs(names: set[str]) -> dict[str, str]:
+    """Heuristic mate map for differential naming conventions."""
+    pairs: dict[str, str] = {}
+    sorted_names = sorted(names)
+    for name in sorted_names:
+        if name in pairs:
+            continue
+        mate = None
+        # USB D+/D-
+        if re.search(r"(d\+|dp|usb_?dp|_p$|_p_)", name, re.I):
+            for other in sorted_names:
+                if other != name and re.search(r"(d-|dm|usb_?dm|_n$|_n_)", other, re.I):
+                    # same stem when possible
+                    stem_a = re.sub(r"(d\+|dp|usb_?dp|_p$|_p_)", "", name, flags=re.I)
+                    stem_b = re.sub(r"(d-|dm|usb_?dm|_n$|_n_)", "", other, flags=re.I)
+                    if stem_a.lower() == stem_b.lower() or abs(len(stem_a) - len(stem_b)) <= 2:
+                        mate = other
+                        break
+            if mate is None:
+                for other in sorted_names:
+                    if other != name and re.search(r"(d-|dm|usb_?dm|_n$|_n_)", other, re.I):
+                        mate = other
+                        break
+        # _P / _N suffix pairs
+        elif re.search(r"_p$", name, re.I):
+            cand = re.sub(r"_p$", "_N", name, flags=re.I)
+            for other in sorted_names:
+                if other.lower() == cand.lower():
+                    mate = other
+                    break
+        if mate:
+            pairs[name] = mate
+            pairs[mate] = name
+    return pairs
 
 
 def extract_schematic_labels(sch_path: str | Path) -> dict[str, dict[str, Any]]:
@@ -205,14 +277,16 @@ def build_net_labels(
     # drop empty net
     names.discard("")
 
+    inferred_pairs = _infer_diff_pairs(names)
     labels: list[NetLabel] = []
     for name in sorted(names):
-        kcls = (pcb_meta.get(name) or {}).get("kicad_netclass")
+        meta = pcb_meta.get(name) or {}
+        kcls = meta.get("kicad_netclass")
         nc, weight, critical = classify_net(name, kcls)
         notes_parts = []
         if kcls:
             notes_parts.append(f"kicad_netclass={kcls}")
-        pnotes = (pcb_meta.get(name) or {}).get("notes") or ""
+        pnotes = meta.get("notes") or ""
         if pnotes:
             notes_parts.append(str(pnotes))
         snotes = (sch_meta.get(name) or {}).get("notes") or ""
@@ -222,7 +296,10 @@ def build_net_labels(
         if kinds:
             notes_parts.append("sch=" + ",".join(kinds))
 
-        tw = (pcb_meta.get(name) or {}).get("track_width_mm")
+        tw = meta.get("track_width_mm")
+        cl = meta.get("clearance_mm")
+        diff_w = meta.get("diff_pair_width_mm")
+        diff_gap = meta.get("diff_pair_gap_mm")
         # power loop grouping for switcher-ish nets
         plg = None
         if re.search(r"(^sw$|switch|lx\b|phase|buck)", name, re.I):
@@ -230,20 +307,22 @@ def build_net_labels(
             critical = True
             weight = max(weight, 5.0)
 
-        pair_with = None
-        if re.search(r"d\+|dp|usb_dp", name, re.I):
-            # try find mate
-            for other in names:
-                if other != name and re.search(r"d-|dm|usb_dm", other, re.I):
-                    pair_with = other
-                    nc = NetClass.DIFFERENTIAL
-                    break
-        elif re.search(r"d-|dm|usb_dm", name, re.I):
-            for other in names:
-                if other != name and re.search(r"d\+|dp|usb_dp", other, re.I):
-                    pair_with = other
-                    nc = NetClass.DIFFERENTIAL
-                    break
+        pair_with = inferred_pairs.get(name)
+        # Explicit pair from schematic notes
+        note_blob = " ".join(notes_parts)
+        pm = _PAIR_NOTE_RE.search(note_blob)
+        if pm:
+            cand = pm.group(1).strip()
+            if cand in names and cand != name:
+                pair_with = cand
+        if pair_with:
+            nc = NetClass.DIFFERENTIAL
+            weight = max(weight, 3.0)
+            critical = True
+
+        max_len = _parse_length_mm(note_blob)
+        if diff_w and not tw:
+            tw = diff_w
 
         simulate_spice = nc in (NetClass.POWER, NetClass.GROUND) or critical
         simulate_em = nc in (NetClass.RF, NetClass.DIFFERENTIAL, NetClass.HIGH_SPEED) or bool(
@@ -258,6 +337,10 @@ def build_net_labels(
                 weight=weight,
                 critical=critical,
                 pair_with=pair_with,
+                max_length_mm=max_len,
+                track_width_mm=float(tw) if tw else None,
+                clearance_mm=float(cl) if cl else None,
+                diff_gap_mm=float(diff_gap) if diff_gap else None,
                 power_loop_group=plg,
                 simulate_spice=simulate_spice,
                 simulate_em=simulate_em,
@@ -265,9 +348,6 @@ def build_net_labels(
                 notes=" | ".join(notes_parts),
             )
         )
-        # stash track width in notes if present
-        if tw:
-            labels[-1].notes = (labels[-1].notes + f" | track_width_mm={tw}").strip(" |")
     return labels
 
 

@@ -309,6 +309,8 @@ def topor_style_route(
     use_elastic: bool = True,
     use_regeometry: bool = True,
     progress_cb=None,
+    nets_filter: list[str] | None = None,
+    seed_result: RouteResult | None = None,
 ) -> RouteResult:
     """Full topology-first pipeline (docs/ARCHITECTURE_ROUTER.md).
 
@@ -337,25 +339,27 @@ def topor_style_route(
         plan = classify_board(board, config, rules)
         strats = {a.strategy for a in plan.assignments}
         # Use hybrid when matrix buses or multiple strategy classes exist
-        if "matrix" in strats or len(strats) >= 3:
-            cl0 = clearance_mm if clearance_mm is not None else rules.constraints.min_clearance_mm
-            r = hybrid_route(
-                board,
-                config,
-                rules,
-                clearance_mm=float(cl0),
-                progress_cb=progress_cb,
-                plan=plan,
-            )
-            r.notes.append(
-                f"topor_pipeline: hybrid free-angle strategies={sorted(strats)}"
-            )
-            r.quality = {
-                **(r.quality or {}),
-                "pipeline": "topor_style_hybrid",
-                "hybrid_plan": (r.quality or {}).get("hybrid_plan") or plan.to_dict(),
-            }
-            return r
+        # Partial re-route / locked nets: stay on clearance_aware path (seed+filter)
+        if nets_filter is None and seed_result is None:
+            if "matrix" in strats or len(strats) >= 3:
+                cl0 = clearance_mm if clearance_mm is not None else rules.constraints.min_clearance_mm
+                r = hybrid_route(
+                    board,
+                    config,
+                    rules,
+                    clearance_mm=float(cl0),
+                    progress_cb=progress_cb,
+                    plan=plan,
+                )
+                r.notes.append(
+                    f"topor_pipeline: hybrid free-angle strategies={sorted(strats)}"
+                )
+                r.quality = {
+                    **(r.quality or {}),
+                    "pipeline": "topor_style_hybrid",
+                    "hybrid_plan": (r.quality or {}).get("hybrid_plan") or plan.to_dict(),
+                }
+                return r
     except Exception:
         pass
 
@@ -449,6 +453,10 @@ def topor_style_route(
                     )
                 except Exception:
                     pass
+            order = list(spec["net_order"])
+            if nets_filter is not None:
+                allow = set(nets_filter)
+                order = [n for n in order if n in allow] or list(nets_filter)
             raw = clearance_aware_route(
                 board,
                 config,
@@ -461,7 +469,9 @@ def topor_style_route(
                 # C++ core for geometry search; phase progress stays at variant level
                 prefer_native=True,
                 progress_cb=None,
-                net_order=list(spec["net_order"]),
+                net_order=order,
+                nets_filter=nets_filter,
+                seed_result=seed_result,
                 style="isotropic",
                 congestion=cong,
                 k_homotopy=spec.get("k_homotopy") or 1,
@@ -648,6 +658,8 @@ def multilayer_route(
     use_layer_directions: bool = False,
     num_variants: int | None = None,
     progress_cb=None,
+    nets_filter: list[str] | None = None,
+    seed_result: RouteResult | None = None,
 ) -> RouteResult:
     """DRC-aware multilayer TopoR-style route (isotropic free-angle).
 
@@ -665,6 +677,8 @@ def multilayer_route(
         guide_only=guide_only,
         num_variants=num_variants,
         progress_cb=progress_cb,
+        nets_filter=nets_filter,
+        seed_result=seed_result,
     )
     if use_layer_directions:
         copper = list((rules or default_design_rules()).copper_layers) or ["F.Cu", "B.Cu"]

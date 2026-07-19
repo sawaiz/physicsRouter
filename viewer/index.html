@@ -1170,6 +1170,19 @@
     const natLine = nat?.available
       ? `Native ${nat.gpu?.available ? 'GPU' : 'CPU'} ready`
       : 'Python router';
+    const nets = state.snap?.net_names || Object.keys(state.viewer?.board?.nets || {});
+    const locked = new Set(state.snap?.locked_nets || []);
+    const reroute = new Set(state.snap?.reroute_nets || []);
+    const keepouts = state.snap?.keepouts || [];
+    const netChecks = nets.slice(0, 48).map(n => {
+      const isL = locked.has(n);
+      const isR = reroute.has(n);
+      return `<label class="net-row" style="display:flex;gap:0.35rem;align-items:center;font-size:0.72rem;margin:0.12rem 0">
+        <input type="checkbox" class="lockNet" data-net="${esc(n)}" ${isL ? 'checked' : ''} title="Lock (preserve copper)"/>
+        <input type="checkbox" class="rrNet" data-net="${esc(n)}" ${isR ? 'checked' : ''} title="Re-route only"/>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</span>
+      </label>`;
+    }).join('');
     return `
       <div class="sim-chip" style="margin:0 0 0.5rem" id="routeLiveBar">Idle — copper draws live on the board</div>
       <div class="sim-chip" style="margin:0 0 0.55rem" id="routeQuality">No route yet</div>
@@ -1184,13 +1197,38 @@
       <div class="actions">
         <button type="button" class="btn good" id="btnImprove" style="flex:1">↻ Improve until goal</button>
       </div>
-      <p class="hint" style="margin:0.2rem 0 0.55rem">Keeps routing with a <strong>live grade</strong> until timeout or target grade + <strong>KiCad DRC pass</strong> (official <code>kicad-cli</code> engine on exported copper).</p>
+      <p class="hint" style="margin:0.2rem 0 0.55rem">Keeps routing with a <strong>live grade</strong> until timeout or target grade + <strong>KiCad DRC pass</strong>.</p>
       <div class="actions">
-        <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">TopoR free-angle</button>
+        <button type="button" class="btn primary" data-job="route_topor" id="btnTopoR">Route</button>
+        <button type="button" class="btn" id="btnRerouteSel">Re-route selection</button>
         <button type="button" class="btn" id="btnApplyRoute">Apply to PCB</button>
       </div>
-      <p class="hint" style="margin:0.15rem 0 0.4rem">Auto hybrid free-angle: <strong>matrix</strong> buses, <strong>power</strong>, <strong>critical</strong>, <strong>general</strong> — shared clearance &amp; widths.</p>
       <p class="muted" id="routeApplyStatus" style="font-size:0.72rem;margin:0.25rem 0 0.4rem">${esc(natLine)}</p>
+
+      <details open style="margin:0.35rem 0">
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Lock nets · re-route · keep-outs</summary>
+        <p class="hint" style="margin:0.3rem 0">☐ left = <strong>lock</strong> (keep copper) · ☐ right = <strong>re-route only</strong> those nets</p>
+        <div id="netLockList" style="max-height:140px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:0.35rem;background:#0f1419">
+          ${netChecks || '<span class="muted">Load a board first</span>'}
+          ${nets.length > 48 ? `<p class="muted" style="font-size:0.7rem">… ${nets.length - 48} more not listed</p>` : ''}
+        </div>
+        <div class="actions" style="margin-top:0.35rem">
+          <button type="button" class="btn" id="btnApplyLocks">Apply locks</button>
+          <button type="button" class="btn ghost" id="btnClearLocks">Clear locks</button>
+        </div>
+        <label class="field">Keep-out (board mm)</label>
+        <div class="row2">
+          <input type="number" id="koX1" step="0.1" placeholder="x1"/>
+          <input type="number" id="koY1" step="0.1" placeholder="y1"/>
+          <input type="number" id="koX2" step="0.1" placeholder="x2"/>
+          <input type="number" id="koY2" step="0.1" placeholder="y2"/>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="btnAddKeepout">Add keep-out</button>
+          <button type="button" class="btn ghost" id="btnClearKeepouts">Clear keep-outs</button>
+        </div>
+        <p class="muted" style="font-size:0.72rem;margin:0.25rem 0">${keepouts.length} keep-out(s) active</p>
+      </details>
 
       <details>
         <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced</summary>
@@ -1218,14 +1256,31 @@
 
   function panelSim() {
     const glb = state.snap?.session?.glb || state.viewer?.assets?.glb || '';
+    const routes = state.snap?.routes || {};
+    const sel = state.snap?.selected_route || state.selectedRoute || 'topor';
+    const rq = (routes[sel] && (routes[sel].quality || routes[sel])) || {};
+    const grade = rq.grade || (rq.quality && rq.quality.grade) || '—';
+    const score = rq.score ?? (rq.quality && rq.quality.score);
+    const viol = routes[sel]?.clearance_violations ?? '—';
+    const gateOk = grade !== '—' && grade !== 'F' && grade !== 'D' && (viol === 0 || viol === '—');
     return `
+      <div class="sim-chip" style="margin:0 0 0.55rem">
+        Route gate: grade <strong>${esc(grade)}</strong>
+        ${score != null ? ` · ${esc(score)}/100` : ''}
+        · viol ${esc(viol)}
+        ${gateOk ? ' · <span style="color:var(--good)">ready for EMS</span>' : ' · <span style="color:var(--warn)">need better copper</span>'}
+      </div>
       <div class="actions">
         <button type="button" class="btn primary" data-job="export_board_3d">Rebuild 3D model</button>
-        <button type="button" class="btn good" data-job="openems">OpenEMS + EMI</button>
+        <button type="button" class="btn good" id="btnOpenems">OpenEMS + EMI</button>
       </div>
       <p class="muted" style="font-size:0.75rem;margin:0.35rem 0">
-        ${glb ? `Model: ${esc(String(glb).split('/').pop())}` : 'No 3D model yet — rebuild after applying a route.'}
+        OpenEMS requires grade ≥ C and zero hard violations (override with force below).
+        ${glb ? `<br/>Model: ${esc(String(glb).split('/').pop())}` : '<br/>No 3D model yet — rebuild after applying a route.'}
       </p>
+      <label class="field" style="display:flex;align-items:center;gap:0.35rem">
+        <input type="checkbox" id="openemsForce"/> Force export even if gate fails
+      </label>
       <details>
         <summary class="muted" style="cursor:pointer;font-size:0.78rem">More tools</summary>
         <div class="actions" style="margin-top:0.35rem">
@@ -1451,9 +1506,63 @@
     bindRoutePanel();
   }
 
+  async function pushRoutingPolicy(extra = {}) {
+    const locked = $$('.lockNet:checked').map(el => el.dataset.net);
+    const reroute = $$('.rrNet:checked').map(el => el.dataset.net);
+    const body = { locked_nets: locked, reroute_nets: reroute, ...extra };
+    const res = await api('/api/routing/policy', { method: 'POST', body: JSON.stringify(body) });
+    state.snap = { ...(state.snap || {}), locked_nets: res.locked_nets, keepouts: res.keepouts, reroute_nets: res.reroute_nets };
+    return res;
+  }
+
   function bindRoutePanel() {
     $('#btnApplyRoute')?.addEventListener('click', () => applySelectedRoute(false).catch(e => alert(e.message)));
     $('#btnGoSim')?.addEventListener('click', () => setStep(3));
+    $('#btnApplyLocks')?.addEventListener('click', async () => {
+      try {
+        await pushRoutingPolicy();
+        alert(`Locks applied (${(state.snap?.locked_nets || []).length} locked, ${(state.snap?.reroute_nets || []).length} re-route)`);
+      } catch (e) { alert(e.message); }
+    });
+    $('#btnClearLocks')?.addEventListener('click', async () => {
+      try {
+        await api('/api/routing/policy', { method: 'POST', body: JSON.stringify({ locked_nets: [], reroute_nets: [] }) });
+        state.snap = { ...(state.snap || {}), locked_nets: [], reroute_nets: [] };
+        renderStepPanel();
+      } catch (e) { alert(e.message); }
+    });
+    $('#btnAddKeepout')?.addEventListener('click', async () => {
+      const x1 = parseFloat($('#koX1')?.value);
+      const y1 = parseFloat($('#koY1')?.value);
+      const x2 = parseFloat($('#koX2')?.value);
+      const y2 = parseFloat($('#koY2')?.value);
+      if ([x1, y1, x2, y2].some(v => Number.isNaN(v))) return alert('Enter x1 y1 x2 y2 in mm');
+      try {
+        await pushRoutingPolicy({ add_keepout: { x1, y1, x2, y2, layers: [] } });
+        renderStepPanel();
+      } catch (e) { alert(e.message); }
+    });
+    $('#btnClearKeepouts')?.addEventListener('click', async () => {
+      try {
+        await api('/api/routing/policy', { method: 'POST', body: JSON.stringify({ clear_keepouts: true, keepouts: [] }) });
+        state.snap = { ...(state.snap || {}), keepouts: [] };
+        renderStepPanel();
+      } catch (e) { alert(e.message); }
+    });
+    $('#btnRerouteSel')?.addEventListener('click', async () => {
+      try {
+        await pushRoutingPolicy();
+        const rr = state.snap?.reroute_nets || [];
+        if (!rr.length) return alert('Check “re-route only” on one or more nets first');
+        await startJob('route_topor', { reroute_nets: rr });
+      } catch (e) { alert(e.message); }
+    });
+    $('#btnOpenems')?.addEventListener('click', async () => {
+      const force = !!$('#openemsForce')?.checked;
+      try {
+        await startJob('openems', { force, min_grade: 'C' });
+      } catch (e) { alert(e.message); }
+    });
   }
 
   async function applySelectedRoute(rebuild3d = false) {

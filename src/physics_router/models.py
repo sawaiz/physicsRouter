@@ -33,6 +33,16 @@ class NetLabel(BaseModel):
     max_length_mm: float | None = Field(default=None, gt=0)
     target_impedance_ohm: float | None = Field(default=None, gt=0)
     pair_with: str | None = Field(default=None, description="Mate net for differential pairs")
+    # Geometry rules imported from KiCad netclass / schematic (optional overrides)
+    track_width_mm: float | None = Field(default=None, gt=0)
+    clearance_mm: float | None = Field(default=None, gt=0)
+    diff_gap_mm: float | None = Field(
+        default=None, gt=0, description="Preferred gap to differential mate"
+    )
+    locked: bool = Field(
+        default=False,
+        description="When true, copper for this net is preserved and not re-routed",
+    )
     notes: str = ""
     # Physics tags
     power_loop_group: str | None = Field(
@@ -96,6 +106,18 @@ class PhysicsWeights(BaseModel):
     matrix_length_match: float = 3.0
 
 
+class KeepoutRegion(BaseModel):
+    """User or imported keep-out rectangle (board mm). Blocks routing on listed layers."""
+
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    layers: list[str] = Field(default_factory=list, description="Empty = all copper layers")
+    net: str | None = Field(default=None, description="Same-net may pass when set")
+    notes: str = ""
+
+
 class PlacementConfig(BaseModel):
     """Project-level placement configuration (YAML/JSON next to KiCad files)."""
 
@@ -110,6 +132,15 @@ class PlacementConfig(BaseModel):
     lock_ref_prefixes: list[str] = Field(
         default_factory=list,
         description='Lock all refs starting with these prefixes, e.g. ["D"] for LED ring',
+    )
+    # Routing session policy (also settable from the viewer control plane)
+    locked_nets: list[str] = Field(
+        default_factory=list,
+        description="Nets whose existing copper must be preserved (not re-routed)",
+    )
+    keepouts: list[KeepoutRegion] = Field(
+        default_factory=list,
+        description="User keep-out rectangles painted as routing obstacles",
     )
     physics: PhysicsWeights = Field(default_factory=PhysicsWeights)
     # Search
@@ -182,6 +213,9 @@ class BoardModel(BaseModel):
     source_path: str | None = None
     # Edge.Cuts / outline primitives for viewer (board coordinates)
     outline: list[dict[str, Any]] = Field(default_factory=list)
+    # Copper zones / pours from .kicad_pcb — used as routing obstacles (same-net may pass)
+    # Each: {net, layer, keepout, filled, points: [[x,y], ...], priority}
+    zones: list[dict[str, Any]] = Field(default_factory=list)
     # Populated from KiCad stackup / DRC when available (dict for JSON friendliness)
     design_rules: dict | None = None
     copper_layers: list[str] = Field(default_factory=lambda: ["F.Cu", "B.Cu"])

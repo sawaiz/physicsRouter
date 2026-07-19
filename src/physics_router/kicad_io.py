@@ -323,6 +323,8 @@ def load_board_from_kicad_pcb(
                 },
             ]
 
+    zones = _extract_zones(root, copper_layers)
+
     return BoardModel(
         width_mm=width,
         height_mm=height,
@@ -332,7 +334,80 @@ def load_board_from_kicad_pcb(
         design_rules=rules_dict,
         copper_layers=copper_layers,
         outline=outline,
+        zones=zones,
     )
+
+
+def _extract_zones(root: Any, copper_layers: list[str]) -> list[dict[str, Any]]:
+    """Parse KiCad ``(zone …)`` copper pours / keepouts into obstacle polygons.
+
+    Filled polygons and zone outlines become routing obstacles. Same-net copper
+    may pass (net tag); pure keepouts use ``net=None``.
+    """
+    zones: list[dict[str, Any]] = []
+    for z in _find_all(root, "zone"):
+        net_name = ""
+        nn = _find_first(z, "net_name")
+        if nn and len(nn) >= 2:
+            net_name = str(nn[1] or "")
+        layer = ""
+        ly = _find_first(z, "layer")
+        if ly and len(ly) >= 2:
+            layer = str(ly[1])
+        layers: list[str] = []
+        lys = _find_first(z, "layers")
+        if lys:
+            layers = [str(x) for x in lys[1:] if isinstance(x, (str, int, float))]
+        if layer and layer not in layers:
+            layers.append(layer)
+        if not layers:
+            layers = list(copper_layers)
+
+        keepout = False
+        ko = _find_first(z, "keepout")
+        if ko is not None:
+            keepout = True
+            # (keepout (tracks not_allowed) …) etc.
+            for child in ko[1:] if isinstance(ko, list) else []:
+                if isinstance(child, list) and child and str(child[0]) == "tracks":
+                    if len(child) >= 2 and str(child[1]) in ("allowed", "yes"):
+                        keepout = False
+
+        # Prefer filled_polygon (actual copper), fall back to polygon outline
+        polys: list[list[tuple[float, float]]] = []
+        for tag in ("filled_polygon", "polygon"):
+            for poly in _find_all(z, tag):
+                pts_node = _find_first(poly, "pts")
+                if not pts_node:
+                    continue
+                pts: list[tuple[float, float]] = []
+                for child in pts_node[1:]:
+                    if (
+                        isinstance(child, list)
+                        and child
+                        and str(child[0]) in ("xy", "xyz")
+                        and len(child) >= 3
+                    ):
+                        pts.append((_as_float(child[1]), _as_float(child[2])))
+                if len(pts) >= 3:
+                    polys.append(pts)
+            if polys:
+                break
+
+        if not polys:
+            continue
+        for pts in polys:
+            for ly_name in layers:
+                zones.append(
+                    {
+                        "net": None if keepout else (net_name or None),
+                        "layer": str(ly_name),
+                        "keepout": keepout,
+                        "points": [[float(x), float(y)] for x, y in pts],
+                        "filled": True,
+                    }
+                )
+    return zones
 
 
 def _layer_name(node: list[Any]) -> str:

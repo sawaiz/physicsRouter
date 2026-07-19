@@ -720,11 +720,15 @@ def build_obstacle_map(
     board: BoardModel,
     clearance_mm: float = 0.2,
     layers: list[str] | None = None,
+    *,
+    keepouts: list[Any] | None = None,
+    paint_zones: bool = True,
 ) -> ObstacleMap:
-    """Obstacles from pads (per-net), not full courtyards — allows free-angle escape.
+    """Obstacles from pads, copper zones/pours, and user keep-outs.
 
     When ``board.outline`` is present (Edge.Cuts), the map also enforces
     point/segment-in-polygon bounds so routes cannot leave the PCB silhouette.
+    Zones use same-net awareness (power pours block foreign nets only).
     """
     layers = layers or list(board.copper_layers) or ["F.Cu", "B.Cu"]
     x0, x1, y0, y1 = board_extent(board)
@@ -758,7 +762,73 @@ def build_obstacle_map(
         else:
             for ly in layers:
                 om.add_rect(c.x_mm, c.y_mm, pad_w, pad_h, ly, net=None, inflate=True)
+
+    if paint_zones:
+        for zone in getattr(board, "zones", None) or []:
+            _paint_zone_on_om(om, zone, layers)
+
+    # Config / session keep-outs (rectangles)
+    for ko in keepouts or []:
+        _paint_keepout_on_om(om, ko, layers)
     return om
+
+
+def _paint_zone_on_om(om: ObstacleMap, zone: dict[str, Any], layers: list[str]) -> None:
+    """Rasterize a zone polygon into rect obstacles (native ExactMap is rect-based)."""
+    pts = zone.get("points") or []
+    if len(pts) < 3:
+        return
+    ly = str(zone.get("layer") or "")
+    if ly in ("*.Cu", "F&B.Cu", ""):
+        target_layers = list(layers)
+    elif ly in layers:
+        target_layers = [ly]
+    else:
+        return
+    net = None if zone.get("keepout") else (zone.get("net") or None)
+    xs = [float(p[0]) for p in pts]
+    ys = [float(p[1]) for p in pts]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    span = max(max_x - min_x, max_y - min_y, 0.5)
+    step = max(0.35, min(1.2, span / 24.0))
+    poly = [(float(p[0]), float(p[1])) for p in pts]
+    y = min_y + step * 0.5
+    while y <= max_y:
+        x = min_x + step * 0.5
+        while x <= max_x:
+            if point_in_polygon(x, y, poly):
+                for tly in target_layers:
+                    om.add_rect(x, y, step, step, tly, net=net, inflate=False)
+            x += step
+        y += step
+
+
+def _paint_keepout_on_om(om: ObstacleMap, ko: Any, layers: list[str]) -> None:
+    """Paint a rectangular keep-out (dict or KeepoutRegion-like)."""
+    if hasattr(ko, "model_dump"):
+        ko = ko.model_dump()
+    if not isinstance(ko, dict):
+        return
+    try:
+        x1, y1 = float(ko["x1"]), float(ko["y1"])
+        x2, y2 = float(ko["x2"]), float(ko["y2"])
+    except (KeyError, TypeError, ValueError):
+        return
+    cx = 0.5 * (x1 + x2)
+    cy = 0.5 * (y1 + y2)
+    w = abs(x2 - x1)
+    h = abs(y2 - y1)
+    if w < 1e-6 or h < 1e-6:
+        return
+    ko_layers = [str(L) for L in (ko.get("layers") or []) if L]
+    if not ko_layers or "*.Cu" in ko_layers:
+        ko_layers = list(layers)
+    net = ko.get("net")
+    for ly in ko_layers:
+        if ly not in layers:
+            continue
+        om.add_rect(cx, cy, w, h, ly, net=net, inflate=True)
 
 
 def _snap(v: float, grid: float) -> float:
@@ -912,6 +982,13 @@ def _paint_result_on_om(
             om.add_rect(v.x, v.y, v.size_mm, v.size_mm, ly, net=v.net, inflate=True)
 
 
+def _config_keepouts(config: PlacementConfig | None) -> list[Any] | None:
+    if config is None:
+        return None
+    kos = list(getattr(config, "keepouts", None) or [])
+    return kos or None
+
+
 def _rebuild_om_with_copper(
     board: BoardModel,
     result: RouteResult,
@@ -919,9 +996,15 @@ def _rebuild_om_with_copper(
     clearance_mm: float,
     layers: list[str],
     seed_result: RouteResult | None = None,
+    config: PlacementConfig | None = None,
 ) -> ObstacleMap:
     """Fresh obstacle map with seed + committed copper painted."""
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    om = build_obstacle_map(
+        board,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        keepouts=_config_keepouts(config),
+    )
     if seed_result is not None:
         _paint_result_on_om(om, seed_result, layers)
     _paint_result_on_om(om, result, layers)
@@ -1494,6 +1577,7 @@ def _python_try_full_net(
         clearance_mm=clearance_mm,
         layers=layers,
         seed_result=seed_result,
+        config=config,
     )
     g = _dense_grid_for_net(board, net_name, grid_mm, attempt=max(1, attempt))
     kh = 2 + min(3, attempt) if _is_multipin_net(board, net_name) else 1
@@ -2403,7 +2487,12 @@ def clearance_aware_route(
         except Exception:
             pass
 
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    om = build_obstacle_map(
+        board,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        keepouts=_config_keepouts(config),
+    )
     result = RouteResult()
     # Seed copper from prior hybrid phases as foreign-net obstacles
     if seed_result is not None:
