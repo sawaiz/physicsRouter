@@ -1,220 +1,214 @@
 # physicsRouter
 
-`physicsRouter` is a research PCB autorouter for KiCad. It combines a required
-C++ free-angle geometry core with Python policy, graph planning, KiCad I/O,
-validation and an interactive control plane.
+`physicsRouter` is a research PCB autorouter for KiCad. A required **C++ free-angle geometry core** (`pr_native`) does exact search and DRC; Python owns policy, capacity planning, KiCad I/O, validation, and the interactive control plane.
 
-The goal is not a route that merely looks connected. A successful result must
-contain physically reachable pads, explicit vias at every layer transition,
-complete multipin nets, zero native hard violations, and zero copper errors
-after KiCad applies and refills the board.
+The goal is not a route that merely looks connected. A successful result needs physically reachable pads, explicit vias at layer transitions, complete multipin nets, **zero native hard violations**, and zero copper errors after KiCad applies the board.
 
-> **Status:** the v2 production flow adds exact offset-via pin-access preflight,
-> capacity-aware per-section layer planning, strict success semantics, and the
-> earlier board-wide PathFinder conflict-directed rip-up. The
-> HALO-90 stress board is not fully autorouted yet. Correctly open nets are
-> preferable to illegal copper, but they are not a finished route.
+> **Status (2026-07-19):** v2 production flow — pin-access preflight, **C++ capacity-mesh** section layer planning (tscircuit-inspired), atomic full-net commit, PathFinder congestion, conflict-directed rip-up. Synthetic boards pass DRC. **HALO-90** is still a dense stress case (legal partial routes preferred over shorts).
 
-## What failed on HALO-90
+---
 
-The pre-v1.8 router was run for 1,288 seconds on the real four-layer HALO PCB:
+## Routing process (rendered)
 
-| Round | Strategy | KiCad copper violations | Vias | Unrouted nets |
-|---|---:|---:|---:|---:|
-| 1 | hybrid | 489 | 0 | 4 |
-| 2 | native | 588 | 0 | 4 |
-| 3 | native fine | 588 | 0 | 4 |
+Stages from placement through DRC, regenerated with the current native core:
 
-The selected route contained 68 inner-layer segments and no via objects even
-though 251 of the board's 256 pads are SMD. KiCad found real cross-net shorts
-while the in-process audit reported zero shorts and the final API summary reset
-the known violation count to zero. The run also exceeded its 1,200-second
-deadline because the deadline was checked only between native calls. The
-binding now releases the GIL, but C++ search still needs an internal deadline.
+| Stage | Synthetic demo | HALO-90 |
+|-------|----------------|--------|
+| Placement + outline | ![s1](docs/images/routing_process/synthetic_1_placement_outline.png) | ![h1](docs/images/routing_process/halo90_1_placement_outline.png) |
+| Guide topology | ![s2](docs/images/routing_process/synthetic_2_guide_topology.png) | ![h2](docs/images/routing_process/halo90_2_guide_topology.png) |
+| Clearance-aware copper | ![s3](docs/images/routing_process/synthetic_3_clearance_raw.png) | ![h3](docs/images/routing_process/halo90_3_clearance_raw.png) |
+| Re-geometry | ![s4](docs/images/routing_process/synthetic_4_regeometry.png) | ![h4](docs/images/routing_process/halo90_4_regeometry.png) |
+| By layer | ![s5](docs/images/routing_process/synthetic_5_by_layer.png) | ![h5](docs/images/routing_process/halo90_5_by_layer.png) |
+| Router DRC map | ![s7](docs/images/routing_process/synthetic_7_drc_map.png) | ![h7](docs/images/routing_process/halo90_7_drc_map.png) |
 
-The failure was structural, not a grid-resolution problem:
+**Process strip** (placement → guide → clearance → re-geometry):
 
-1. SMD anchors were treated as reachable on every preferred layer.
-2. Component-body rectangles replaced real rotated, layer-specific pad copper.
-3. XY segment generation was mistaken for multilayer electrical connectivity.
-4. Layer choice and via placement were deferred to an emergency fallback.
-5. Sequential CPX routing greedily consumed corridors without global
-   negotiation.
-6. Native DRC, KiCad DRC, scoring and API serialization described different
-   physical objects.
-7. A stale native module could be loaded without proving it matched the source
-   commit.
+![process strip](docs/images/routing_process/6_process_strip.png)
 
-The full diagnosis, publications and measured production-layout baseline are in
-[docs/AUTOROUTER_FAILURE_ANALYSIS.md](docs/AUTOROUTER_FAILURE_ANALYSIS.md).
+**Placement / score overview**
 
-## Current routing architecture
+![placement](docs/images/placement_overview.png)
+![score](docs/images/score_breakdown.png)
+![runtimes](docs/images/runtimes.png)
+
+Guide topology · copper by layer:
+
+![guide](docs/images/route_guide.png)
+![layers](docs/images/route_by_layer.png)
+
+Regenerate:
+
+```bash
+python scripts/render_routing_process.py --halo
+python scripts/generate_docs_images.py
+```
+
+---
+
+## Speed & quality (this machine)
+
+Host: **Apple M3**, OpenCL GPU, native `2.0.0-production-flow`.  
+Artifacts: [`docs/images/routing_process/bench_latest.json`](docs/images/routing_process/bench_latest.json), [`docs/images/routing_process/drc_report.json`](docs/images/routing_process/drc_report.json).
+
+| Workload | Time | Result |
+|----------|-----:|--------|
+| Synthetic native `route_board` | **3 ms** | 28 segs · 12 vias · capacity mesh depth 6 |
+| Synthetic `clearance_aware_route` | **5 ms** | 29 segs · **0 shorts / 0 DRC** · 0 unrouted |
+| Synthetic capacity mesh build | **6 ms** | 535 nodes · 862 edges |
+| Synthetic capacity pipeline | **102 ms** | 22 segs · **0 shorts** · 0 unrouted |
+| HALO-90 guide topology | **0.22 s** | 217 edges · 791 mm guide |
+| HALO-90 clearance route (docs render) | **~150 s** | legal copper; multipin partials possible |
+| HALO-90 native sequential (bench) | **27 s** | 199 segs · 20 vias · **0 shorts** · 8/23 nets fully ok · 239 mm |
+
+### Render pipeline timings
+
+| Board | Guide | Clearance | Re-geometry |
+|-------|------:|----------:|------------:|
+| Synthetic | 0.001 s | 1.3 s | 0.13 s |
+| HALO-90 | 0.22 s | 150 s | 1.5 s |
+
+### HALO honest status
+
+| Metric | Latest bench |
+|--------|----------------|
+| Native DRC shorts / total viol | **0 / 0** on committed copper |
+| Fully completed nets | **8 / 23** (atomic full-net policy) |
+| Unrouted (open > short) | 15 |
+| Length | ~239 mm |
+| Vias | 20 |
+
+Open nets are intentional under zero-violation commit — not a silent short dump. Dense CPX completion remains the open research goal. Historical failure analysis: [docs/AUTOROUTER_FAILURE_ANALYSIS.md](docs/AUTOROUTER_FAILURE_ANALYSIS.md).
+
+---
+
+## Tests
+
+```bash
+bash scripts/build_native.sh
+PYTHONPATH=src:native/build pytest -q
+```
+
+| Suite | Result | Wall time |
+|-------|--------|-----------|
+| Full `tests/` | **199 passed** | ~133 s (M3) |
+| Capacity mesh + native + hybrid | **27 passed** | ~106 s |
+| Production pin-access / two-via | **passed** (host layer plan preserved) | <1 s |
+
+---
+
+## Current architecture
 
 | Phase | Implementation |
-|---|---|
-| **Exact board model** | Real pad centers, rotations, custom copper primitives, copper layers, arc Edge.Cuts, fab rules and through-via constraints |
-| **Net hypergraph** | One multi-terminal object per net instead of unrelated two-pin requests |
-| **Pin-access oracle** | Enumerates legal offset through-via sites before routing; checks all traversed pad layers, holes and Edge.Cuts |
-| **Topology candidates** | Crossing-aware spanning trees and layout-aware alternatives |
-| **Global section plan** | PathFinder-style coarse capacity assigns every tree edge a layer and planned access-via cost |
-| **Conflict graph** | Projected crossings become graph edges; DSATUR seeds the section planner |
-| **Atomic C++ routing** | A net commits only when every anchor is physically connected |
-| **Explicit pin access** | F.Cu/B.Cu SMD escapes and layer transitions emit real vias |
-| **Native obstacles** | Oriented, net-owned pads painted only on their physical copper layers |
-| **Bounded variants** | Whole priority/matrix buckets rebuilt in deterministic orders |
-| **Negotiated congestion** | Signal nets may temporarily share capacity; present and historical costs move later candidates away from persistent conflicts |
-| **Conflict-directed rip-up** | Exact native DRC markers form a net-conflict graph; deterministic independent sets are legalized and only victims are retried |
-| **Organic power areas** | Native zone boundaries; KiCad remains fill/thermal authority |
-| **Validation** | Embedded multilayer connectivity graph, native DRC, then official KiCad DRC |
+|-------|----------------|
+| Exact board model | Pad XY/rotation/layers, Edge.Cuts, fab rules, through vias |
+| Pin-access oracle | Finite legal offset-via sites (`pin_access.py` + C++ checks) |
+| Net hypergraph | Crossing-aware trees + DSATUR (`graph_theory.py`) |
+| **Capacity mesh (C++)** | Hierarchical cells + section layer plan (`capacity_mesh.cpp`, [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md)) |
+| Detailed free-angle | ExactMap + GridMap isotropic search in `pr_native` |
+| Atomic full-net commit | Partial stubs never paint |
+| Negotiated congestion | PathFinder history + conflict-directed rip-up |
+| Validation | Native DRC → KiCad DRC oracle |
 
 ```text
 KiCad board + rules
         |
         v
-pad/layer model -> exact pin-access sites -> net hypergraph/topology candidates
-                                               |
-                            capacity negotiation + per-section layer/via plan
-                                               |
-                              detailed C++ negotiated routing
-                                         |
-                         atomic track/via geometry transactions
-                                         |
-                    native DRC <-> local rip-up/search-and-repair
-                                         |
-                         zones/refill -> KiCad DRC -> score
+pad model → pin-access sites → hypergraph topology
+        |
+        v
+C++ capacity mesh → per-section layer assignment
+        |
+        v
+detailed free-angle (atomic nets, real vias)
+        |
+        v
+native DRC → optional KiCad DRC → score
 ```
 
-The remaining algorithmic bottleneck is dense CPX bundle completion. The v2
-flow removes the previous “invent a via after maze search” failure: it reserves
-legal escape candidates before layer assignment and gives the C++ detailed
-router the chosen layer for each topology section. Board-wide negotiation still
-performs three bounded PathFinder rounds, accumulates historical cost on
-overused cells and exact DRC markers, legalizes a maximal independent set of
-the conflict graph, and repairs only its victims. It never returns temporary
-overlap as committed copper and cannot regress the legal input baseline.
+Ideas adapted from the MIT [tscircuit capacity-autorouter](https://github.com/tscircuit/tscircuit-autorouter) (mesh, depth, step pipeline) — **implemented in C++**, not as a TypeScript dependency.
 
-Current v1.9.1 HALO checkpoint: 12/23 nets, including CPX-1 and CPX-2, as 941
-segments and 271.8 mm total track. It has zero native hard violations, zero
-via/pad overlaps, and zero generated-copper KiCad errors. Eleven nets remain
-atomically open and KiCad reports 168 unconnected items, so this is a legal
-partial artifact rather than a finished board. This is the pre-v2 checkpoint,
-retained as a regression baseline; a new HALO run is required to measure the
-pin-access/section planner. The previous 42-via/GND-area
-snapshot is intentionally superseded: the stricter audit found 33 via/pad
-violations in it. The current legal selection uses no vias or areas, which is
-honest but underuses the four-layer board.
-
-HALO now defaults to the explicit JLCPCB `4layer_capability` profile because
-its source KiCad design already uses 0.45/0.20 mm through vias. JLCPCB's current
-multilayer [capability table](https://jlcpcb.com/capabilities/pcb-capabilities)
-supports smaller geometry than this; the profile keeps a 0.125 mm radial
-annulus. Exact preflight improves from 122/240 SMD anchors with legal inner
-access at 0.60/0.30 mm to 191/240 at 0.45/0.20 mm.
-The general synthetic/default preset remains on 0.60/0.30 mm recommended vias.
+---
 
 ## Definition of working
 
-A candidate can be selected as “best” only when:
+A route may be selected as “best” only when:
 
-1. Every required pad belongs to the correct net's multilayer connected
-   component.
-2. Rejected nets leave no partial copper.
-3. Every layer transition has a legal via and valid span.
-4. Native pad/track/via/outline/connectivity DRC reports zero hard violations.
-5. Applied and refilled KiCad copper reports zero copper DRC errors.
-6. Viewer, score, route artifact and API expose identical metrics.
-7. The run records source commit, native version/build flags, rules, seed and
-   wall time.
-8. Routing is deterministic for a seed, responsive, cancellable and bounded by
-   a hard deadline.
+1. Every required pad is in the correct multilayer connected component.
+2. Rejected nets leave **no** partial copper.
+3. Every layer transition has a legal via.
+4. Native DRC reports **zero** hard violations.
+5. Applied KiCad copper reports zero copper DRC errors (when checked).
+6. Viewer, score, and API expose the same metrics.
+7. Source commit, native version, rules, seed, and wall time are recorded.
 
-Length, via count and visual smoothness are optimized only after these
-invariants hold.
-
-## Benchmarks
-
-- **Synthetic:** all nets connected, native DRC zero, KiCad DRC zero.
-- **HALO-90:** 90 locked LEDs, ten 19-pin CPX nets, 256 pads and four copper
-  layers; primary topology, escape, via and congestion stress test.
-- **Released HALO copper:** human-routed topology/layer reference, not a
-  geometry-copy target.
-- **FreeRouting DSN/SES:** external GPL-3.0 baseline; code is not copied into
-  this MIT project.
-- **Adversarial fixtures:** rotated SMD pads, inaccessible layers, missing and
-  dangling vias, track-through-pad, narrow channels, zones and Edge.Cuts.
-
-Never publish a route metric without its copper artifact and KiCad report.
+---
 
 ## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-
-# Required native C++17 router.
 bash scripts/build_native.sh
 python -c "from physics_router.native_bridge import info; print(info())"
 
-# Uses third_party/halo-90 when the repository is present.
+# Control plane (HALO-90 if cloned; or PHYSICS_ROUTER_PRESET=physics)
 physics-router serve --host 127.0.0.1 --port 8765
-# http://127.0.0.1:8765/
 
-pytest
+pytest -q
 python scripts/ci_regression.py
 ```
 
 ### CLI
 
 ```bash
-physics-router import-nets --pcb board.kicad_pcb --project-dir . -o placement_config.yaml
+physics-router import-nets --pcb board.kicad_pcb -o placement_config.yaml
 physics-router route --config placement_config.yaml --pcb board.kicad_pcb \
-  --out route.json --out-pcb routed.kicad_pcb --drc
-physics-router drc --pcb routed.kicad_pcb --out-dir drc_out
-physics-router export-dsn --config placement_config.yaml -o board.dsn
+  --pipeline capacity --effort 0.55 --out route.json --out-pcb routed.kicad_pcb --drc
 ```
+
+### Presets
+
+| Preset | Board |
+|--------|--------|
+| `halo-90` | Wearable charlieplex stress board (`third_party/halo-90`) |
+| `physics` | Muon3 telescope (`../physics` v10 layout, `examples/physics/`) |
+| `synthetic` | Built-in demo_buck |
+
+The 2D viewer substrate follows **loaded Edge.Cuts** (rectangle or ring) — not a hard-coded HALO circle.
+
+---
 
 ## Repository map
 
 | Path | Role |
-|---|---|
-| `native/` | C++ free-angle search, occupancy/exact maps, atomic nets, vias and areas |
-| `src/physics_router/graph_theory.py` | Hypergraphs, crossing-aware trees, conflict graph and DSATUR |
-| `src/physics_router/pin_access.py` | Exact pad-access preflight and finite legal offset-via candidates |
-| `src/physics_router/global_router.py` | Capacity negotiation and per-topology-section layer assignments |
-| `src/physics_router/native_bridge.py` | Exact board/pad/layer translation into the native core |
-| `src/physics_router/router.py` | Routing orchestration, embedded connectivity, DRC and KiCad output |
-| `src/physics_router/negotiated_congestion.py` | PathFinder present/historical costs and conflict-directed rip-up |
-| `src/physics_router/hybrid_route.py` | Per-net/region algorithm selection under shared rules ([docs/HYBRID_ROUTING.md](docs/HYBRID_ROUTING.md)) |
-| `src/physics_router/continuous_improve.py` | Candidate loop, scoring, deadlines and KiCad oracle |
-| `src/physics_router/kicad_tools.py` | KiCad DRC/ERC, renders and exports |
-| `viewer/` / `src/physics_router/server.py` | Local UI, API and live progress |
-| `examples/halo-90/` | HALO configuration and recorded experiments |
+|------|------|
+| `native/` | C++ ExactMap, free-angle search, **capacity mesh**, DRC |
+| `src/physics_router/capacity_mesh.py` | Mesh API (prefers C++) |
+| `src/physics_router/route_pipeline.py` | Step pipeline: access → mesh → detail → gate |
+| `src/physics_router/global_router.py` | Section layer negotiation |
+| `src/physics_router/pin_access.py` | Offset-via preflight |
+| `src/physics_router/hybrid_route.py` | Multi-strategy free-angle buckets |
+| `src/physics_router/router.py` | Orchestration, sequential zero-violation policy |
+| `viewer/` + `server.py` | Local UI / API |
+| `examples/halo-90/` · `examples/physics/` | Board configs + benches |
 
 ## Documentation
 
-- [Detailed failure analysis and scientific basis](docs/AUTOROUTER_FAILURE_ANALYSIS.md)
+- [Capacity mesh (C++ / tscircuit-inspired)](docs/CAPACITY_MESH.md)
+- [Failure analysis](docs/AUTOROUTER_FAILURE_ANALYSIS.md)
 - [Design decisions](DESIGN.md)
 - [Topology-first architecture](docs/ARCHITECTURE_ROUTER.md)
-- [TopoR product-model research](docs/TOPOR.md)
+- [TopoR research](docs/TOPOR.md)
 - [Hybrid routing](docs/HYBRID_ROUTING.md)
-- [Research bibliography](RESEARCH.md)
 - [JLCPCB rules](docs/JLCPCB_4LAYER.md)
 - [Native core](native/README.md)
-
-Routing-process images are versioned experiments, not fabrication proof. They
-must be regenerated with the route artifact and matching DRC reports:
-
-```bash
-python scripts/render_routing_process.py --halo
-```
+- [Research bibliography](RESEARCH.md)
 
 ## Requirements and license
 
 - Python 3.10+
-- CMake 3.16+ and a C++17 compiler
-- KiCad 8+ / `kicad-cli` for authoritative real-board validation
-- Optional OpenMP, OpenCL, Ngspice and OpenEMS/CSXCAD
+- CMake 3.16+ / C++17
+- KiCad 8+ (`kicad-cli`) for authoritative DRC
+- Optional: OpenMP, OpenCL, Ngspice, OpenEMS
 
-MIT. HALO-90 is a separate project cloned under the gitignored `third_party/`
-directory.
+MIT. HALO-90 and other product boards are separate projects under `third_party/` or sibling repos.

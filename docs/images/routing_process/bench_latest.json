@@ -1,0 +1,80 @@
+{
+  "native": {
+    "available": true,
+    "version": "2.0.0-production-flow",
+    "gpu": {
+      "available": true,
+      "device_name": "Apple M3",
+      "backend": "opencl"
+    },
+    "features": {
+      "isotropic": true,
+      "post_rubberband": true,
+      "via_minimize": true,
+      "via_reasons": true,
+      "atomic_nets": true,
+      "copper_areas": true,
+      "topology_safe_rubberband": true,
+      "matrix_bundle": true,
+      "oriented_pad_obstacles": true,
+      "anchor_layer_reachability": true,
+      "width_aware_obstacle_inflation": true,
+      "hypergraph_topology": true,
+      "crossing_aware_mst": true,
+      "dsatur_layer_coloring": true,
+      "pathfinder_history": true,
+      "conflict_directed_ripup": true,
+      "no_via_in_pad": true,
+      "pin_access_oracle": true,
+      "section_layer_planning": true
+    }
+  },
+  "benches": [
+    {
+      "name": "synthetic_native_route",
+      "time_s": 0.003,
+      "segs": 28,
+      "vias": 12,
+      "notes": [
+        "capacity_mesh: nodes=187 edges=120 sections=12 depth=6 overflow=1 effort=0.550000"
+      ]
+    },
+    {
+      "name": "synthetic_clearance_aware",
+      "time_s": 0.005,
+      "segs": 29,
+      "vias": 12,
+      "shorts": 0,
+      "viol": 0,
+      "unrouted": 0
+    },
+    {
+      "name": "synthetic_capacity_mesh",
+      "time_s": 0.006,
+      "nodes": 535,
+      "edges": 862,
+      "depth": 6,
+      "backend": null
+    },
+    {
+      "name": "synthetic_capacity_pipeline",
+      "time_s": 0.102,
+      "segs": 22,
+      "vias": 4,
+      "shorts": 0,
+      "unrouted": 0
+    },
+    {
+      "name": "halo90_native_sequential",
+      "time_s": 27.18,
+      "segs": 199,
+      "vias": 20,
+      "shorts": 0,
+      "viol": 0,
+      "ok_nets": 8,
+      "total_nets": 23,
+      "unrouted": 15,
+      "length_mm": 238.5
+    }
+  ]
+}

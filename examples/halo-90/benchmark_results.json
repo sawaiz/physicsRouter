@@ -1,26 +1,34 @@
 {
   "timings_s": {
-    "score": 0.043,
+    "score": 0.049,
     "pre_route": 0.0,
-    "route_guide": 11.112,
-    "route_clearance_grid1mm": 34.64
+    "route_guide": 0.193,
+    "route_clearance_grid1mm": 138.537
   },
   "metrics": {
-    "score_total": 164910.87,
+    "score_total": 211375.51,
     "score_breakdown": {
       "weighted_wirelength": 4244.92,
       "power_loop_area": 563.5,
       "critical_net_length": 10908.21,
-      "overlap_penalty": 1179.21,
+      "overlap_penalty": 1754.69,
       "region_violation": 0.0,
       "density_congestion": 123.18,
       "thermal_spread": 0.0,
       "emi_proxy": 3775.32,
       "spice_score": 9.88,
       "openems_score": 3944.36,
-      "total": 164910.87
+      "ir_drop": 0.0,
+      "loop_inductance": 109.63,
+      "return_path": 17.13,
+      "matrix_length_match": 0.0,
+      "total": 211375.51
     },
     "physics_notes": [
+      "ir_drop ok",
+      "loop_L coin_cell:27.3nH,charlieplex:82.4nH",
+      "return_path nets=12 gnd_centroid=(0.3,1.6)",
+      "matrix_match CPX:skew=0.7mm(2%),charlieplex:skew=0.7mm(2%)",
       "spice_proxy L\u224818.99nH loop_area=563.5mm\u00b2 power_len=38.2mm; ngspice_ok",
       "em_proxy emi=3775.32; em_nets=10; openEMS_binary_present(export_via_cli)"
     ],
@@ -41,29 +49,47 @@
         "Analog nets present: spatial separation from high-di/dt nets; avoid crossing CPX/switcher on same layer.",
         "Differential/I2C pairs: co-route on same layer with matched length (pairs: [('SDA', 'SCL'), ('SCL', 'SDA')]).",
         "Only through vias allowed (KiCad rules): each layer change costs a full through via \u2014 prefer same-layer completion (via minimization).",
-        "DRC floors: clearance\u22650.127mm, track\u22650.127mm, via\u22650.44999999999999996mm."
+        "DRC floors: clearance\u22650.15mm, track\u22650.15mm, via\u22650.6mm."
       ],
-      "recommended_grid_mm": 0.127,
-      "recommended_clearance_mm": 0.127
+      "recommended_grid_mm": 0.1,
+      "recommended_clearance_mm": 0.15
     },
     "guide": {
-      "segments": 207,
-      "length_mm": 854.1,
+      "segments": 217,
+      "length_mm": 791.26,
       "vias": 0,
       "unrouted": []
     },
     "route": {
-      "segments": 208,
-      "length_mm": 854.49,
-      "vias": 0,
-      "unrouted": [],
-      "violations": 206,
+      "segments": 136,
+      "length_mm": 211.28,
+      "vias": 14,
+      "unrouted": [
+        "+3V",
+        "XL-INT2",
+        "Net-(R3-Pad2)",
+        "TX",
+        "Net-(TP2-Pad1)",
+        "XL-INT1",
+        "CPX-0",
+        "CPX-1",
+        "CPX-3",
+        "CPX-6",
+        "CPX-7",
+        "CPX-8",
+        "CPX-9",
+        "CPX-4"
+      ],
+      "violations": 0,
       "notes": [
-        "clearance_mm=0.15 free_angle+via layers=['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu']",
-        "layer_policy: F.Cu~H-preferred, In1.Cu~V-preferred, In2.Cu~H-preferred, B.Cu~V-preferred (free-angle still used when LOS clear)",
-        "drc: clearance\u22650.15mm track_min=0.127mm layers=['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu'] vias_through=True",
-        "pair:SDA+SCL prefer same layer / matched length",
-        "pair:SCL+SDA prefer same layer / matched length"
+        "pipeline: hybrid multi-strategy (topological free-angle)",
+        "policy: sequential zero-violation per phase (priority/weight, rip-up, open>short)",
+        "upstream: capacity-mesh + pin-access global plan (tscircuit-inspired)",
+        "strategy counts: power=2, critical=11, matrix=10",
+        "policy: full-net commit; open copper beats partial",
+        "native_batch: committed 0/2 full legal net(s)",
+        "gpu: opencl Apple M3",
+        "openmp: disabled"
       ]
     }
   },

@@ -4,6 +4,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <functional>
 
 namespace pr {
 namespace {
@@ -463,9 +464,19 @@ CapacityPlanStats plan_capacity_for_nets(std::vector<NetSpec> &nets,
   }
   stats.final_overflow = overflow_final;
 
-  // Write topology_edge_layers and reorder preferred_layers
+  // Write topology_edge_layers only for nets that did not already carry a full
+  // host-supplied section plan (Python global router / tests).
+  std::unordered_set<int> locked_nets;
+  for (size_t ni = 0; ni < nets.size(); ++ni) {
+    const auto &net = nets[ni];
+    if (!net.topology_edges.empty() &&
+        net.topology_edge_layers.size() == net.topology_edges.size())
+      locked_nets.insert(static_cast<int>(ni));
+  }
   for (size_t si = 0; si < sections.size(); ++si) {
     const auto &sec = sections[si];
+    if (locked_nets.count(sec.net_i))
+      continue;
     auto &net = nets[sec.net_i];
     if (net.topology_edge_layers.size() < net.topology_edges.size())
       net.topology_edge_layers.resize(net.topology_edges.size(), 0);
@@ -473,8 +484,9 @@ CapacityPlanStats plan_capacity_for_nets(std::vector<NetSpec> &nets,
         static_cast<size_t>(sec.edge_i) < net.topology_edge_layers.size())
       net.topology_edge_layers[sec.edge_i] = best_layer[si];
   }
-  for (auto &net : nets) {
-    if (net.topology_edge_layers.empty())
+  for (size_t ni = 0; ni < nets.size(); ++ni) {
+    auto &net = nets[ni];
+    if (net.topology_edge_layers.empty() || locked_nets.count(static_cast<int>(ni)))
       continue;
     // Count layers
     std::vector<int> counts(std::max(1, cfg.num_layers), 0);
@@ -489,7 +501,16 @@ CapacityPlanStats plan_capacity_for_nets(std::vector<NetSpec> &nets,
         return counts[a] > counts[b];
       return a < b;
     });
-    net.preferred_layers = order;
+    // Keep any pre-set preferred head, then capacity order
+    if (net.preferred_layers.empty())
+      net.preferred_layers = order;
+    else {
+      std::vector<int> merged = net.preferred_layers;
+      for (int ly : order)
+        if (std::find(merged.begin(), merged.end(), ly) == merged.end())
+          merged.push_back(ly);
+      net.preferred_layers = merged;
+    }
   }
   stats.sections_assigned = static_cast<int>(sections.size());
   return stats;
