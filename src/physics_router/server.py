@@ -189,7 +189,34 @@ class AppState:
             default_flow_style=False,
         )
 
+    def _reset_session_geometry(self) -> None:
+        """Clear routes/scores and rebuild viewer for a new board."""
+        self.config_text = self._config_to_yaml()
+        self._board = self._build_board()
+        self.routes = {}
+        self.selected_route = None
+        self.routed_pcb_path = None
+        self.last_score = None
+        self.last_placement = None
+        self.last_comparison = None
+        self.glb_url = None
+        self.step_url = None
+        self._discover_assets()
+        self._refresh_viewer()
+        if self.pcb_path and Path(self.pcb_path).exists():
+            try:
+                self.enqueue("export_board_3d", {"also_step": False, "force": True})
+            except Exception:
+                pass
+
     def _load_preset(self, name: str) -> None:
+        if name in ("custom", "import", "any"):
+            # Custom boards are loaded via /api/board/open or /api/board/import.
+            # Keep current geometry rather than wiping to synthetic.
+            if self.board_source == "pcb" and self.pcb_path:
+                self.preset = "custom"
+                return
+            name = "synthetic"
         if name in ("physics", "muon3", "muon") and PHYSICS_CFG.exists():
             self.config = load_config(PHYSICS_CFG)
             self.preset = "physics"
@@ -217,23 +244,105 @@ class AppState:
             self.pcb_path = None
             self.board_source = "synthetic"
             self.fab_profile = "4layer_recommended"
-        self.config_text = self._config_to_yaml()
-        self._board = self._build_board()
-        self.routes = {}
-        self.selected_route = None
-        self.routed_pcb_path = None
-        self.last_score = None
-        self.last_placement = None
-        self.glb_url = None  # drop previous preset model before rediscover
-        self.step_url = None
-        self._discover_assets()
-        self._refresh_viewer()
-        # Always re-export 3D when PCB present so layout/model match the active preset
-        if self.pcb_path and Path(self.pcb_path).exists():
-            try:
-                self.enqueue("export_board_3d", {"also_step": False, "force": True})
-            except Exception:
-                pass
+        self._reset_session_geometry()
+
+    def load_pcb(
+        self,
+        pcb_path: str | Path,
+        *,
+        config_path: str | Path | None = None,
+        auto_import_nets: bool = True,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Load any ``.kicad_pcb`` from disk (absolute or repo-relative path)."""
+        path = Path(pcb_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"PCB not found: {path}")
+        if path.suffix.lower() not in (".kicad_pcb", ".kicad_mod"):
+            # still allow if content looks like kicad_pcb
+            if "kicad_pcb" not in path.name.lower() and path.suffix:
+                raise ValueError(f"expected a .kicad_pcb file, got {path.name}")
+
+        if config_path:
+            cfg_path = Path(config_path).expanduser().resolve()
+            if not cfg_path.is_file():
+                raise FileNotFoundError(f"config not found: {cfg_path}")
+            self.config = load_config(cfg_path)
+        elif auto_import_nets:
+            from physics_router.config_io import example_config as _ex
+            from physics_router.net_import import import_labels_to_config
+
+            base = _ex()
+            base.nets = []
+            base.notes = f"Auto-imported from {path.name}"
+            sch = path.with_suffix(".kicad_sch")
+            self.config = import_labels_to_config(
+                base,
+                pcb_path=path,
+                schematic_path=sch if sch.is_file() else None,
+                project_dir=path.parent,
+            )
+            self.config.project_name = project_name or path.stem
+        # else keep current config, only swap PCB geometry
+
+        if project_name:
+            self.config.project_name = project_name
+        elif not (self.config.project_name and self.config.project_name not in ("unnamed", "demo_buck")):
+            self.config.project_name = path.stem
+
+        self.preset = "custom"
+        self.pcb_path = str(path)
+        self.board_source = "pcb"
+        self._reset_session_geometry()
+        b = self.board()
+        return {
+            "preset": self.preset,
+            "pcb_path": self.pcb_path,
+            "project_name": self.config.project_name,
+            "components": len(b.components),
+            "nets": len(b.nets),
+            "copper_layers": list(b.copper_layers or []),
+            "width_mm": b.width_mm,
+            "height_mm": b.height_mm,
+        }
+
+    def import_pcb_bytes(
+        self,
+        data: bytes | str,
+        *,
+        filename: str = "uploaded.kicad_pcb",
+        config_text: str | None = None,
+    ) -> dict[str, Any]:
+        """Save uploaded PCB text/bytes under viewer/runs/imports/ and load it."""
+        name = Path(filename).name or "uploaded.kicad_pcb"
+        if not name.lower().endswith(".kicad_pcb"):
+            name = f"{name}.kicad_pcb"
+        dest_dir = WORK_DIR / "imports"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        # unique folder per upload
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        dest = dest_dir / f"{stamp}_{name}"
+        text = data.decode("utf-8", errors="replace") if isinstance(data, (bytes, bytearray)) else str(data)
+        if "(kicad_pcb" not in text[:500] and "kicad_pcb" not in text[:200].lower():
+            raise ValueError("file does not look like a KiCad PCB s-expression")
+        dest.write_text(text, encoding="utf-8")
+
+        cfg_path = None
+        if config_text and config_text.strip():
+            import yaml
+
+            cfg_dest = dest.with_suffix(".yaml")
+            # validate YAML
+            yaml.safe_load(config_text)
+            cfg_dest.write_text(config_text, encoding="utf-8")
+            cfg_path = cfg_dest
+
+        return self.load_pcb(
+            dest,
+            config_path=cfg_path,
+            auto_import_nets=cfg_path is None,
+            project_name=Path(name).stem,
+        )
 
     def _build_board(self):
         if (
@@ -1726,12 +1835,20 @@ def _fab_profiles_payload() -> list[dict[str, Any]]:
 
 
 def list_presets() -> list[dict[str, Any]]:
-    presets: list[dict[str, Any]] = []
+    presets: list[dict[str, Any]] = [
+        {
+            "id": "custom",
+            "label": "Custom (import any .kicad_pcb)",
+            "has_pcb": False,
+            "config": None,
+            "importable": True,
+        }
+    ]
     if PHYSICS_CFG.exists():
         presets.append(
             {
                 "id": "physics",
-                "label": "Muon3 / physics (../physics telescope v10)",
+                "label": "Muon3 / physics",
                 "has_pcb": PHYSICS_PCB.exists(),
                 "config": str(PHYSICS_CFG.relative_to(ROOT)),
                 "pcb": str(PHYSICS_PCB) if PHYSICS_PCB.exists() else None,
@@ -1750,7 +1867,7 @@ def list_presets() -> list[dict[str, Any]]:
     presets.append(
         {
             "id": "synthetic",
-            "label": "Synthetic demo_buck",
+            "label": "Synthetic demo",
             "has_pcb": False,
             "config": "built-in",
         }
@@ -1759,7 +1876,7 @@ def list_presets() -> list[dict[str, Any]]:
         presets.append(
             {
                 "id": "demo",
-                "label": "examples/placement_config.yaml",
+                "label": "YAML demo",
                 "has_pcb": False,
                 "config": str((EXAMPLES / "placement_config.yaml").relative_to(ROOT)),
             }
@@ -2080,6 +2197,47 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
                 return self._json(200, snap)
+            if path in ("/api/board/open", "/api/board/load"):
+                # Open any board from an absolute/relative filesystem path
+                pcb = body.get("pcb_path") or body.get("path") or body.get("pcb")
+                if not pcb:
+                    return self._json(400, {"error": "pcb_path required"})
+                cfg_p = body.get("config_path") or body.get("config")
+                auto = body.get("auto_import_nets", True)
+                with STATE.lock:
+                    info = STATE.load_pcb(
+                        pcb,
+                        config_path=cfg_p,
+                        auto_import_nets=bool(auto),
+                        project_name=body.get("project_name"),
+                    )
+                    snap = STATE.snapshot()
+                    try:
+                        snap["viewer"] = STATE.viewer_payload
+                    except Exception:
+                        pass
+                return self._json(200, {"ok": True, "board": info, **snap})
+            if path == "/api/board/import":
+                # Browser upload: PCB s-expr as text (and optional YAML)
+                pcb_text = body.get("pcb_text") or body.get("content") or body.get("text")
+                if not pcb_text:
+                    return self._json(
+                        400,
+                        {"error": "pcb_text required (paste or upload .kicad_pcb contents)"},
+                    )
+                filename = body.get("filename") or body.get("name") or "uploaded.kicad_pcb"
+                with STATE.lock:
+                    info = STATE.import_pcb_bytes(
+                        pcb_text,
+                        filename=str(filename),
+                        config_text=body.get("config_text"),
+                    )
+                    snap = STATE.snapshot()
+                    try:
+                        snap["viewer"] = STATE.viewer_payload
+                    except Exception:
+                        pass
+                return self._json(200, {"ok": True, "board": info, **snap})
             if path == "/api/config/apply":
                 # Apply JSON config object or YAML text
                 if "config_text" in body:

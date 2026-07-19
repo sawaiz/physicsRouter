@@ -181,6 +181,31 @@
     .muted { color: var(--muted); }
     .legend { display: flex; flex-wrap: wrap; gap: 0.55rem; font-size: 0.68rem; color: var(--muted); }
     .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.25rem; vertical-align: middle; }
+    .dropzone {
+      border: 1.5px dashed #3a4a62; border-radius: 12px; padding: 1.1rem 0.85rem;
+      text-align: center; background: #0f1419; cursor: pointer; transition: border-color .15s, background .15s;
+      margin: 0.35rem 0 0.55rem;
+    }
+    .dropzone:hover, .dropzone.drag {
+      border-color: var(--accent); background: #152030;
+    }
+    .dropzone .dz-title { font-weight: 600; font-size: 0.88rem; margin: 0 0 0.25rem; }
+    .dropzone .dz-sub { color: var(--muted); font-size: 0.72rem; margin: 0; line-height: 1.35; }
+    .dropzone input[type=file] { display: none; }
+    .example-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0 0.55rem; }
+    .chip-btn {
+      background: #0f1419; border: 1px solid var(--line); color: var(--text);
+      border-radius: 999px; padding: 0.32rem 0.65rem; font: inherit; font-size: 0.74rem; cursor: pointer;
+    }
+    .chip-btn:hover { border-color: var(--accent); }
+    .chip-btn.active { background: #1e3a55; border-color: #3a7abd; }
+    .chip-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .board-status {
+      background: #0f1419; border: 1px solid var(--line); border-radius: 10px;
+      padding: 0.5rem 0.6rem; font-size: 0.76rem; margin: 0.45rem 0 0.55rem; line-height: 1.45;
+    }
+    .board-status strong { color: var(--good); }
+    .path-row { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem; align-items: end; }
   </style>
   <script type="importmap">
   {
@@ -204,7 +229,7 @@
 
     <nav id="steps">
       <button type="button" class="step active" data-step="0">
-        <span class="n">1</span><span class="t">Board</span><span class="d">Load preset</span>
+        <span class="n">1</span><span class="t">Board</span><span class="d">Import any PCB</span>
       </button>
       <button type="button" class="step" data-step="1">
         <span class="n">2</span><span class="t">Place</span><span class="d">Optional</span>
@@ -312,7 +337,7 @@
   };
 
   const STEPS = [
-    { title: 'Board', hint: 'Pick a preset. 2D follows that board’s Edge.Cuts (rect or ring) and footprints.' },
+    { title: 'Board', hint: 'Drop any .kicad_pcb — nets import automatically. Or pick an example.' },
     { title: 'Place', hint: 'Optional. Moves only unlocked parts. Skip if the layout is already fixed.' },
     { title: 'Route', hint: 'Auto-route on the 2D board. Improve keeps trying until the grade and DRC goal (or timeout).' },
     { title: '3D', hint: 'Inspect the board in 3D after routing. Optional OpenEMS / EMI volumes.' },
@@ -1042,7 +1067,7 @@
   }
 
   function panelSetup() {
-    const presets = state.snap?.presets || [{ id: 'halo-90', label: 'HALO-90' }];
+    const presets = (state.snap?.presets || []).filter(p => p.id !== 'custom');
     const sess = state.snap?.session || {};
     const fabs = state.snap?.fab_profiles || [];
     const fabId = state.snap?.fab_profile || '4layer_recommended';
@@ -1057,31 +1082,62 @@
           ['4layer_capability','4-layer capability (min)'],
           ['6layer_capability','6-layer capability (min)'],
         ].map(([id, lab]) => `<option value="${id}" ${id===fabId?'selected':''}>${lab}</option>`).join('');
+    const pcbName = state.snap?.pcb_path
+      ? String(state.snap.pcb_path).split('/').pop()
+      : (state.snap?.preset === 'synthetic' || state.snap?.preset === 'demo' ? 'synthetic' : '—');
+    const project = state.snap?.config?.project_name || state.snap?.session?.project_name || state.snap?.preset || '—';
+    const layers = (sess.copper_layers || []).slice(0, 6).join(', ') || '—';
+    const w = sess.width_mm != null ? Number(sess.width_mm).toFixed(1) : null;
+    const h = sess.height_mm != null ? Number(sess.height_mm).toFixed(1) : null;
+    const size = (w && h) ? `${w} × ${h} mm` : '';
+    const exampleChips = presets.map(p => {
+      const active = p.id === state.snap?.preset;
+      const miss = p.has_pcb === false && p.id !== 'synthetic' && p.id !== 'demo';
+      return `<button type="button" class="chip-btn${active ? ' active' : ''}" data-example="${esc(p.id)}"
+        ${miss ? 'disabled title="PCB file missing"' : ''}>${esc(p.label || p.id)}</button>`;
+    }).join('');
     return `
-      <label class="field">Preset</label>
-      <select id="presetSel">
-        ${presets.map(p => `<option value="${p.id}" ${p.id === (state.snap?.preset || 'halo-90') ? 'selected' : ''}>${esc(p.label || p.id)}${p.has_pcb ? '' : ' (no PCB)'}</option>`).join('')}
-      </select>
+      <div class="dropzone" id="boardDrop" tabindex="0" role="button" aria-label="Import KiCad PCB">
+        <p class="dz-title">Drop a .kicad_pcb here</p>
+        <p class="dz-sub">or click to browse · nets &amp; layers import automatically</p>
+        <input type="file" id="pcbFile" accept=".kicad_pcb,application/octet-stream,text/plain"/>
+      </div>
+
+      <label class="field">Or open a path on this machine</label>
+      <div class="path-row">
+        <input type="text" id="pcbPath" placeholder="/path/to/board.kicad_pcb" spellcheck="false"
+          value="${esc(state.snap?.preset === 'custom' ? (state.snap?.pcb_path || '') : '')}"/>
+        <button type="button" class="btn primary" id="btnOpenPath">Open</button>
+      </div>
+
+      <label class="field" style="margin-top:0.55rem">Examples</label>
+      <div class="example-chips" id="exampleChips">${exampleChips || '<span class="muted">No examples</span>'}</div>
+
+      <div class="board-status" id="boardStatus">
+        ${sess.components != null
+          ? `<strong>${esc(project)}</strong> · ${esc(pcbName)}<br/>
+             ${sess.components} parts · ${sess.nets ?? '—'} nets · ${esc(layers)}
+             ${size ? ` · ${size}` : ''}`
+          : 'No board loaded yet — drop a file or pick an example.'}
+      </div>
+
       <div class="actions">
-        <button type="button" class="btn primary" id="btnLoadPreset">Load board</button>
-        <button type="button" class="btn good" id="btnGoRoute">Route →</button>
+        <button type="button" class="btn good" id="btnGoRoute" style="flex:1"
+          ${sess.components ? '' : 'disabled'}>Route this board →</button>
       </div>
-      <label class="field" style="margin-top:0.55rem">JLCPCB fab profile</label>
-      <select id="fabProfileSel">${fabOpts}</select>
-      <button type="button" class="btn" id="btnApplyFab" style="margin-top:0.35rem">Apply fab profile</button>
-      <div class="sim-chip" id="fabProfileInfo" style="margin-top:0.45rem;font-size:0.72rem">
-        ${fab ? `<strong>${esc(fab.label)}</strong><br/>${esc(fab.summary || '')}
-          ${(fab.suggestions||[]).length ? `<br/><span class="muted">Tips: ${esc((fab.suggestions||[]).slice(0,2).join(' · '))}</span>` : ''}
-          ${(fab.limitations||[]).length ? `<br/><span class="muted">Limits: ${esc((fab.limitations||[]).slice(0,2).join(' · '))}</span>` : ''}`
-          : 'Pick 2L / 4L / 6L recommended or capability floors.'}
-      </div>
-      <table class="compact">
-        <tr><th>Parts</th><td>${sess.components ?? '—'} · <strong>${sess.movable ?? 0}</strong> free · ${sess.locked ?? '—'} locked</td></tr>
-        <tr><th>Nets</th><td>${sess.nets ?? '—'} · ${(sess.copper_layers || []).slice(0, 4).join(', ') || '—'}</td></tr>
-        <tr><th>File</th><td style="word-break:break-all;font-size:0.7rem">${esc((state.snap?.pcb_path || '—').split('/').slice(-2).join('/') || '—')}</td></tr>
-      </table>
-      <details style="margin-top:0.65rem">
-        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Advanced · YAML config</summary>
+
+      <details style="margin-top:0.35rem">
+        <summary class="muted" style="cursor:pointer;font-size:0.78rem">Fab profile · YAML</summary>
+        <label class="field" style="margin-top:0.45rem">JLCPCB fab profile</label>
+        <select id="fabProfileSel">${fabOpts}</select>
+        <button type="button" class="btn" id="btnApplyFab" style="margin-top:0.35rem">Apply fab profile</button>
+        <div class="sim-chip" id="fabProfileInfo" style="margin-top:0.45rem;font-size:0.72rem">
+          ${fab ? `<strong>${esc(fab.label)}</strong><br/>${esc(fab.summary || '')}
+            ${(fab.suggestions||[]).length ? `<br/><span class="muted">Tips: ${esc((fab.suggestions||[]).slice(0,2).join(' · '))}</span>` : ''}
+            ${(fab.limitations||[]).length ? `<br/><span class="muted">Limits: ${esc((fab.limitations||[]).slice(0,2).join(' · '))}</span>` : ''}`
+            : 'Pick 2L / 4L / 6L recommended or capability floors.'}
+        </div>
+        <label class="field" style="margin-top:0.55rem">YAML config</label>
         <textarea id="yamlEditor" style="margin-top:0.35rem">${esc(state.snap?.config_text || '')}</textarea>
         <button type="button" class="btn" id="btnApplyYaml" style="margin-top:0.35rem">Apply YAML</button>
       </details>`;
@@ -1201,30 +1257,25 @@
       </details>`;
   }
 
-  function bindStepPanel() {
-    $('#btnPrev')?.addEventListener('click', () => setStep(Math.max(0, state.step - 1)));
-    $('#btnNext')?.addEventListener('click', () => { if (state.step < 4) setStep(state.step + 1); });
-    $('#btnLoadPreset')?.addEventListener('click', async () => {
-      if (!state.live) return alert('physics-router serve');
-      state.snap = await api('/api/preset', { method: 'POST', body: JSON.stringify({ preset: $('#presetSel').value }) });
-      // Prefer viewer embedded in preset response; always re-fetch for disk write
-      state.viewer = state.snap?.viewer || await api('/api/viewer-data');
-      try { state.viewer = await api('/api/viewer-data'); } catch (_) { /* keep embedded */ }
-      state.layersBuilt = false;
-      state.sceneKey = '';
-      state.chartKey = '';
-      // Force 3D reload (drop cached GLB URL even if path string matches)
-      three.glbUrl = null;
-      three.glbLoading = false;
-      if (three.gKicad) clearGroup(three.gKicad);
-      updateLayers();
-      updateRouteSelect();
-      updateMetrics();
-      if (state.vizMode === '3d') rebuildScene();
-      else drawRoute2d();
-      renderStepPanel();
-      updateHeader();
-      // 3D export may still be running — poll once for new glb
+  /** Apply a board-load API response and refresh 2D/3D. */
+  async function applyBoardSnap(snap, { pollGlb = true } = {}) {
+    state.snap = snap;
+    state.viewer = snap?.viewer || null;
+    try { state.viewer = await api('/api/viewer-data'); } catch (_) { /* keep embedded */ }
+    state.layersBuilt = false;
+    state.sceneKey = '';
+    state.chartKey = '';
+    three.glbUrl = null;
+    three.glbLoading = false;
+    if (three.gKicad) clearGroup(three.gKicad);
+    updateLayers();
+    updateRouteSelect();
+    updateMetrics();
+    if (state.vizMode === '3d') rebuildScene();
+    else drawRoute2d();
+    renderStepPanel();
+    updateHeader();
+    if (pollGlb) {
       setTimeout(async () => {
         try {
           const v = await api('/api/viewer-data');
@@ -1236,9 +1287,106 @@
             if (state.vizMode === '3d') rebuildScene();
           } else if (state.vizMode === '2d') drawRoute2d();
           updateHeader();
+          if (state.step === 0) renderStepPanel();
         } catch (_) { /* ignore */ }
       }, 4000);
+    }
+  }
+
+  function setBoardBusy(msg) {
+    const st = $('#boardStatus');
+    if (st) st.innerHTML = `<span class="muted">${esc(msg || 'Loading…')}</span>`;
+  }
+
+  async function importPcbFile(file) {
+    if (!state.live) throw new Error('Start physics-router serve first');
+    if (!file) throw new Error('No file selected');
+    const name = file.name || 'uploaded.kicad_pcb';
+    if (!/\.kicad_pcb$/i.test(name) && !/kicad/i.test(name)) {
+      // still try — server validates content
+    }
+    setBoardBusy(`Reading ${name}…`);
+    const text = await file.text();
+    if (!text || text.length < 20) throw new Error('File is empty');
+    setBoardBusy(`Importing ${name}…`);
+    const snap = await api('/api/board/import', {
+      method: 'POST',
+      body: JSON.stringify({ pcb_text: text, filename: name }),
     });
+    await applyBoardSnap(snap);
+  }
+
+  async function openPcbPath(path) {
+    if (!state.live) throw new Error('Start physics-router serve first');
+    const p = (path || '').trim();
+    if (!p) throw new Error('Enter a path to a .kicad_pcb');
+    setBoardBusy(`Opening ${p.split('/').pop()}…`);
+    const snap = await api('/api/board/open', {
+      method: 'POST',
+      body: JSON.stringify({ pcb_path: p }),
+    });
+    await applyBoardSnap(snap);
+  }
+
+  async function loadExamplePreset(id) {
+    if (!state.live) throw new Error('Start physics-router serve first');
+    if (!id || id === 'custom') throw new Error('Pick a file to import');
+    setBoardBusy(`Loading ${id}…`);
+    const snap = await api('/api/preset', {
+      method: 'POST',
+      body: JSON.stringify({ preset: id }),
+    });
+    await applyBoardSnap(snap);
+  }
+
+  function bindBoardPanel() {
+    const drop = $('#boardDrop');
+    const fileInp = $('#pcbFile');
+    if (drop && fileInp) {
+      drop.addEventListener('click', () => fileInp.click());
+      drop.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInp.click(); }
+      });
+      ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation(); drop.classList.add('drag');
+      }));
+      ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation(); drop.classList.remove('drag');
+      }));
+      drop.addEventListener('drop', async (e) => {
+        const f = e.dataTransfer?.files?.[0];
+        try { await importPcbFile(f); }
+        catch (err) { alert(err.message || String(err)); renderStepPanel(); }
+      });
+      fileInp.addEventListener('change', async () => {
+        const f = fileInp.files?.[0];
+        try { await importPcbFile(f); }
+        catch (err) { alert(err.message || String(err)); renderStepPanel(); }
+        fileInp.value = '';
+      });
+    }
+    $('#btnOpenPath')?.addEventListener('click', async () => {
+      try { await openPcbPath($('#pcbPath')?.value); }
+      catch (err) { alert(err.message || String(err)); renderStepPanel(); }
+    });
+    $('#pcbPath')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        $('#btnOpenPath')?.click();
+      }
+    });
+    $$('[data-example]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try { await loadExamplePreset(btn.dataset.example); }
+        catch (err) { alert(err.message || String(err)); renderStepPanel(); }
+      });
+    });
+  }
+
+  function bindStepPanel() {
+    $('#btnPrev')?.addEventListener('click', () => setStep(Math.max(0, state.step - 1)));
+    $('#btnNext')?.addEventListener('click', () => { if (state.step < 4) setStep(state.step + 1); });
+    bindBoardPanel();
     $('#btnApplyYaml')?.addEventListener('click', async () => {
       if (!state.live) return;
       state.snap = await api('/api/config/apply', { method: 'POST', body: JSON.stringify({ config_text: $('#yamlEditor').value }) });
@@ -1261,7 +1409,6 @@
       try {
         const res = await api('/api/fab-profile', { method: 'POST', body: JSON.stringify({ profile }) });
         state.snap = { ...(state.snap || {}), fab_profile: res.fab_profile, fab_profiles: res.fab_profiles || state.snap?.fab_profiles };
-        // refresh panel text
         renderStepPanel();
       } catch (e) {
         alert(e.message || String(e));
