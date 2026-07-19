@@ -1592,6 +1592,7 @@ def _native_sequential_zero_violation(
     seed_result: RouteResult | None,
     design_rules: Any | None,
     progress_cb: ProgressCallback | None,
+    routing_plan: Any | None,
 ) -> RouteResult | None:
     """Route nets one-at-a-time via native core with zero-violation full-net commit.
 
@@ -1691,6 +1692,7 @@ def _native_sequential_zero_violation(
             ),
         ),
         use_copper_areas=True,
+        routing_plan=routing_plan,
     )
     if batch_raw is not None:
         candidate = _route_result_from_dict(batch_raw)
@@ -1818,6 +1820,7 @@ def _native_sequential_zero_violation(
             via_minimize=False,
             max_expansions=exp,
             use_copper_areas=True,
+            routing_plan=routing_plan,
         )
         if raw is None:
             return None  # fall back to Python sequential
@@ -2028,6 +2031,7 @@ def _native_sequential_zero_violation(
                 via_minimize=False,
                 max_expansions=exp,
                 use_copper_areas=True,
+                routing_plan=routing_plan,
             )
             if raw is None:
                 continue
@@ -2127,6 +2131,7 @@ def _native_sequential_zero_violation(
                 via_minimize=False,
                 max_expansions=exp,
                 use_copper_areas=True,
+                routing_plan=routing_plan,
             )
             if raw is None:
                 continue
@@ -2323,6 +2328,7 @@ def clearance_aware_route(
     k_homotopy: int | dict[str, int] | None = None,
     design_rules: Any | None = None,
     skip_hybrid: bool = False,
+    routing_plan: Any | None = None,
 ) -> RouteResult:
     """TopoR-inspired clearance-aware free-angle router with per-net feedback.
 
@@ -2369,6 +2375,7 @@ def clearance_aware_route(
                 design_rules,
                 clearance_mm=float(clearance_mm),
                 progress_cb=progress_cb,
+                routing_plan=routing_plan,
             )
         except Exception:
             pass
@@ -2389,6 +2396,7 @@ def clearance_aware_route(
                 seed_result=seed_result,
                 design_rules=design_rules,
                 progress_cb=progress_cb,
+                routing_plan=routing_plan,
             )
             if seq is not None:
                 return seq

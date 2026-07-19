@@ -62,6 +62,8 @@ def info() -> dict[str, Any]:
             "pathfinder_history": True,
             "conflict_directed_ripup": True,
             "no_via_in_pad": True,
+            "pin_access_oracle": True,
+            "section_layer_planning": True,
         },
     }
 
@@ -84,6 +86,7 @@ def route_board_native(
     max_expansions: int | None = None,
     use_copper_areas: bool = False,
     congestion: Any | None = None,
+    routing_plan: Any | None = None,
 ) -> dict[str, Any] | None:
     """Run native router; return a dict compatible with ``RouteResult.to_dict()``.
 
@@ -214,6 +217,7 @@ def route_board_native(
         # Topology is advisory: geometry remains available if incomplete board
         # metadata makes planning impossible.
         graph_plan_error = str(exc)
+    topology_plan = routing_plan if routing_plan is not None else graph_plan
 
     nets = []
     default_class = dict((rules.get("net_classes") or {}).get("Default") or {})
@@ -264,8 +268,19 @@ def route_board_native(
         ns.name = name
         ns.anchors = anchors
         ns.anchor_layers = [sorted(value) for value in anchor_layers]
-        if graph_plan is not None and hasattr(ns, "topology_edges"):
-            ns.topology_edges = graph_plan.topology_edges(name)
+        if topology_plan is not None and hasattr(ns, "topology_edges"):
+            ns.topology_edges = topology_plan.topology_edges(name)
+        if routing_plan is not None and hasattr(ns, "topology_edge_layers"):
+            ns.topology_edge_layers = [
+                layer_to_id[layer]
+                for layer in routing_plan.topology_edge_layers(name)
+                if layer in layer_to_id
+            ]
+        if routing_plan is not None and hasattr(ns, "anchor_via_sites"):
+            ns.anchor_via_sites = [
+                [m.Vec2(x, y) for x, y in routing_plan.access_sites_for(name, index)]
+                for index in range(len(anchors))
+            ]
         # An exclusive bucket's caller order is the routing policy (and may be
         # a deliberate rebuild variant). Full-board calls still use semantic
         # net weights. Keeping bucket priorities equal lets the C++ stable sort
@@ -293,6 +308,9 @@ def route_board_native(
         else:
             ns.width_mm = board_track_width
             nc = ""
+        planned_layers = (
+            routing_plan.preferred_layers(name) if routing_plan is not None else []
+        )
         graph_layer = (
             graph_plan.layer_assignment.get(name) if graph_plan is not None else None
         )
@@ -305,7 +323,10 @@ def route_board_native(
             fallback_primary = (
                 int(digits) if digits else sum(ord(ch) for ch in name)
             ) % cfg.num_layers
-        graph_primary = layer_to_id.get(graph_layer, fallback_primary)
+        graph_primary = layer_to_id.get(
+            planned_layers[0] if planned_layers else graph_layer,
+            fallback_primary,
+        )
         if is_matrix and cfg.num_layers >= 2:
             ns.preferred_layers = [graph_primary] + [
                 i for i in range(cfg.num_layers) if i != graph_primary
@@ -513,7 +534,9 @@ def route_board_native(
             f"native={result.used_native}",
             f"gpu={result.used_gpu}",
             (
-                "graph_topology=" + str(graph_plan.to_dict())
+                "routing_plan=" + str(routing_plan.to_dict())
+                if routing_plan is not None
+                else "graph_topology=" + str(graph_plan.to_dict())
                 if graph_plan is not None
                 else "graph_topology=fallback " + graph_plan_error
             ),
@@ -528,6 +551,9 @@ def route_board_native(
             "pipeline": "native_isotropic",
             "graph_topology_plan": (
                 graph_plan.to_dict() if graph_plan is not None else None
+            ),
+            "production_route_plan": (
+                routing_plan.to_dict() if routing_plan is not None else None
             ),
             "explanations": {
                 "vias": [

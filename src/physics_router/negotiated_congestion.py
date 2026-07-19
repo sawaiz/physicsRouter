@@ -167,6 +167,7 @@ def _route_one_candidate(
     congestion: CongestionMap,
     clearance_mm: float,
     layers: list[str],
+    routing_plan: Any | None,
 ) -> RouteResult:
     assignment = plan.assignment(net) if plan is not None else None
     strategy = getattr(assignment, "strategy", "general")
@@ -191,6 +192,7 @@ def _route_one_candidate(
         max_expansions=min(48000, max(10000, 3200 * pins)),
         use_copper_areas=False,
         congestion=congestion,
+        routing_plan=routing_plan,
     )
     if raw is None:
         return RouteResult(unrouted_nets=[net])
@@ -375,6 +377,7 @@ def negotiated_congestion_route(
     clearance_mm: float,
     max_iterations: int = 3,
     workers: int = 4,
+    routing_plan: Any | None = None,
 ) -> RouteResult:
     """Run a bounded board-wide negotiated-congestion and rip-up pass."""
     layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
@@ -428,6 +431,7 @@ def negotiated_congestion_route(
                     local,
                     clearance_mm,
                     layers,
+                    routing_plan,
                 )
                 routed.append((net, candidate))
                 # Present cost is deliberately soft: peer candidates may still
@@ -517,6 +521,7 @@ def negotiated_congestion_route(
             congestion,
             clearance_mm,
             layers,
+            routing_plan,
         )
         trial = _strip_nets_from_result(legalized, {net})
         _merge_candidate(trial, trial_net, net)

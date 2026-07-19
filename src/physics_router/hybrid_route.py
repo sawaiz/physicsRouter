@@ -28,6 +28,7 @@ from physics_router.router import (
     clearance_aware_route,
     purge_shorting_copper,
     repair_drc_conflicts,
+    _net_fully_connected,
 )
 
 ProgressCallback = Callable[[int, int, str, str, dict], None]
@@ -252,6 +253,7 @@ def _route_bucket(
     progress_cb: ProgressCallback | None,
     phase_i: int,
     phase_n: int,
+    routing_plan: Any | None,
 ) -> RouteResult:
     if not nets:
         return RouteResult()
@@ -291,9 +293,12 @@ def _route_bucket(
     prefer_native = True
 
     # Within matrix, few-pin first within priority (less blockage early)
+    planned_order = routing_plan.net_order(config) if routing_plan is not None else []
+    planned_rank = {net: index for index, net in enumerate(planned_order)}
     order = sorted(
         nets,
         key=lambda n: (
+            planned_rank.get(n, len(planned_rank)),
             -plan.assignment(n).weight if plan.assignment(n) else 0,  # type: ignore[union-attr]
             len(board.nets.get(n, [])),
             n,
@@ -324,6 +329,7 @@ def _route_bucket(
             # No per-net progress_cb so native C++ early path is not disabled
             progress_cb=None,
             skip_hybrid=True,
+            routing_plan=routing_plan,
         )
 
     if len(orders) > 1:
@@ -378,6 +384,7 @@ def hybrid_route(
     clearance_mm: float | None = None,
     progress_cb: ProgressCallback | None = None,
     plan: HybridPlan | None = None,
+    routing_plan: Any | None = None,
 ) -> RouteResult:
     """Route with auto-selected free-angle strategies per net class."""
     rules = rules or default_design_rules()
@@ -389,6 +396,12 @@ def hybrid_route(
         rules = rules.model_copy(update={"constraints": c})
 
     plan = plan or classify_board(board, config, rules)
+    if routing_plan is None:
+        from physics_router.global_router import build_global_route_plan
+        from physics_router.pin_access import build_pin_access_plan
+
+        pin_access = build_pin_access_plan(board, rules)
+        routing_plan = build_global_route_plan(board, config, rules, pin_access)
     result = RouteResult()
     result.notes.append("pipeline: hybrid multi-strategy (topological free-angle)")
     result.notes.append(
@@ -414,6 +427,7 @@ def hybrid_route(
             progress_cb=progress_cb,
             phase_i=pi,
             phase_n=phase_n,
+            routing_plan=routing_plan,
         )
         _merge_route(result, partial, only_nets=set(nets))
         result.notes.append(
@@ -443,6 +457,7 @@ def hybrid_route(
             clearance_mm=rules.constraints.min_clearance_mm,
             max_iterations=3,
             workers=4,
+            routing_plan=routing_plan,
         )
 
     cl_floor = rules.constraints.min_clearance_mm
@@ -474,9 +489,35 @@ def hybrid_route(
     q = result.quality or {}
     q["pipeline"] = "hybrid"
     q["hybrid_plan"] = plan.to_dict()
+    q["production_route_plan"] = routing_plan.to_dict()
     from physics_router.graph_theory import analyze_route_graph
 
     q["graph_topology"] = analyze_route_graph(result)
+    complete_nets = {
+        net
+        for net in board.nets
+        if _net_fully_connected(
+            board, net, result.segments, result.vias, areas=result.areas
+        )
+    }
+    drc = q.get("drc") or {}
+    violations = int(drc.get("violations") or 0)
+    manufacturing_passed = len(complete_nets) == len(board.nets) and violations == 0
+    q["manufacturing_gate"] = {
+        "passed": manufacturing_passed,
+        "status": "native_candidate" if manufacturing_passed else "failed",
+        "complete_nets": len(complete_nets),
+        "required_nets": len(board.nets),
+        "unrouted_nets": sorted(set(board.nets) - complete_nets),
+        "native_drc_violations": violations,
+        "kicad_drc_required": True,
+    }
+    if not manufacturing_passed:
+        result.notes.append(
+            "ROUTE FAILED manufacturing gate: "
+            f"{len(complete_nets)}/{len(board.nets)} complete nets, "
+            f"{violations} native DRC violation(s)"
+        )
     strat_by_net = {a.net: a.strategy for a in plan.assignments}
     for rep in result.net_reports:
         rep.notes = list(rep.notes or [])

@@ -460,7 +460,9 @@ std::vector<Vec2> route_point(const GridMap &grid, Vec2 start, Vec2 goal,
 static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, int net_id,
                        const std::vector<int> &layers,
                        const std::vector<int> &start_allowed,
-                       const std::vector<int> &goal_allowed, double width,
+                       const std::vector<int> &goal_allowed,
+                       const std::vector<Vec2> &start_access,
+                       const std::vector<Vec2> &goal_access, double width,
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
                        std::string &method,
                        const HistoryCostMap *history = nullptr,
@@ -566,13 +568,17 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
   // Multi-site via search — dense sites: connectivity beats via-count purity
   double g = std::max(cfg.grid_mm, 0.15);
   Vec2 mid{(a.x + b.x) * 0.5, (a.y + b.y) * 0.5};
-  std::vector<Vec2> sites = {
+  std::vector<Vec2> sites;
+  sites.insert(sites.end(), start_access.begin(), start_access.end());
+  sites.insert(sites.end(), goal_access.begin(), goal_access.end());
+  const std::vector<Vec2> generic_sites = {
       mid,
       {a.x, b.y},
       {b.x, a.y},
       {(2 * a.x + b.x) / 3, (2 * a.y + b.y) / 3},
       {(a.x + 2 * b.x) / 3, (a.y + 2 * b.y) / 3},
   };
+  sites.insert(sites.end(), generic_sites.begin(), generic_sites.end());
   for (double k : {2.0, 4.0, 7.0, 11.0}) {
     sites.push_back({mid.x + k * g, mid.y});
     sites.push_back({mid.x - k * g, mid.y});
@@ -700,8 +706,24 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         Vec2 site;
         std::vector<Vec2> stub;
       };
-      auto local_escapes = [&](Vec2 anchor) {
+      auto local_escapes = [&](Vec2 anchor,
+                               const std::vector<Vec2> &reserved_sites) {
         std::vector<EscapePath> escapes;
+        for (const auto &reserved : reserved_sites) {
+          Vec2 site{std::round(reserved.x / g) * g,
+                    std::round(reserved.y / g) * g};
+          if (!grid.in_bounds(site.x, site.y) ||
+              via_site_blocked(site, terminal_layer, route_layer))
+            continue;
+          auto stub = route_point_costed(
+              grid, anchor, site, terminal_layer, net_id,
+              std::max(500, cfg.max_expansions / 3), cfg.isotropic, history);
+          if (stub.size() < 2)
+            continue;
+          escapes.push_back({site, std::move(stub)});
+          if (escapes.size() >= 8)
+            return escapes;
+        }
         static const int directions[8][2] = {
             {1, 0},  {-1, 0}, {0, 1},  {0, -1},
             {1, 1},  {-1, 1}, {1, -1}, {-1, -1},
@@ -728,8 +750,8 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
         return escapes;
       };
 
-      const auto start_escapes = local_escapes(a);
-      const auto goal_escapes = local_escapes(b);
+      const auto start_escapes = local_escapes(a, start_access);
+      const auto goal_escapes = local_escapes(b, goal_access);
       for (const auto &start_escape : start_escapes) {
         for (const auto &goal_escape : goal_escapes) {
           if (dist(start_escape.site, goal_escape.site) <
@@ -1123,17 +1145,18 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         double distance;
         size_t from;
         size_t to;
-        bool graph_preferred;
+        int graph_index;
       };
-      auto graph_edge = [&](size_t a, size_t b) {
-        return std::any_of(
-            net.topology_edges.begin(), net.topology_edges.end(),
-            [&](const std::pair<int, int> &edge) {
-              return (edge.first == static_cast<int>(a) &&
-                      edge.second == static_cast<int>(b)) ||
-                     (edge.first == static_cast<int>(b) &&
-                      edge.second == static_cast<int>(a));
-            });
+      auto graph_edge_index = [&](size_t a, size_t b) {
+        for (size_t index = 0; index < net.topology_edges.size(); ++index) {
+          const auto &edge = net.topology_edges[index];
+          if ((edge.first == static_cast<int>(a) &&
+               edge.second == static_cast<int>(b)) ||
+              (edge.first == static_cast<int>(b) &&
+               edge.second == static_cast<int>(a)))
+            return static_cast<int>(index);
+        }
+        return -1;
       };
       std::vector<Candidate> candidates;
       for (size_t i = 0; i < n; ++i)
@@ -1142,11 +1165,11 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
             if (!in[j])
               candidates.push_back(
                   {dist(net.anchors[i], net.anchors[j]), i, j,
-                   graph_edge(i, j)});
+                   graph_edge_index(i, j)});
       std::sort(candidates.begin(), candidates.end(),
                 [](const Candidate &a, const Candidate &b) {
-                  if (a.graph_preferred != b.graph_preferred)
-                    return a.graph_preferred > b.graph_preferred;
+                  if ((a.graph_index >= 0) != (b.graph_index >= 0))
+                    return a.graph_index >= 0;
                   return a.distance < b.distance;
                 });
 
@@ -1164,9 +1187,31 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
             candidate.to < net.anchor_layers.size()
                 ? net.anchor_layers[candidate.to]
                 : all_layers;
+        static const std::vector<Vec2> no_access;
+        const auto &from_access =
+            candidate.from < net.anchor_via_sites.size()
+                ? net.anchor_via_sites[candidate.from]
+                : no_access;
+        const auto &to_access =
+            candidate.to < net.anchor_via_sites.size()
+                ? net.anchor_via_sites[candidate.to]
+                : no_access;
+        std::vector<int> section_layers = layers;
+        if (candidate.graph_index >= 0 &&
+            static_cast<size_t>(candidate.graph_index) <
+                net.topology_edge_layers.size()) {
+          const int planned = net.topology_edge_layers[candidate.graph_index];
+          auto found = std::find(section_layers.begin(), section_layers.end(),
+                                 planned);
+          if (found != section_layers.end()) {
+            section_layers.erase(found);
+            section_layers.insert(section_layers.begin(), planned);
+          }
+        }
         bool ok = route_edge(net_grid, cfg, net.anchors[candidate.from],
-                             net.anchors[candidate.to], net.net_id, layers,
-                             from_allowed, to_allowed, net.width_mm,
+                             net.anchors[candidate.to], net.net_id,
+                             section_layers, from_allowed, to_allowed,
+                             from_access, to_access, net.width_mm,
                              edge_segments, edge_vias, method, history_ptr,
                              &pad_obstacles);
         if (!ok)
@@ -1175,7 +1220,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
         ++in_count;
         connected = true;
         const std::string graph_method =
-            candidate.graph_preferred ? "graph_tree+" + method : method;
+            candidate.graph_index >= 0 ? "graph_tree+" + method : method;
         last_method = last_method.empty() ? graph_method
                                            : last_method + "+" + graph_method;
         net_segments.insert(net_segments.end(), edge_segments.begin(),

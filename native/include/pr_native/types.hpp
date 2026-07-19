@@ -64,6 +64,13 @@ struct NetSpec {
   // native router prefers these frontier edges and falls back to any legal
   // edge when geometrization invalidates the abstract topology.
   std::vector<std::pair<int, int>> topology_edges;
+  // Per-topology-edge global layer assignment. Entries align with
+  // topology_edges and are advisory when an exact detailed route is blocked.
+  std::vector<int> topology_edge_layers;
+  // Exact preflighted offset-via sites for every anchor. These are tried
+  // before generic maze-derived sites so detailed routing consumes the same
+  // finite access resources as global planning.
+  std::vector<std::vector<Vec2>> anchor_via_sites;
   double priority = 1.0;
   double width_mm = 0.25;
   std::vector<int> preferred_layers; // empty = all

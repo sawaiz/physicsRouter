@@ -36,6 +36,8 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("anchors", &pr::NetSpec::anchors)
       .def_readwrite("anchor_layers", &pr::NetSpec::anchor_layers)
       .def_readwrite("topology_edges", &pr::NetSpec::topology_edges)
+      .def_readwrite("topology_edge_layers", &pr::NetSpec::topology_edge_layers)
+      .def_readwrite("anchor_via_sites", &pr::NetSpec::anchor_via_sites)
       .def_readwrite("priority", &pr::NetSpec::priority)
       .def_readwrite("width_mm", &pr::NetSpec::width_mm)
       .def_readwrite("preferred_layers", &pr::NetSpec::preferred_layers)
