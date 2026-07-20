@@ -2580,6 +2580,7 @@ def clearance_aware_route(
                 clearance_mm=clearance_mm,
                 layers=layers,
                 seed_result=seed_result,
+                config=config,
             )
         result.net_reports = [r for r in result.net_reports if r.net != net_name]
         if net_name in result.unrouted_nets:
@@ -2626,6 +2627,7 @@ def clearance_aware_route(
                 clearance_mm=clearance_mm,
                 layers=layers,
                 seed_result=seed_result,
+                config=config,
             )
 
         if guide_only:
@@ -2702,6 +2704,7 @@ def clearance_aware_route(
             clearance_mm=clearance_mm,
             layers=layers,
             seed_result=seed_result,
+            config=config,
         )
         attempts[net_name] = att + 1
 
@@ -2732,6 +2735,7 @@ def clearance_aware_route(
                 clearance_mm=clearance_mm,
                 layers=layers,
                 seed_result=seed_result,
+                config=config,
             )
             result.notes.append(
                 f"ripup: {net_name} vs {','.join(batch)} "
@@ -2784,6 +2788,7 @@ def clearance_aware_route(
         clearance_mm=clearance_mm,
         layers=layers,
         seed_result=seed_result,
+        config=config,
     )
 
     # CPX length match feedback
