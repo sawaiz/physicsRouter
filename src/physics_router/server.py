@@ -951,26 +951,13 @@ class AppState:
                         nets_filter=nets_filter,
                         seed_result=seed_result,
                     )
-                # Merge locked seed copper into the published result
+                # Seed merge is done inside clearance_aware / native sequential;
+                # re-merge here for hybrid paths that may not have applied it.
                 r = done["r"]
                 if seed_result is not None and r is not None:
-                    locked = set(self.locked_nets or [])
-                    new_segs = [s for s in r.segments if s.net not in locked]
-                    new_vias = [v for v in r.vias if v.net not in locked]
-                    merged = RouteResult(
-                        segments=list(seed_result.segments) + new_segs,
-                        vias=list(seed_result.vias) + new_vias,
-                        areas=list(getattr(seed_result, "areas", []) or [])
-                        + list(getattr(r, "areas", []) or []),
-                        via_count=len(seed_result.vias) + len(new_vias),
-                        unrouted_nets=list(r.unrouted_nets),
-                        notes=list(r.notes) + ["merged locked-net seed copper"],
-                        quality=dict(r.quality or {}),
-                    )
-                    merged.total_length_mm = sum(
-                        ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
-                        for s in merged.segments
-                    )
+                    from physics_router.router import merge_seed_into_result
+
+                    merged = merge_seed_into_result(seed_result, r)
                     merged.compute_quality()
                     done["r"] = merged
             except Exception as e:

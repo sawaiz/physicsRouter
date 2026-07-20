@@ -2317,6 +2317,8 @@ def _native_sequential_zero_violation(
 
     # Final safety: purge any residual shorts (should be none)
     result = purge_shorting_copper(result, board, config, clearance_mm=clearance_mm)
+    if seed_result is not None:
+        result = merge_seed_into_result(seed_result, result)
     attach_router_drc(result, clearance_mm=clearance_mm, board=board)
     result.compute_quality()
     result.notes.append(result.quality.get("summary", ""))
@@ -2821,9 +2823,42 @@ def clearance_aware_route(
         result = purge_shorting_copper(result, board, config, clearance_mm=clearance_mm)
         attach_router_drc(result, clearance_mm=clearance_mm, board=board)
 
+    # Preserve seed copper (locked nets / prior phases) in the returned result
+    if seed_result is not None:
+        result = merge_seed_into_result(seed_result, result)
+
     result.compute_quality()
     result.notes.append(result.quality.get("summary", ""))
     return result
+
+
+def merge_seed_into_result(
+    seed: RouteResult, detail: RouteResult
+) -> RouteResult:
+    """Union seed copper with detail route (seed nets win on name collision)."""
+    seed_nets = {s.net for s in seed.segments} | {v.net for v in seed.vias}
+    segs = list(seed.segments) + [s for s in detail.segments if s.net not in seed_nets]
+    vias = list(seed.vias) + [v for v in detail.vias if v.net not in seed_nets]
+    areas = list(getattr(seed, "areas", None) or []) + [
+        a
+        for a in (getattr(detail, "areas", None) or [])
+        if getattr(a, "net", None) not in seed_nets
+    ]
+    merged = RouteResult(
+        segments=segs,
+        vias=vias,
+        areas=areas,
+        via_count=len(vias),
+        unrouted_nets=[u for u in detail.unrouted_nets if u not in seed_nets],
+        notes=list(detail.notes) + ["merged seed copper into result"],
+        net_reports=list(detail.net_reports),
+        quality=dict(detail.quality or {}),
+        clearance_violations=detail.clearance_violations,
+    )
+    merged.total_length_mm = sum(
+        _dist((s.x1, s.y1), (s.x2, s.y2)) for s in merged.segments
+    )
+    return merged
 
 
 def _cpx_layer_order(net: str, layers: list[str]) -> list[str]:
@@ -3002,7 +3037,12 @@ def repair_drc_conflicts(
         return trial
 
     def _paint_om(trial: RouteResult) -> ObstacleMap:
-        om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+        om = build_obstacle_map(
+            board,
+            clearance_mm=clearance_mm,
+            layers=layers,
+            keepouts=_config_keepouts(config),
+        )
         for s in trial.segments:
             om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
         for v in trial.vias:
@@ -4067,7 +4107,12 @@ def rubberband_cleanup(
     obstacle map from board + already-accepted copper so cleanup stays legal.
     """
     layers = sorted({s.layer for s in result.segments}) or ["F.Cu", "B.Cu"]
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    om = build_obstacle_map(
+        board,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        keepouts=_config_keepouts(config),
+    )
     # Paint foreign nets first (preserve sequential paint order roughly by net)
     by_net: dict[str, list[RouteSegment]] = {}
     for s in result.segments:
@@ -4177,7 +4222,12 @@ def remove_redundant_vias(
     layers = sorted({s.layer for s in result.segments} | set(board.copper_layers or []))
     if len(layers) < 2:
         return result
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    om = build_obstacle_map(
+        board,
+        clearance_mm=clearance_mm,
+        layers=layers,
+        keepouts=_config_keepouts(config),
+    )
     for s in result.segments:
         om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
 

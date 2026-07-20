@@ -390,6 +390,8 @@ def post_connect_regeometry(
     use_arcs: bool = True,
     max_seg_mm: float = 2.5,
     arc_samples: int = 3,
+    config: Any | None = None,
+    keepouts: list[Any] | None = None,
 ) -> RouteResult:
     """Full post-connect free-angle re-geometry pass.
 
@@ -402,7 +404,12 @@ def post_connect_regeometry(
     layers = sorted({s.layer for s in result.segments}) or list(
         board.copper_layers or ["F.Cu"]
     )
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    kos = keepouts
+    if kos is None and config is not None:
+        kos = list(getattr(config, "keepouts", None) or []) or None
+    om = build_obstacle_map(
+        board, clearance_mm=clearance_mm, layers=layers, keepouts=kos
+    )
     for s in result.segments:
         om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
 

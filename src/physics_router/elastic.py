@@ -7,6 +7,7 @@ repulsion + spacing forces (Dayan/TopoR elastic geometry).
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from physics_router.models import BoardModel
 from physics_router.router import (
@@ -190,12 +191,19 @@ def elastic_optimize_route(
     *,
     clearance_mm: float = 0.2,
     iterations: int = 20,
+    config: Any | None = None,
+    keepouts: list[Any] | None = None,
 ) -> RouteResult:
     """Apply elastic optimization per net/layer continuous chain."""
     layers = sorted({s.layer for s in result.segments}) or list(
         board.copper_layers or ["F.Cu"]
     )
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    kos = keepouts
+    if kos is None and config is not None:
+        kos = list(getattr(config, "keepouts", None) or []) or None
+    om = build_obstacle_map(
+        board, clearance_mm=clearance_mm, layers=layers, keepouts=kos
+    )
     # Paint all copper first
     for s in result.segments:
         om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)

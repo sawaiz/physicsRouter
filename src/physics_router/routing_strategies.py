@@ -247,6 +247,7 @@ def _apply_drc_geometry(
                 clearance_mm=cl,
                 iterations=14,
                 use_arcs=True,
+                config=config,
             )
             post_drc = native_drc_check(polished, clearance_mm=cl, board=board)["violations"]
             if post_drc > pre_drc:
@@ -548,7 +549,9 @@ def topor_style_route(
         if use_elastic and n_nets <= 60:
             pre = native_drc_check(best, clearance_mm=cl, board=board)["violations"]
             try:
-                elast = elastic_optimize_route(best, board, clearance_mm=cl, iterations=16)
+                elast = elastic_optimize_route(
+                    best, board, clearance_mm=cl, iterations=16, config=config
+                )
                 post = native_drc_check(elast, clearance_mm=cl, board=board)["violations"]
                 if post > pre:
                     best.notes.append(
@@ -575,7 +578,14 @@ def topor_style_route(
 
     # Topology signatures
     try:
-        om = build_obstacle_map(board, clearance_mm=cl, layers=copper)
+        from physics_router.router import _config_keepouts
+
+        om = build_obstacle_map(
+            board,
+            clearance_mm=cl,
+            layers=copper,
+            keepouts=_config_keepouts(config),
+        )
         for s in best.segments:
             om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
         sigs = signatures_from_route(best, om)

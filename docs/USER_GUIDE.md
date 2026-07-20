@@ -158,7 +158,9 @@ Job types include: `route_topor`, `improve`, `place`, `apply_route_pcb`, `drc`, 
 2. Lock power/ground pours’ nets after a good pass; re-route signal islands.  
 3. Use fab profile **capability** floors when recommended spacing is too fat.  
 4. BGA/QFN get denser pin-access automatically from footprint name / pad count.  
-5. Existing copper zones block foreign nets — good for pours.
+5. Existing copper zones block foreign nets — good for pours.  
+6. Keep-outs apply through routing **and** polish (rubberband / elastic / re-geometry).  
+7. Locked-net copper is merged back into CLI and UI results automatically.
 
 ---
 

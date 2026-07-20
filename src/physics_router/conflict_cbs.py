@@ -175,8 +175,12 @@ def _rebuild_om(
     clearance_mm: float,
     layers: list[str],
     forbid_regions: list[tuple[float, float, float, str]] | None = None,
+    config: PlacementConfig | None = None,
 ) -> ObstacleMap:
-    om = build_obstacle_map(board, clearance_mm=clearance_mm, layers=layers)
+    kos = list(getattr(config, "keepouts", None) or []) or None if config else None
+    om = build_obstacle_map(
+        board, clearance_mm=clearance_mm, layers=layers, keepouts=kos
+    )
     for s in result.segments:
         om.paint_trace(s.x1, s.y1, s.x2, s.y2, s.layer, s.width_mm, s.net)
     for v in result.vias:
@@ -246,6 +250,7 @@ def cbs_repair_cluster(
                 clearance_mm=clearance_mm,
                 layers=layers,
                 forbid_regions=new_forbid,
+                config=config,
             )
             anchors = _anchors_for_net(board, victim)
             if len(anchors) < 2:

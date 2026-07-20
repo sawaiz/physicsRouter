@@ -623,7 +623,9 @@ def polish_native_with_python(
         r, board, config, clearance_mm=clearance_mm, aggressive=via_minimize
     )
     if len(board.nets) <= 40:
-        r = elastic_optimize_route(r, board, clearance_mm=clearance_mm, iterations=12)
+        r = elastic_optimize_route(
+            r, board, clearance_mm=clearance_mm, iterations=12, config=config
+        )
     si = evaluate_si_mfg(r, board, config, clearance_mm=clearance_mm)
     r.quality = {
         **(r.quality or {}),
