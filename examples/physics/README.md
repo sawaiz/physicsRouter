@@ -1,46 +1,55 @@
-# Physics / Muon3 example
+# Muon3 / physics example
 
-Board from the sibling **`../physics`** project (Muon3 cosmic-ray telescope).
+**TL;DR:** Routes the **muon telescope v10** layout from the sibling `../physics` repo (not the empty `muon3.kicad_pcb` shell). Config: `placement_config.yaml`.
 
-| Path | Role |
-|------|------|
-| `../physics/pcb/muon3.kicad_pcb` | Project shell — **empty** (no footprints) |
-| `../physics/.../muon_telescope_v10/muon_telescope.kicad_pcb` | **Full board** used here (~111 comps, ~100 nets, 4-layer) |
-| `placement_config.yaml` | Net weights, notes, functional regions, floorplan seeds |
+---
 
-## Board envelope
+## Board path
 
-- **Generous outline:** 140 × 110 mm (source content ~108 × 86 plus margin)
-- Functional floorplan applied via `fixed` placements + `regions`
+Server preset `physics` resolves to something like:
 
-| Region | Contents |
-|--------|----------|
-| `sipm_edge` | J2–J5 SiPM / panel connectors (left) |
-| `afe_ch0`…`afe_ch3` | Per-channel TIA (U10x) + comparator (U1x2) + passives |
-| `digital_core` | FPGA U3, flash U6, DAC U4, env U5, TCXO X1 |
-| `power_hv` | VSYS, bucks U11/U12, LT3482 HV boost U10, L1/L2, D10 |
-| `thermal_io` | NTC headers J9/J10 |
-| `expansion_radio` | Debug / nRF / GNSS headers J6–J8 (right edge) |
-
-## Net priorities (summary)
-
-| Class | Examples | Weight (base) |
-|-------|----------|----------------|
-| Power / ground | GND, VSYS, +3V3, +1V2 | 5–6 |
-| HV bias | BOOST_SW, HV_RAW, HV_SIPMn | 4.5–5 |
-| AFE analog | SIPM_ANn, TIAn, INAn | 4.5–5 + EMI |
-| Timing | CMPn, TCXO_CLK, GPS_PPS | 4–4.5 |
-| Digital / I2C / SPI | SDA/SCL, CFG_*, NRF_* | 3–3.8 |
-| Unconnected pads | `unconnected-(…)` | 0.1 |
-
-Notes and power-loop groups follow `../physics/pcb/DESIGN_RULES.md` and `PART_SELECTION.md`.
-
-## Serve
-
-```bash
-PHYSICS_ROUTER_PRESET=physics physics-router serve --host 127.0.0.1 --port 8765
-# → http://127.0.0.1:8765/
-# Preset: “Muon3 / physics” — 2D floorplan + auto GLB export
+```text
+../physics/reference_documentation/next_generation/nextgen_review/hardware/muon_telescope_v10/muon_telescope.kicad_pcb
 ```
 
-Hard-refresh the browser (or re-click **Load preset**) if the 3D model was still showing HALO-90; assets are cache-busted per file mtime and scoped to the active preset.
+If that path is missing, load the PCB explicitly:
+
+```bash
+physics-router smoke --pcb /absolute/path/to/muon_telescope.kicad_pcb \
+  --config examples/physics/placement_config.yaml
+```
+
+Or in the UI: **Board** → Open path / drop file.
+
+---
+
+## Run
+
+```bash
+# Prefer physics preset at server start
+PHYSICS_ROUTER_PRESET=physics physics-router serve --port 8765
+
+physics-router route \
+  --config examples/physics/placement_config.yaml \
+  --pcb "$PHYSICS_PCB" \
+  --out-json /tmp/physics_route.json --out-pcb /tmp/physics_routed.kicad_pcb
+```
+
+---
+
+## Config
+
+`placement_config.yaml` holds project name, generous board envelope, net weights / function groups for the telescope layout. Re-import nets if the schematic changes:
+
+```bash
+physics-router import-nets \
+  --pcb path/to/muon_telescope.kicad_pcb \
+  --config examples/physics/placement_config.yaml \
+  -o examples/physics/placement_config.yaml --override
+```
+
+---
+
+## Docs
+
+[../../docs/QUICKSTART.md](../../docs/QUICKSTART.md) · [../../docs/USER_GUIDE.md](../../docs/USER_GUIDE.md)

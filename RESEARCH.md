@@ -1,6 +1,8 @@
 # Research survey: PCB placement & routing algorithms
 
-Companion to the main [README](README.md). This document surveys classical EDA methods, topological routers, modern ML/RL work, and community practice that inform **physicsRouter**.
+**TL;DR:** Literature that informs physicsRouter — classical EDA, topological routers, ML/RL, TopoR-adjacent patents/papers. Implementation map: [DESIGN.md](DESIGN.md) · [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md). Not a product user guide (see [docs/QUICKSTART.md](docs/QUICKSTART.md)).
+
+Companion to the main [README](README.md).
 
 ---
 

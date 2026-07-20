@@ -1,6 +1,10 @@
 # TopoR (Eremex) — reference for physicsRouter
 
-This document records how **commercial TopoR** works (public product pages, manuals, and published comparisons) and how **physicsRouter** relates to those ideas. It is **not** affiliated with Eremex.
+**TL;DR:** Commercial free-angle / topology-first inspiration. We implement a **philosophy**, not their binary. Our geometry is open-source C++. Not affiliated with Eremex.
+
+How we map ideas → code: [ARCHITECTURE_ROUTER.md](ARCHITECTURE_ROUTER.md).
+
+This document records how **commercial TopoR** works (public product pages, manuals, and published comparisons) and how **physicsRouter** relates to those ideas.
 
 | Official | Link |
 |----------|------|

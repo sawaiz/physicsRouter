@@ -1,78 +1,80 @@
 # Native core (`pr_native`)
 
-C++17 **isotropic free-angle** router — the **only** geometric router in physicsRouter (no Python fallback). Two engines:
+**TL;DR:** C++17 is the **only** geometric router. Python never falls back to a pure-Python maze. Build with `bash scripts/build_native.sh`, then `from physics_router.native_bridge import info`.
 
-- **ExactMap** (`exact.cpp`) — clearance authority: rect obstacles in a spatial hash with exact Liang–Barsky segment tests, painted copper with continuous seg–seg distance, and `free_angle_route_exact` (LOS · detours · radar · 1/2/3-corner · hierarchical multi-grid A\* with 16-dir moves · rubberband, congestion-aware).
-- **GridMap** (`router.cpp`) — whole-board batch fast path: occupancy grid, any-angle detours, A\*, multi-net MST, post-rubberband, via minimize, multi-site vias with explainable reasons, batch wirelength score, optional OpenCL clearance.
+| Piece | File | Role |
+|-------|------|------|
+| ExactMap | `exact.cpp` | Clearance authority + free-angle path |
+| GridMap / board | `router.cpp` | Batch multi-net + polish |
+| Capacity mesh | `capacity_mesh.cpp` | Hierarchical plan before detail |
+| Bindings | `bindings.cpp` | pybind11 → Python |
 
 Version: **2.0.0-production-flow**
+
+---
 
 ## Build
 
 ```bash
 # from repo root
 bash scripts/build_native.sh
-# artifacts: native/build/pr_native*.so , native/build/pr_bench
+# → native/build/pr_native*.so , native/build/pr_bench
 ```
 
-Requires: CMake ≥ 3.16, C++17 compiler, Python development headers.  
-Optional: OpenMP, OpenCL (Apple M-series GPU works).
-
-## Use from Python
+Requires: CMake ≥ 3.16, C++17, Python headers. Optional: OpenMP, OpenCL (Apple M-series works).
 
 ```bash
-# native/build is auto-discovered in a dev checkout; PYTHONPATH optional
 python -c "from physics_router.native_bridge import info; print(info())"
-```
-
-Every `ObstacleMap` query and `free_angle_route` call in Python delegates here. `clearance_aware_route(prefer_native=True)` additionally uses the whole-board GridMap fast path, then Python polish (elastic + SI/MFG).
-
-## Design
-
-| Choice | Rationale |
-|--------|-----------|
-| Packed `uint8` grid | O(1) cell tests with clearance-correct centerline inflation |
-| Atomic full-net commit | Failed multipin trees never leak partial copper |
-| Advisory graph tree | Python supplies crossing-aware hypergraph tree edges; blocked edges fall back to any legal frontier connection |
-| Exact pin-access oracle | Python supplies finite offset-via sites checked against pads, holes, traversed layers and Edge.Cuts |
-| Per-section layer order | Coarse PathFinder capacity assigns every tree edge a layer; detailed geometry may take only legal fallbacks |
-| **Capacity mesh (C++)** | Hierarchical cells + negotiated section layers before free-angle detail (`capacity_mesh.cpp`; tscircuit-inspired). Enabled by default via `RouteConfig.enable_capacity_mesh` |
-| Topology-safe rubberband | Two-pin chains shorten; multipin branches remain intact |
-| Oriented pad/layer-aware obstacles | Real pad XY, angle, net and copper layers; package bodies do not bury anchors |
-| Layer-reachable anchors | SMD pads start/end only on exposed copper; inner escapes use two vias |
-| Width-aware obstacle inflation | Physical pad/seed copper is inflated once for the widest bucket track |
-| Organic `CopperArea` | Rounded Edge.Cuts-bounded power zones, refilled by KiCad |
-| **Isotropic detours** | Perpendicular bulges + angled midpoints before A* (not H/V only) |
-| Multi-site vias + `reason` | Explainable layer transitions (mirrors Python UI) |
-| Post rubberband + via_minimize | Geometry polish after connectivity |
-| Parallel bucket bundles | Stable power/critical/matrix orders run concurrently; best zero-violation completion wins |
-| Batch then bounded recovery | Fast legal bucket route; small rejected nets retry individually |
-| Sparse PathFinder history | Present and persistent resource costs steer exact/GridMap A* away from repeatedly overused cells |
-| Conflict-directed legalization | Exact marker graph selects a maximal legal net set before victim-only repair |
-| Copper-edge margin | Track half-width plus the active fabrication edge clearance is reserved around curved Edge.Cuts |
-| No via-in-pad | Exact rotated-pad distance rejects physical overlap with every pad; foreign pads additionally receive electrical clearance |
-| OpenCL batch clearance | Parallel sample tests after/during validation |
-| pybind11 | Zero-copy-friendly lists of segments into Python |
-
-Python still owns the **full** pipeline (K-homotopy, CBS, planner, SI/MFG UI). Native accelerates the geometric core.
-
-## Bench
-
-```bash
 ./native/build/pr_bench
 ```
 
-Reports GPU device, route wall time, and score-batch cost.
+---
 
-## Config flags (`RouteConfig`)
+## Engines
+
+**ExactMap** — rect obstacles in a spatial hash, painted copper with continuous segment distance, `free_angle_route_exact` (LOS → detours → radar → corner chains → multi-grid A\* → rubberband).
+
+**GridMap** — whole-board occupancy, any-angle detours, multi-net MST, via minimize, multi-site vias with reasons, optional OpenCL batch clearance.
+
+**Capacity mesh** — hierarchical cells + section layer plan *before* free-angle detail. Does not paint copper. See [../docs/CAPACITY_MESH.md](../docs/CAPACITY_MESH.md).
+
+---
+
+## Design choices (scan table)
+
+| Choice | Why |
+|--------|-----|
+| Atomic full-net commit | No multipin stub copper |
+| Exact pin-access sites | Via-in-pad forbidden; finite escapes |
+| Capacity mesh default on | Global layer / congestion plan first |
+| Isotropic detours | TopoR-style any-angle, not H/V only |
+| Soft fallback off | Open > short |
+| Topology-safe rubberband | Multipin trees stay connected |
+| Width-aware inflation | Obstacle keepouts match track width |
+| OpenCL batch | Parallel clearance samples when available |
+
+Python still owns: K-homotopy variants, CBS, planner policy, SI/MFG UI, KiCad write-back.
+
+---
+
+## `RouteConfig` flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `isotropic` | true | Any-angle detours |
 | `post_rubberband` | true | Collapse chains after route |
-| `via_minimize` | false | Drop redundant vias only when explicitly requested |
-| `atomic_nets` | true | Roll back a net unless all anchors connect |
+| `via_minimize` | false | Drop redundant vias only when requested |
+| `atomic_nets` | true | Roll back unless all anchors connect |
 | `soft_fallback` | false | Never paint illegal copper |
-| `use_gpu` | true | OpenCL batch when available |
-| `congestion` | empty | Sparse present/historical per-layer resource costs supplied by the board-wide host |
-| `edge_clearance_mm` | 0.01 | Copper-to-Edge.Cuts clearance in addition to half track width; Python supplies the active board rule |
+| `use_gpu` | true | OpenCL when available |
+| `enable_capacity_mesh` | true | Hierarchical plan before detail |
+| `capacity_effort` | ~0.55 | Mesh depth / refinement 0..1 |
+| `edge_clearance_mm` | from rules | Copper-to-Edge.Cuts margin |
+
+---
+
+## Doc map
+
+- Product docs: [../docs/README.md](../docs/README.md)  
+- Design: [../DESIGN.md](../DESIGN.md)  
+- Capacity mesh: [../docs/CAPACITY_MESH.md](../docs/CAPACITY_MESH.md)

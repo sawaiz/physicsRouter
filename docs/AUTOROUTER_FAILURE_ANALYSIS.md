@@ -1,18 +1,17 @@
 # Autorouter failure analysis and correction plan
 
+**TL;DR (current):** Committed HALO copper targets **zero hard DRC**. Full multipin completion is still the open stress goal — **open nets beat shorts**. Historical bugs (layer-blind anchors, point vias, wrong outline) are largely fixed; dense CPX remains hard.
+
+| Claim | Status on HALO-class boards |
+|-------|------------------------------|
+| 1. Geometrically legal committed copper | Goal / largely achieved on committed nets |
+| 2. Electrically complete (all nets) | **Not** guaranteed |
+| 3. Optimized (length / SI / time) | Secondary until (2) |
+
+For how to *use* the router today: [USER_GUIDE.md](USER_GUIDE.md). For principles: [../DESIGN.md](../DESIGN.md).
+
 This document records what failed on the HALO-90 route, what the released PCB
-teaches us, which fixes are implemented, and which algorithmic work remains.
-It deliberately separates three claims:
-
-1. **Geometrically legal:** generated tracks/vias do not violate copper rules.
-2. **Electrically complete:** every required pad is in its net's multilayer
-   connected component.
-3. **Optimized:** a complete legal route has competitive length, vias, signal
-   integrity and runtime.
-
-The current router has reached the first claim for its committed HALO copper.
-It has not reached the second claim for the full board, so it is not yet a
-finished autorouter for this stress case.
+teaches us, which fixes are implemented, and which work remains.
 
 ## Executive diagnosis
 

@@ -1,8 +1,6 @@
 # JLCPCB design rules (2 / 4 / 6 layer)
 
-physicsRouter can apply **JLCPCB FR-4** manufacturing floors for **2-layer**,
-**4-layer**, or **6-layer** boards. Pick a profile in the UI (Board step) or via
-API / `load_design_rules(..., jlc_profile=...)`.
+**TL;DR:** Use `4layer_recommended` for most boards; `4layer_capability` for dense (HALO default). Pick in viewer under **Fab profile**, or `load_design_rules(..., jlc_profile=...)`.
 
 Source: [JLCPCB PCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities).
 

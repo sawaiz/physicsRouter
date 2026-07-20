@@ -1,8 +1,12 @@
 # PCB datasets for placement & routing training
 
-Curated sources of **KiCad** boards, convertible designs in other formats, and **Gerber** fabrication outputs. Goal: build a supervised / RL training corpus for a KiCad placement + topological routing engine.
+**TL;DR:** Best ready routing set = **PCBench**. Largest public KiCad corpus = **Open Schematics**. Always check licenses. Gerbers alone lack nets — prefer `.kicad_pcb` + connectivity.
 
-> **License note:** Always record per-project licenses. Many GitHub/OSHW designs are MIT/Apache/CERN-OHL/CC; some forbid commercial use or redistribution. Prefer projects with explicit open-hardware licenses. Gerbers alone are usually *not* enough for placement training (no netlist / pad nets).
+For *using* physicsRouter on any board today: [docs/QUICKSTART.md](docs/QUICKSTART.md) (`smoke --pcb …`).
+
+Curated sources of **KiCad** boards and related formats for supervised / RL training.
+
+> **License note:** Record per-project licenses. Prefer explicit OSHW licenses. Gerbers alone are usually *not* enough for placement training (no netlist / pad nets).
 
 ---
 

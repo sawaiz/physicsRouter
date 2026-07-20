@@ -1,27 +1,18 @@
 # Viewer 3D assets
 
-KiCad exports for the three.js control plane:
+**TL;DR:** GLB/STEP files the web UI loads for 3D. Auto-export when a board is loaded in `serve`, or rebuild from the **3D** step.
 
 | File | Contents |
 |------|----------|
-| `halo-90.glb` | Binary glTF: footprint **STEP** models, tracks, pads, zones, inner copper, **soldermask**, **silkscreen**, board body |
-| `halo-90_full.step` | Same geometry as CAD STEP (optional) |
-
-Regenerate (requires KiCad `kicad-cli`):
-
-```bash
-physics-router serve   # auto-exports if missing when HALO PCB is loaded
-# or from the UI: Simulate → Rebuild board 3D (GLB)
-# or CLI:
-```
+| `halo-90.glb` | Footprints, tracks, pads, zones, mask, silk |
+| `physics.glb` / `custom.glb` | Other preset / imported boards when exported |
+| `*_routed_*.kicad_pcb` | Optional applied-route PCB snapshots |
 
 ```bash
-"/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli" pcb export glb -f \
-  -o viewer/assets/halo-90.glb \
-  --subst-models \
-  --include-tracks --include-pads --include-zones --include-inner-copper \
-  --include-silkscreen --include-soldermask \
-  third_party/halo-90/pcb/halo-90.kicad_pcb
+physics-router serve   # exports 3D when a real PCB is loaded
+# UI: 3D step → Rebuild
+# or:
+physics-router export-step --pcb path.kicad_pcb -o out.step
 ```
 
-Component models come from `third_party/halo-90/pcb/components/**/*.stp` (and `.step`) referenced by footprints (`${KIPRJMOD}/…`).
+User docs: [../../docs/USER_GUIDE.md](../../docs/USER_GUIDE.md).

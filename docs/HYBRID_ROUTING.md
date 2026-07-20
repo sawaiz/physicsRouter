@@ -1,4 +1,15 @@
-# Hybrid multi-strategy routing (topological free-angle)
+# Hybrid multi-strategy routing
+
+**TL;DR:** Nets are bucketed (matrix / power / critical / general), each bucket free-angle-routed against a **shared** clearance map. Incomplete multipin nets roll back — no stub copper. No special HALO ring corridor anymore.
+
+| Strategy | Detection | Tuning |
+|----------|-----------|--------|
+| matrix | CPX / MATRIX / many pins | Finer grid, section layers, pin-access |
+| power | POWER/GND class or names | Wide tracks / areas on plane layers |
+| critical | critical / HS / clock / RF | Fine grid + vias |
+| general | rest | Default free-angle |
+
+Related: [ARCHITECTURE_ROUTER.md](ARCHITECTURE_ROUTER.md) · [CAPACITY_MESH.md](CAPACITY_MESH.md).
 
 Boards mix dense multipin buses, power, and critical signals. physicsRouter
 **auto-classifies nets** and routes each class with free-angle topological

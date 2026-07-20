@@ -1,8 +1,13 @@
 # Topology-first router architecture
 
-How **physicsRouter** implements a TopoR-**philosophy** router without copying Eremex binaries: topological connectivity, delayed geometry, multi-variant optimization, continuous reshaping, and negotiated conflict resolution.
+**TL;DR:** Topology first, geometry second, feedback always. Free-angle isotropic search (not 45° only). Full nets commit or nothing. Capacity mesh + pin-access plan before detail. Companion: [TOPOR.md](TOPOR.md) · [CAPACITY_MESH.md](CAPACITY_MESH.md) · [RESEARCH.md](../RESEARCH.md).
 
-Companion docs: [TOPOR.md](TOPOR.md) (commercial product model), [RESEARCH.md](../RESEARCH.md) (bibliography).
+```text
+hypergraph / MST  →  capacity sections  →  free-angle copper  →  polish  →  DRC
+        ↑________________ feedback (rip-up, re-order) ________________↓
+```
+
+How **physicsRouter** implements a TopoR-**philosophy** router without copying Eremex binaries: topological connectivity, delayed geometry, multi-variant optimization, continuous reshaping, and negotiated conflict resolution.
 
 ---
 

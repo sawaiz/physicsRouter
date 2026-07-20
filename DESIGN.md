@@ -1,48 +1,56 @@
 # Design decisions and roadmap
 
-This document records **why** the system is shaped the way it is, and what we deliberately left for later. Implementation details live in the code; literature survey lives in [RESEARCH.md](RESEARCH.md).
+**TL;DR:** Open nets beat illegal copper. C++ owns geometry; Python owns product. KiCad DRC is the oracle. Capacity mesh plans; free-angle draws; full nets only commit.
+
+| Read next | |
+|-----------|---|
+| New users | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
+| How routing stages chain | [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) · [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md) |
+| Literature | [RESEARCH.md](RESEARCH.md) · [docs/TOPOR.md](docs/TOPOR.md) |
+
+This document records **why** the system is shaped the way it is. Code holds the how.
 
 ---
 
 ## Goals
 
-1. **Closed loop to manufacturable copper** — not autoroute aesthetics. KiCad DRC (and ERC when a schematic exists) is the oracle.
-2. **Physics-informed placement** — multi-objective cost (wirelength, loop L, IR, return path, CPX match, EMI proxies) on **unlocked** parts only.
-3. **TopoR-style free-angle routing** — topology and clearance first; no forced 45°/90° preferred directions. Product model: [docs/TOPOR.md](docs/TOPOR.md). Architecture (topology + sparse graph + geometry, negotiated congestion): [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md).
-4. **Interactive engineering UI** — guided place → route (2D) → apply → DRC → Simulate (3D EMS), with variant compare.
-5. **Native-only routing core** — the C++ core (`pr_native`) is the sole geometric router and clearance authority; Python remains the product shell (CLI, server, KiCad I/O) and policy layer.
-6. **Capacity-mesh global planning** — hierarchical capacity cells + pin-access + section layers (ideas from MIT tscircuit capacity-autorouter) before detailed copper; see [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md).
+1. **Closed loop to manufacturable copper** — not aesthetics. KiCad DRC (ERC when schematic exists) is the oracle.
+2. **Physics-informed placement** — multi-objective cost on **unlocked** parts only.
+3. **TopoR-style free-angle routing** — no forced 45°/90° preferred directions. [docs/TOPOR.md](docs/TOPOR.md).
+4. **Interactive UI** — Board → Place → Route (2D) → 3D → Check.
+5. **Native-only geometry** — `pr_native` is the only clearance authority.
+6. **Capacity-mesh global planning** — before detailed copper. [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md).
+7. **Any-board import** — drop PCB / `smoke` / plugin without hand YAML (nets auto-import).
 
-Non-goals (today): guaranteed completion on every dense board, learned RL
-policies in production, or fabrication sign-off without KiCad/manufacturer
-review. A partial route is a failed autoroute even when its committed copper is
-clean.
+**Non-goals (today):** guaranteed completion on every dense board; RL in production; fab sign-off without human/KiCad review. A “pretty” partial with shorts is a **failed** autoroute; an open net with clean copper is acceptable under zero-violation policy.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  CLI / HTTP server / viewer (Python)                        │
-│  config · jobs · progress · KiCad export · GLB · DRC/ERC    │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        ▼                   ▼                   ▼
-  placement.py         router.py          kicad_tools.py
-  physics.py      native_bridge.py?       design_rules.py
-        │                   │
-        │                   ▼
-        │            pr_native (C++17)
-        │            grid A* · OpenCL batch
-        ▼
-     Ngspice / OpenEMS proxies (optional binaries)
+┌──────────────────────────────────────────────────────────────┐
+│  CLI · HTTP server · viewer · KiCad plugin (Python)          │
+│  config · jobs · import · export · DRC/ERC · OpenEMS         │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+     ┌───────────────────────┼───────────────────────┐
+     ▼                       ▼                       ▼
+ placement / physics    route_pipeline          kicad_io / tools
+ net_import / rules     pin_access / hybrid     design_rules
+     │                       │
+     │                       ▼
+     │                 pr_native (C++17)
+     │                 ExactMap · free-angle · capacity mesh
+     ▼
+  Ngspice / OpenEMS proxies (optional)
 ```
 
-**Python owns** orchestration, file formats, UI, and tool invocation.  
-**C++ owns** (when built) occupancy grids, A\*, multi-net MST routing, batch wirelength.  
-**KiCad owns** DRC, ERC, STEP/GLB geometry, official plots.
+| Layer | Owns |
+|-------|------|
+| **Python** | Policy, UI, files, jobs, net labels, validation orchestration |
+| **C++ `pr_native`** | Clearance map, free-angle search, capacity mesh, native DRC |
+| **KiCad** | Authoritative DRC/ERC, STEP/GLB, official plots |
 
 ### Graph topology plane
 
@@ -254,7 +262,20 @@ viewer/               # Control-plane UI + assets
 examples/             # configs, HALO labels, demo outputs
 tests/
 scripts/              # build_native, CI, image generators
-docs/images/          # figures for README / research
+docs/                 # guides + architecture (start: docs/README.md)
+docs/images/          # figures
+kicad_plugins/        # pcbnew ActionPlugin
 ```
 
-External boards live in `third_party/` (gitignored). Large GLB/STEP under `viewer/assets/` are regenerated locally.
+External boards live in `third_party/`. Large GLB/STEP under `viewer/assets/` are regenerated locally.
+
+## Doc map
+
+| Doc | Role |
+|-----|------|
+| [docs/README.md](docs/README.md) | Index of all documentation |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install + first route |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Viewer / CLI / API day-to-day |
+| [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md) | Capacity mesh pipeline |
+| [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) | Topology → geometry |
+| [native/README.md](native/README.md) | C++ core |
