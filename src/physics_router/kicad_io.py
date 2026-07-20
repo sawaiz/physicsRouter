@@ -953,17 +953,126 @@ def _rewrite_footprint_at(text: str, ref: str, x: float, y: float, rot: float) -
 
 
 def board_from_synthetic(config: PlacementConfig) -> BoardModel:
-    """Build a synthetic board from config when no .kicad_pcb is available (tests/demo)."""
+    """Build a synthetic board from config when no .kicad_pcb is available (tests/demo).
+
+    Pads include local offsets + copper layers so pin-access / ExactMap paths
+    exercise the same geometry as real KiCad loads.
+    """
+    def _pad(num: str, net: str, x: float = 0.0, y: float = 0.0, w: float = 0.6, h: float = 0.6) -> dict:
+        return {
+            "num": num,
+            "net": net,
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "rot": 0.0,
+            "shape": "rect",
+            "type": "smd",
+            "drill": 0.0,
+            "layers": ["F.Cu"],
+        }
+
     comps = {
-        "U1": Component(ref="U1", footprint="Package_SO:SOIC-8", width_mm=5.0, height_mm=4.0, x_mm=15, y_mm=20, power_dissipation_w=0.5),
-        "L1": Component(ref="L1", footprint="Inductor_SMD:L_0805", width_mm=2.0, height_mm=1.2, x_mm=20, y_mm=18),
-        "C_IN": Component(ref="C_IN", footprint="Capacitor_SMD:C_0805", width_mm=2.0, height_mm=1.2, x_mm=12, y_mm=15),
-        "C_OUT": Component(ref="C_OUT", footprint="Capacitor_SMD:C_0805", width_mm=2.0, height_mm=1.2, x_mm=25, y_mm=15),
-        "D1": Component(ref="D1", footprint="Diode_SMD:D_SOD-123", width_mm=2.5, height_mm=1.5, x_mm=18, y_mm=25),
-        "X1": Component(ref="X1", footprint="Crystal:Crystal_SMD", width_mm=3.2, height_mm=2.5, x_mm=35, y_mm=30),
-        "U2": Component(ref="U2", footprint="Package_QFP:LQFP-48", width_mm=9.0, height_mm=9.0, x_mm=35, y_mm=25, power_dissipation_w=0.2),
-        "J1": Component(ref="J1", footprint="Connector:USB_C", width_mm=9.0, height_mm=8.0, x_mm=2.0, y_mm=20.0, locked=True),
-        "R_AIN": Component(ref="R_AIN", footprint="Resistor_SMD:R_0603", width_mm=1.6, height_mm=0.8, x_mm=40, y_mm=10),
+        "U1": Component(
+            ref="U1",
+            footprint="Package_SO:SOIC-8",
+            width_mm=5.0,
+            height_mm=4.0,
+            x_mm=15,
+            y_mm=20,
+            power_dissipation_w=0.5,
+            pads=[
+                _pad("1", "+5V", -2.0, 1.2),
+                _pad("2", "GND", -2.0, -1.2),
+                _pad("SW", "SW", 2.0, 0.0),
+            ],
+        ),
+        "L1": Component(
+            ref="L1",
+            footprint="Inductor_SMD:L_0805",
+            width_mm=2.0,
+            height_mm=1.2,
+            x_mm=20,
+            y_mm=18,
+            pads=[_pad("1", "SW", -0.7, 0.0), _pad("2", "+5V", 0.7, 0.0)],
+        ),
+        "C_IN": Component(
+            ref="C_IN",
+            footprint="Capacitor_SMD:C_0805",
+            width_mm=2.0,
+            height_mm=1.2,
+            x_mm=12,
+            y_mm=15,
+            pads=[_pad("1", "+5V", -0.7, 0.0), _pad("2", "GND", 0.7, 0.0)],
+        ),
+        "C_OUT": Component(
+            ref="C_OUT",
+            footprint="Capacitor_SMD:C_0805",
+            width_mm=2.0,
+            height_mm=1.2,
+            x_mm=25,
+            y_mm=15,
+            pads=[_pad("1", "+5V", -0.7, 0.0), _pad("2", "GND", 0.7, 0.0)],
+        ),
+        "D1": Component(
+            ref="D1",
+            footprint="Diode_SMD:D_SOD-123",
+            width_mm=2.5,
+            height_mm=1.5,
+            x_mm=18,
+            y_mm=25,
+            pads=[_pad("A", "SW", -0.8, 0.0), _pad("K", "GND", 0.8, 0.0)],
+        ),
+        "X1": Component(
+            ref="X1",
+            footprint="Crystal:Crystal_SMD",
+            width_mm=3.2,
+            height_mm=2.5,
+            x_mm=35,
+            y_mm=30,
+            pads=[_pad("1", "CLK_MCU", -1.0, 0.0), _pad("2", "GND", 1.0, 0.0)],
+        ),
+        "U2": Component(
+            ref="U2",
+            footprint="Package_QFP:LQFP-48",
+            width_mm=9.0,
+            height_mm=9.0,
+            x_mm=35,
+            y_mm=25,
+            power_dissipation_w=0.2,
+            pads=[
+                _pad("VDD", "+5V", -3.5, 3.0),
+                _pad("GND", "GND", 3.5, 3.0),
+                _pad("OSC_IN", "CLK_MCU", -3.5, -3.0),
+                _pad("USB_DP", "USB_DP", 3.5, -1.0),
+                _pad("USB_DM", "USB_DM", 3.5, 1.0),
+                _pad("PA0", "AIN0", -3.5, 0.0),
+            ],
+        ),
+        "J1": Component(
+            ref="J1",
+            footprint="Connector:USB_C",
+            width_mm=9.0,
+            height_mm=8.0,
+            x_mm=2.0,
+            y_mm=20.0,
+            locked=True,
+            pads=[
+                _pad("GND", "GND", 0.0, -2.0),
+                _pad("D+", "USB_DP", 2.0, 0.0),
+                _pad("D-", "USB_DM", 2.0, 1.5),
+            ],
+        ),
+        "R_AIN": Component(
+            ref="R_AIN",
+            footprint="Resistor_SMD:R_0603",
+            width_mm=1.6,
+            height_mm=0.8,
+            x_mm=40,
+            y_mm=10,
+            pads=[_pad("1", "AIN0", -0.5, 0.0), _pad("2", "GND", 0.5, 0.0)],
+        ),
     }
     for fix in config.fixed:
         if fix.ref in comps:
@@ -981,10 +1090,20 @@ def board_from_synthetic(config: PlacementConfig) -> BoardModel:
         "USB_DM": [("J1", "D-"), ("U2", "USB_DM")],
         "AIN0": [("U2", "PA0"), ("R_AIN", "1")],
     }
+    # Outline rectangle for Edge.Cuts-aware routing
+    w, h = float(config.board_width_mm), float(config.board_height_mm)
+    outline = [
+        {"kind": "line", "layer": "Edge.Cuts", "x1": 0, "y1": 0, "x2": w, "y2": 0, "width": 0.1},
+        {"kind": "line", "layer": "Edge.Cuts", "x1": w, "y1": 0, "x2": w, "y2": h, "width": 0.1},
+        {"kind": "line", "layer": "Edge.Cuts", "x1": w, "y1": h, "x2": 0, "y2": h, "width": 0.1},
+        {"kind": "line", "layer": "Edge.Cuts", "x1": 0, "y1": h, "x2": 0, "y2": 0, "width": 0.1},
+    ]
     return BoardModel(
-        width_mm=config.board_width_mm,
-        height_mm=config.board_height_mm,
+        width_mm=w,
+        height_mm=h,
         components=comps,
         nets=nets,
         source_path=None,
+        copper_layers=["F.Cu", "B.Cu"],
+        outline=outline,
     )
