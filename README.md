@@ -291,7 +291,7 @@ PYTHONPATH=native/build:src python -c "from physics_router.native_bridge import 
 | Resource | How physicsRouter uses it |
 |----------|---------------------------|
 | **CPU cores** | OpenMP: outline paint, multi-layer A* probes, clearance fallback; Python thread waves for 2-pin (native releases GIL) |
-| **GPU** | OpenCL `segment_clearance` batch when `use_gpu=True` (Apple / NVIDIA ICD) |
+| **GPU** | OpenCL `segment_clearance` batch when `use_gpu=True` (Apple M-series; Windows NVIDIA via `System32\OpenCL.dll` + MinGW import lib — no CUDA SDK required) |
 | **RAM** | Grids up to 8192²; A* expansion budgets scale with ≥12 GB / ≥24 GB hosts |
 | **Env** | `OMP_NUM_THREADS`, `OMP_PROC_BIND=close` via `build_native.sh` / `native_bridge` |
 
