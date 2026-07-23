@@ -40,7 +40,9 @@ if not "%MINGW%"=="" (
   copy /Y "%MINGW%\libgcc_s_seh-1.dll" "%BUILD_DIR%\" >nul
   copy /Y "%MINGW%\libstdc++-6.dll" "%BUILD_DIR%\" >nul
   copy /Y "%MINGW%\libwinpthread-1.dll" "%BUILD_DIR%\" >nul 2>nul
+  copy /Y "%MINGW%\libgomp-1.dll" "%BUILD_DIR%\" >nul 2>nul
 )
+REM OpenCL ICD loader is System32\OpenCL.dll (NVIDIA driver) — already on PATH
 
 echo Built %BUILD_DIR% with OMP_NUM_THREADS=%OMP_NUM_THREADS%
 dir %BUILD_DIR%\pr_native*

@@ -59,10 +59,27 @@ endif()
 
 if(PR_WITH_OPENCL)
   find_package(OpenCL QUIET)
+
+  # Khronos headers when CUDA/SDK is missing (driver still ships OpenCL.dll)
+  if(NOT OpenCL_FOUND OR NOT OpenCL_INCLUDE_DIR)
+    include(FetchContent)
+    FetchContent_Declare(
+      OpenCLHeaders
+      GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+      GIT_TAG v2024.10.24
+    )
+    FetchContent_GetProperties(OpenCLHeaders)
+    if(NOT openclheaders_POPULATED)
+      FetchContent_Populate(OpenCLHeaders)
+    endif()
+    set(PR_OPENCL_HEADERS_DIR "${openclheaders_SOURCE_DIR}")
+  endif()
+
   if(NOT OpenCL_FOUND AND WIN32)
-    # NVIDIA CUDA toolkit / ICD common paths
+    # NVIDIA CUDA toolkit paths
     foreach(_cl_root
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.5"
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4"
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.3"
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2"
@@ -78,25 +95,51 @@ if(PR_WITH_OPENCL)
         break()
       endif()
     endforeach()
-    # Windows system ICD loader
+
+    # Driver-only: System32/OpenCL.dll + MinGW import lib from shipped .def
     if(NOT OpenCL_FOUND AND EXISTS "C:/Windows/System32/OpenCL.dll")
-      find_path(OpenCL_INCLUDE_DIR CL/cl.h
-        PATHS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA" PATH_SUFFIXES include
-        "C:/Program Files (x86)/Intel/OpenCL SDK/include")
-      find_library(OpenCL_LIBRARY OpenCL
-        PATHS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA" PATH_SUFFIXES lib/x64
-        "C:/Windows/System32")
-      if(OpenCL_INCLUDE_DIR AND OpenCL_LIBRARY)
-        set(OpenCL_FOUND TRUE)
+      set(PR_OPENCL_DEF "${CMAKE_CURRENT_SOURCE_DIR}/cmake/OpenCL.def")
+      set(PR_OPENCL_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/libOpenCL.a")
+      find_program(PR_DLLTOOL NAMES dlltool dlltool.exe)
+      if(PR_DLLTOOL AND EXISTS "${PR_OPENCL_DEF}")
+        add_custom_command(
+          OUTPUT "${PR_OPENCL_IMPLIB}"
+          COMMAND ${PR_DLLTOOL} -d "${PR_OPENCL_DEF}" -l "${PR_OPENCL_IMPLIB}" -D OpenCL.dll
+          DEPENDS "${PR_OPENCL_DEF}"
+          COMMENT "Generating MinGW import library for OpenCL.dll"
+          VERBATIM
+        )
+        add_custom_target(pr_opencl_implib DEPENDS "${PR_OPENCL_IMPLIB}")
+        set(OpenCL_LIBRARY "${PR_OPENCL_IMPLIB}")
+        if(DEFINED PR_OPENCL_HEADERS_DIR)
+          set(OpenCL_INCLUDE_DIR "${PR_OPENCL_HEADERS_DIR}")
+        endif()
+        if(OpenCL_INCLUDE_DIR OR DEFINED PR_OPENCL_HEADERS_DIR)
+          set(OpenCL_FOUND TRUE)
+          set(PR_OPENCL_MINGW_IMPLIB TRUE)
+          message(STATUS "OpenCL: using System32/OpenCL.dll + MinGW import lib")
+        endif()
       endif()
     endif()
   endif()
-  if(OpenCL_FOUND)
-    if(TARGET OpenCL::OpenCL)
+
+  if(OpenCL_FOUND OR DEFINED PR_OPENCL_HEADERS_DIR)
+    if(TARGET OpenCL::OpenCL AND NOT PR_OPENCL_MINGW_IMPLIB)
       target_link_libraries(pr_core PUBLIC OpenCL::OpenCL)
     else()
-      target_include_directories(pr_core PUBLIC ${OpenCL_INCLUDE_DIR})
-      target_link_libraries(pr_core PUBLIC ${OpenCL_LIBRARY})
+      if(DEFINED PR_OPENCL_HEADERS_DIR)
+        target_include_directories(pr_core PUBLIC "${PR_OPENCL_HEADERS_DIR}")
+      elseif(OpenCL_INCLUDE_DIR)
+        target_include_directories(pr_core PUBLIC ${OpenCL_INCLUDE_DIR})
+      endif()
+      if(OpenCL_LIBRARY)
+        target_link_libraries(pr_core PUBLIC ${OpenCL_LIBRARY})
+      endif()
+      if(PR_OPENCL_MINGW_IMPLIB)
+        add_dependencies(pr_core pr_opencl_implib)
+        # Ensure the ICD loader is found at runtime
+        target_link_options(pr_core PUBLIC "-Wl,-rpath,C:/Windows/System32")
+      endif()
     endif()
     target_compile_definitions(pr_core PUBLIC PR_HAS_OPENCL=1)
     target_compile_definitions(pr_core PRIVATE

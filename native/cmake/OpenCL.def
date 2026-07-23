@@ -1,0 +1,27 @@
+; MinGW import library for Windows OpenCL ICD loader (C:\Windows\System32\OpenCL.dll).
+; Used when CUDA toolkit is not installed but the NVIDIA driver provides OpenCL.
+LIBRARY OpenCL.dll
+EXPORTS
+clGetPlatformIDs
+clGetDeviceIDs
+clGetDeviceInfo
+clCreateContext
+clCreateCommandQueue
+clCreateCommandQueueWithProperties
+clCreateProgramWithSource
+clBuildProgram
+clGetProgramBuildInfo
+clCreateKernel
+clCreateBuffer
+clSetKernelArg
+clEnqueueNDRangeKernel
+clEnqueueWriteBuffer
+clEnqueueReadBuffer
+clFinish
+clReleaseMemObject
+clReleaseKernel
+clReleaseProgram
+clReleaseCommandQueue
+clReleaseContext
+clGetPlatformInfo
+clGetContextInfo

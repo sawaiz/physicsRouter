@@ -3,6 +3,8 @@
 #include <cstring>
 #include <mutex>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #ifdef PR_HAS_OPENCL
 #ifdef __APPLE__
@@ -71,19 +73,56 @@ static void cl_init() {
   if (tried)
     return;
   tried = true;
-  cl_platform_id plat = nullptr;
+  // Prefer a discrete GPU platform (NVIDIA/AMD) when several ICDs exist.
   cl_uint np = 0;
-  if (clGetPlatformIDs(1, &plat, &np) != CL_SUCCESS || np == 0)
+  if (clGetPlatformIDs(0, nullptr, &np) != CL_SUCCESS || np == 0)
+    return;
+  std::vector<cl_platform_id> plats(np);
+  if (clGetPlatformIDs(np, plats.data(), nullptr) != CL_SUCCESS)
     return;
   cl_device_id dev = nullptr;
-  cl_uint nd = 0;
-  if (clGetDeviceIDs(plat, CL_DEVICE_TYPE_GPU, 1, &dev, &nd) != CL_SUCCESS || nd == 0) {
-    if (clGetDeviceIDs(plat, CL_DEVICE_TYPE_DEFAULT, 1, &dev, &nd) != CL_SUCCESS || nd == 0)
-      return;
+  for (cl_platform_id plat : plats) {
+    cl_uint nd = 0;
+    if (clGetDeviceIDs(plat, CL_DEVICE_TYPE_GPU, 0, nullptr, &nd) != CL_SUCCESS ||
+        nd == 0)
+      continue;
+    std::vector<cl_device_id> devs(nd);
+    if (clGetDeviceIDs(plat, CL_DEVICE_TYPE_GPU, nd, devs.data(), nullptr) !=
+        CL_SUCCESS)
+      continue;
+    // Prefer NVIDIA / AMD discrete GPUs by name
+    for (cl_device_id candidate : devs) {
+      char name[256] = {0};
+      clGetDeviceInfo(candidate, CL_DEVICE_NAME, sizeof(name), name, nullptr);
+      std::string s(name);
+      if (s.find("NVIDIA") != std::string::npos ||
+          s.find("GeForce") != std::string::npos ||
+          s.find("RTX") != std::string::npos ||
+          s.find("Radeon") != std::string::npos ||
+          s.find("AMD") != std::string::npos) {
+        dev = candidate;
+        g_dev_name = s;
+        break;
+      }
+      if (dev == nullptr) {
+        dev = candidate;
+        g_dev_name = s;
+      }
+    }
+    if (dev != nullptr)
+      break;
   }
-  char name[256] = {0};
-  clGetDeviceInfo(dev, CL_DEVICE_NAME, sizeof(name), name, nullptr);
-  g_dev_name = name;
+  if (dev == nullptr) {
+    // Fallback: any default device on first platform
+    cl_platform_id plat = plats[0];
+    cl_uint nd = 0;
+    if (clGetDeviceIDs(plat, CL_DEVICE_TYPE_DEFAULT, 1, &dev, &nd) != CL_SUCCESS ||
+        nd == 0)
+      return;
+    char name[256] = {0};
+    clGetDeviceInfo(dev, CL_DEVICE_NAME, sizeof(name), name, nullptr);
+    g_dev_name = name;
+  }
   cl_int err = 0;
   g_ctx = clCreateContext(nullptr, 1, &dev, nullptr, nullptr, &err);
   if (err != CL_SUCCESS)
