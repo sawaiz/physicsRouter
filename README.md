@@ -50,9 +50,10 @@ and a fair manufacturing-style score (rip human copper → re-route → grade).
 | Topology guide (AR planner) | ~1563 mm · **60** Steiner multipin nets |
 | Cut preflight | feasible (0 saturated cuts @ 0.3 mm pitch, 4 layers) |
 | Via profile (auto) | `via_0p6` · ~99% SMD escape reach · shared-escape savings ~19% |
+| AR status | Planner complete; capacity copper scored via `run_mppc_benchmark.py` (no hard process kill; long multipin) |
 
 Pinned PCB + config: [`examples/mppc-interface/`](examples/mppc-interface/)  
-Full write-up: **[docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)**
+Full write-up: **[docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)** · live artifacts `viewer/runs/mppc_v1.3/`
 
 ![mppc human vs AR](docs/images/golden/mppc_v13_compare.png)
 
@@ -364,7 +365,7 @@ Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 | Package | **0.1.0** · native `2.0.0-production-flow` |
 | Tests | `pytest -q` (extensive; native required for full collection) |
 | Synthetic / simple boards | Full route + 0 DRC typical |
-| mppc v1.3 | Pinned complete human golden; topology + pin-access planned; AR scored via golden-eval |
+| mppc v1.3 | Pinned complete human golden; topology + pin-access planned; AR via capacity pipeline without hard process kill |
 | OHL gallery | Easy boards A / honest partial; dense often hard-deadline TIMEOUT |
 | HALO-90 | Legal partials; dense CPX still open research |
 | Physics loop | SPICE/OpenEMS after complete legal copper only |

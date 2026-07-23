@@ -45,6 +45,8 @@ def main() -> None:
         json.dumps(topo.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
 
+    # Long multipin board: always inline (timeout_s=0) and no hard process kill.
+    # hard_deadline=True + positive timeout was killing capacity search mid-net.
     entry = {
         "id": "mppc_v1.3",
         "pcb": str(PCB),
@@ -53,8 +55,8 @@ def main() -> None:
         "timeout_s": 0,  # inline route (no spawn)
         "min_completion": 0.0,
         "difficulty": "hard",
-        "cbs_repair": True,
-        "hard_deadline": True,
+        "cbs_repair": False,  # full CBS after 85 nets is very expensive
+        "hard_deadline": False,
         "_base": str(ROOT),
     }
     print(
@@ -72,15 +74,30 @@ def main() -> None:
         f"steiner={topo.metrics.get('steiner_net_count')} "
         f"cut_ok={ (topo.metrics.get('cut_preflight') or {}).get('feasible_under_model')}"
     )
-    print("routing (capacity pipeline, inline)…")
+    progress_path = OUT / "progress.json"
+    progress_path.write_text(
+        json.dumps(
+            {
+                "status": "routing",
+                "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "pipeline": "capacity",
+                "effort": 0.45,
+                "hard_deadline": False,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print("routing (capacity pipeline, inline, no hard deadline)…")
     t0 = time.time()
     row = evaluate_board(
         entry,
         pipeline="capacity",
-        effort=0.5,
+        effort=0.45,
         out_dir=OUT,
-        hard_deadline=True,
-        cbs_repair=True,
+        hard_deadline=False,
+        cbs_repair=False,
     )
     elapsed = time.time() - t0
     row["benchmark_wall_s"] = round(elapsed, 2)
@@ -88,6 +105,24 @@ def main() -> None:
     row["source_repo"] = "https://github.com/muonTelescope/mppcInterface"
     (OUT / "benchmark_row.json").write_text(
         json.dumps(row, indent=2, default=str) + "\n", encoding="utf-8"
+    )
+    progress_path.write_text(
+        json.dumps(
+            {
+                "status": "done" if not row.get("error") else "error",
+                "finished": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "elapsed_s": round(elapsed, 2),
+                "grade": row.get("golden_grade"),
+                "score": row.get("golden_score"),
+                "completion": row.get("completion_ratio"),
+                "hard_drc": row.get("hard_violations"),
+                "error": row.get("error"),
+            },
+            indent=2,
+            default=str,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     print(
         f"done {elapsed:.1f}s grade={row.get('golden_grade')} "
@@ -270,7 +305,7 @@ def main() -> None:
         f"| Segments | {len(human.segments)} | {(ar or {}).get('segments', '—')} |",
         f"| Areas/pours | {len(human.areas)} | {(ar or {}).get('areas', '—')} |",
         f"| Wall time (s) | — | {row.get('time_s') or elapsed:.1f} |",
-        f"| Pipeline | hand | capacity · effort 0.5 · CBS repair |",
+        f"| Pipeline | hand | capacity · effort 0.45 · no hard deadline · CBS off |",
         "",
         f"Missing nets vs human ({len(missing)}): "
         + (f"`{', '.join(missing[:24])}`" if missing else "_none_"),

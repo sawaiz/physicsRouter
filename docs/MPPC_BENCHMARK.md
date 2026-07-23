@@ -31,9 +31,20 @@ Pinned files: `examples/mppc-interface/mppcInterface_v1.3.kicad_pcb` (+ `.kicad_
 | Vias | **155** |
 | Areas / pours | **61** |
 | Track length | **1931.8 mm** |
-| Topology guide length | ~1563 mm |
-| Steiner multipin nets | 60 |
-| Cut preflight | feasible (no saturated cuts @ 0.3 mm pitch) |
+
+### Topology preflight (AR planner, no copper yet)
+
+| Metric | Value |
+|--------|------:|
+| Guide length | **1562.6 mm** |
+| Steiner multipin nets | **60** |
+| Projected crossings | 324 |
+| Layers used (plan) | 4 |
+| Overflow Steiner | yes |
+| Via profile (auto) | **via_0p6** (~99% SMD escape reach) |
+| Shared-escape savings | ~19% of candidate sites |
+| Cut preflight | **feasible** (0 saturated @ 0.3 mm pitch) |
+| Worst cut | vertical x=16.25 mm · demand 13 · capacity 400 · slack 387 |
 
 ---
 
@@ -49,10 +60,19 @@ Pinned files: `examples/mppc-interface/mppcInterface_v1.3.kicad_pcb` (+ `.kicad_
 
 | Metric | Human | Autorouter |
 |--------|------:|-----------:|
-| Electrical completeness | **85/85 nets** | see `viewer/runs/mppc_v1.3/benchmark_row.json` |
+| Electrical completeness | **85/85 nets** | see latest `viewer/runs/mppc_v1.3/benchmark_row.json` |
 | Hard DRC | fab reference | must stay **0** on committed copper |
 | Length / vias / segs | 1932 mm · 155 · 1199 | AR row in metrics chart |
 | Pours | 61 areas | AR under-uses pours vs human |
+| Wall time | hand | long multipin capacity search (no hard process kill) |
+
+### Run status notes
+
+- **Human extract + topology + pin-access:** complete and checked in as artifacts under `viewer/runs/mppc_v1.3/`.
+- **Full capacity AR:** expensive on 85 multipin nets (native ExactMap + section negotiation).  
+  Earlier CI-style runs with a **hard process deadline** exited as `route worker exited without result` / TIMEOUT without writing `ar_route.json`.  
+  The benchmark script now uses **`timeout_s=0`**, **`hard_deadline=False`**, **CBS repair off**, effort **0.45** so the search can finish and score honestly.
+- **Progress file:** `viewer/runs/mppc_v1.3/progress.json` (written by `scripts/run_mppc_benchmark.py`).
 
 **Reading the result**
 
@@ -69,7 +89,7 @@ python scripts/run_mppc_benchmark.py
 physics-router route \
   --pcb examples/mppc-interface/mppcInterface_v1.3.kicad_pcb \
   --config examples/mppc-interface/placement_config.yaml \
-  --pipeline capacity --effort 0.5 \
+  --pipeline capacity --effort 0.45 \
   --out-json /tmp/mppc_ar.json --out-pcb /tmp/mppc_ar.kicad_pcb
 ```
 
