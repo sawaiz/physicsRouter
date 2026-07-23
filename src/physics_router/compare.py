@@ -259,6 +259,9 @@ def compare_to_golden(
                 "ar_vias": av,
                 "human_vias": hv,
                 "delta_vias": av - hv,
+                "ar_areas": int(a.get("areas") or 0),
+                "human_areas": int(h.get("areas") or 0),
+                "zone_only": bool(h.get("zone_only")),
                 "ar_primary_layer": a.get("primary_layer"),
                 "human_primary_layer": h.get("primary_layer"),
                 "layer_match": (
@@ -319,6 +322,52 @@ def compare_to_golden(
         else "F"
     )
 
+    # Efficiency metrics among nets both completed (physics: length / via budget)
+    both = [
+        r
+        for r in per_net
+        if r.get("human_has_copper") and r.get("ar_complete") and not r.get("zone_only")
+    ]
+    # recompute both with length fields
+    both = [
+        r
+        for r in per_net
+        if r.get("human_has_copper")
+        and r.get("ar_complete")
+        and float(r.get("human_length_mm") or 0) > 1e-6
+    ]
+    length_ratios = [
+        float(r["ar_length_mm"]) / float(r["human_length_mm"])
+        for r in both
+        if float(r.get("human_length_mm") or 0) > 1e-6
+    ]
+    via_deltas = [int(r["delta_vias"]) for r in both]
+    mean_length_ratio = (
+        round(sum(length_ratios) / len(length_ratios), 4) if length_ratios else None
+    )
+    # Bundle length match: nets sharing a name prefix (CPX-, D+/D-)
+    prefix_groups: dict[str, list[float]] = {}
+    for r in both:
+        net = str(r.get("net") or "")
+        pref = net.rsplit("-", 1)[0] if "-" in net else net[:3]
+        if len(pref) >= 2:
+            prefix_groups.setdefault(pref, []).append(float(r.get("ar_length_mm") or 0))
+    bundle_skew: list[dict[str, Any]] = []
+    for pref, lengths in prefix_groups.items():
+        if len(lengths) < 2:
+            continue
+        lo, hi = min(lengths), max(lengths)
+        mean = sum(lengths) / len(lengths)
+        bundle_skew.append(
+            {
+                "prefix": pref,
+                "n": len(lengths),
+                "skew_mm": round(hi - lo, 4),
+                "skew_pct": round(100.0 * (hi - lo) / mean, 2) if mean else None,
+            }
+        )
+    bundle_skew.sort(key=lambda x: -(x.get("skew_mm") or 0))
+
     out = {
         **base,
         "kind": "golden",
@@ -336,6 +385,14 @@ def compare_to_golden(
             "human_areas": len(human.areas or []),
             "ar_areas": len(autorouter.areas or []),
         },
+        "efficiency": {
+            "mean_length_ratio_ar_over_human": mean_length_ratio,
+            "nets_compared": len(length_ratios),
+            "mean_via_delta": round(sum(via_deltas) / len(via_deltas), 3)
+            if via_deltas
+            else None,
+            "bundle_skew": bundle_skew[:12],
+        },
         "per_net": per_net,
         "layer_agreement": {
             "matched": len(layer_agree),
@@ -352,6 +409,7 @@ def compare_to_golden(
         "notes": [
             "Primary: completion vs human copper + zero hard DRC.",
             "Secondary length/via only counted when AR finishes all human nets.",
+            "Zones count as copper; efficiency metrics only on dual-completed nets.",
         ],
     }
     return out

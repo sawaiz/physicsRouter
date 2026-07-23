@@ -92,6 +92,43 @@ class PinAccessPlan:
     def has_inner_access(self, net: str, anchor_index: int) -> bool:
         return bool(self.sites_for(net, anchor_index))
 
+    def escape_resource_map(self, merge_mm: float = 0.15) -> dict[tuple[str, int], int]:
+        """Map ``(net, anchor_index)`` → shared resource id for via charging.
+
+        Pads whose best access sites lie within ``merge_mm`` share one resource.
+        Global routing charges the first tree edge that needs a via on that
+        resource fully, and only a residual cost for later edges.
+        """
+        mapping: dict[tuple[str, int], int] = {}
+        next_id = 0
+        for net, pads in self.by_net.items():
+            # Representative site per pad (best score)
+            reps: list[tuple[int, float, float]] = []  # anchor_index, x, y
+            for pad in pads:
+                if not pad.candidates:
+                    # Unique singleton resource so legal_layer still works
+                    mapping[(net, pad.anchor_index)] = next_id
+                    next_id += 1
+                    continue
+                best = max(pad.candidates, key=lambda s: s.score)
+                reps.append((pad.anchor_index, best.x, best.y))
+            used = [False] * len(reps)
+            for i, (ai, x, y) in enumerate(reps):
+                if used[i]:
+                    continue
+                rid = next_id
+                next_id += 1
+                mapping[(net, ai)] = rid
+                used[i] = True
+                for j in range(i + 1, len(reps)):
+                    if used[j]:
+                        continue
+                    aj, xj, yj = reps[j]
+                    if math.hypot(x - xj, y - yj) <= merge_mm:
+                        mapping[(net, aj)] = rid
+                        used[j] = True
+        return mapping
+
     def shared_escape_resources(self, merge_mm: float = 0.15) -> dict[str, Any]:
         """Cluster nearby access sites so multipin trees charge one escape once.
 
@@ -129,10 +166,13 @@ class PinAccessPlan:
                     }
                 )
         n_resources = len(clusters)
+        rmap = self.escape_resource_map(merge_mm=merge_mm)
+        n_unique = len(set(rmap.values()))
         return {
             "merge_mm": merge_mm,
             "raw_sites": total_sites,
             "shared_resources": n_resources,
+            "pad_resources": n_unique,
             "savings": max(0, total_sites - n_resources),
             "savings_ratio": round(
                 (total_sites - n_resources) / total_sites, 4
@@ -141,6 +181,106 @@ class PinAccessPlan:
             else 0.0,
             "clusters": clusters[:200],
         }
+
+    def to_dict(self) -> dict[str, Any]:
+        shared = self.shared_escape_resources()
+        metrics = dict(self.metrics)
+        metrics["shared_escapes"] = {
+            k: shared[k]
+            for k in (
+                "merge_mm",
+                "raw_sites",
+                "shared_resources",
+                "pad_resources",
+                "savings",
+                "savings_ratio",
+            )
+            if k in shared
+        }
+        return {
+            "via_diameter_mm": self.via_diameter_mm,
+            "via_drill_mm": self.via_drill_mm,
+            "clearance_mm": self.clearance_mm,
+            "metrics": metrics,
+            "pads": {
+                net: [
+                    {
+                        "ref": value.ref,
+                        "pad": value.pad,
+                        "anchor_index": value.anchor_index,
+                        "anchor": [
+                            round(value.anchor[0], 4),
+                            round(value.anchor[1], 4),
+                        ],
+                        "layers": list(value.layers),
+                        "inner_reachable": value.inner_reachable,
+                        "reason": value.reason,
+                        "candidates": [site.to_dict() for site in value.candidates],
+                    }
+                    for value in values
+                ]
+                for net, values in self.by_net.items()
+            },
+        }
+
+
+def auto_select_via_profile(
+    board: BoardModel,
+    rules: DesignRules,
+    *,
+    profiles: tuple[str, ...] = ("via_0p6", "via_0p45"),
+    prefer_reachability: bool = True,
+) -> tuple[DesignRules, dict[str, Any]]:
+    """Pick a via profile by pin-access reachability (physics feasibility cliff).
+
+    Tries each named profile, builds a pin-access plan, and selects the one with
+    the most inner-reachable SMD anchors (ties → fewer candidate sites, then
+    larger via for DFM). Returns ``(rules, report)``.
+    """
+    from physics_router.design_rules import apply_rules_profile
+
+    trials: list[dict[str, Any]] = []
+    best_rules = rules
+    best_score: tuple = (-1, 0, 0.0, "")  # reach, -via_d, -candidates, name
+    for name in profiles:
+        trial = apply_rules_profile(rules.model_copy(deep=True), name)
+        plan = build_pin_access_plan(board, trial)
+        reach = int(plan.metrics.get("inner_reachable_anchors") or 0)
+        tested = int(plan.metrics.get("tested_smd_anchors") or 0)
+        candidates = int(plan.metrics.get("candidate_sites") or 0)
+        via_d = float(trial.constraints.min_via_diameter_mm)
+        ratio = reach / max(1, tested)
+        row = {
+            "profile": name,
+            "inner_reachable_anchors": reach,
+            "tested_smd_anchors": tested,
+            "reach_ratio": round(ratio, 4),
+            "candidate_sites": candidates,
+            "via_diameter_mm": via_d,
+            "via_drill_mm": float(trial.constraints.min_via_drill_mm),
+            "shared": plan.shared_escape_resources(),
+        }
+        trials.append(row)
+        # Prefer more reachable; then larger via (DFM); then fewer sites (cleaner)
+        score = (reach, via_d, -candidates, name)
+        if prefer_reachability and score > best_score:
+            best_score = score
+            best_rules = trial
+
+    report = {
+        "algorithm": "auto_via_profile",
+        "selected": best_score[3] or (profiles[0] if profiles else None),
+        "trials": trials,
+        "reason": (
+            "maximize inner-reachable SMD anchors under exact pad/via geometry; "
+            "tie-break larger via for manufacturability"
+        ),
+    }
+    best_rules.notes = list(best_rules.notes or [])
+    tag = f"auto_via_profile: selected {report['selected']}"
+    if tag not in best_rules.notes:
+        best_rules.notes.append(tag)
+    return best_rules, report
 
     def to_dict(self) -> dict[str, Any]:
         shared = self.shared_escape_resources()

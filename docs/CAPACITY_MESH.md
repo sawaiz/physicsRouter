@@ -7,6 +7,9 @@
 | Python API | `capacity_mesh.py`, `route_pipeline.py` |
 | C++ | `native/src/capacity_mesh.cpp` |
 | CLI | `physics-router route --pipeline capacity --effort 0.55` |
+| Stages | via_profile → pin_access → topology_mesh → global_sections → detailed → gate |
+| Via preflight | Auto-selects 0.60 vs 0.45 mm vias by pin-access reachability |
+| Shared escapes | Section costs charge co-located pin-access sites once per multipin net |
 | Related | [ARCHITECTURE_ROUTER.md](ARCHITECTURE_ROUTER.md) · [../native/README.md](../native/README.md) |
 
 ---

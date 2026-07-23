@@ -104,7 +104,12 @@ def _autoroute(
 
         try:
             return run_capacity_pipeline(
-                board, config, rules, effort=float(effort), raise_on_fail=False
+                board,
+                config,
+                rules,
+                effort=float(effort),
+                raise_on_fail=False,
+                auto_via_profile=True,
             )
         except Exception:
             if pipe == "capacity":
@@ -273,6 +278,7 @@ def evaluate_board(
 
     profile = rules_profile or entry.get("rules_profile")
     use_source = str(profile or "").lower() in ("source", "project", "kicad", "none", "raw")
+    auto_profile = str(profile or "").lower() in ("auto", "auto_via", "")
 
     config = _load_config_for_pcb(pcb, cfg_path)
     board = load_board_from_kicad_pcb(pcb, config)
@@ -280,8 +286,14 @@ def evaluate_board(
         rules = load_design_rules(pcb_path=pcb, manufacturer=None)
     else:
         rules = load_design_rules(pcb_path=pcb) or default_design_rules()
-    if profile:
+    via_profile_report = None
+    if profile and not auto_profile and not use_source:
         rules = apply_rules_profile(rules, profile)
+    elif auto_profile or profile is None:
+        # Default: physics-based via preflight (also done inside capacity pipeline)
+        from physics_router.pin_access import auto_select_via_profile
+
+        rules, via_profile_report = auto_select_via_profile(board, rules)
 
     human = extract_routes_from_kicad_pcb(pcb, board_nets=board.nets)
     access = pin_access_metrics(board, rules)
@@ -304,7 +316,10 @@ def evaluate_board(
         "pcb": str(pcb),
         "difficulty": entry.get("difficulty") or "unknown",
         "expect": entry.get("expect") or "partial_ok",
-        "rules_profile": profile or "default",
+        "rules_profile": (via_profile_report or {}).get("selected")
+        if via_profile_report
+        else (profile or "default"),
+        "via_profile_report": via_profile_report,
         "human": {
             "segments": len(human.segments),
             "vias": human.via_count,

@@ -25,6 +25,9 @@ physics-router golden-eval --id simple_2net --rules-profile via_0p6
 | **Rules profiles** | `via_0p45` / `via_0p6` / `source` / JLCPCB floors for A/B reachability |
 | **Hard deadline** | Child process killed at `timeout_s` (prevents StickHub-class hangs) |
 | **CBS repair** | Bounded conflict-cluster re-route after AR (`--cbs-repair`) |
+| **Shared-escape costing** | Global section planner charges nearby pin escapes once (0.2 residual reuse) |
+| **Auto via profile** | Pipeline stage picks `via_0p6` vs `via_0p45` by inner-reachable SMD count |
+| **Efficiency metrics** | Golden compare: mean L(AR)/L(human), via Δ, CPX-style bundle skew |
 
 Artifacts: `viewer/runs/golden_corpus/` · images: `docs/images/golden/`
 

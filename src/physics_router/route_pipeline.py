@@ -47,6 +47,9 @@ class RoutePipelineSolver:
     effort: float = 0.55
     capacity_depth: int | None = None
     progress_cb: ProgressCallback | None = None
+    # When True, pick via_0p6 vs via_0p45 by pin-access reachability before routing.
+    auto_via_profile: bool = True
+    via_profiles: tuple[str, ...] = ("via_0p6", "via_0p45")
 
     # State
     stage_index: int = 0
@@ -58,8 +61,10 @@ class RoutePipelineSolver:
     routing_plan: GlobalRoutePlan | None = None
     result: RouteResult | None = None
     stage_log: list[PipelineStageResult] = field(default_factory=list)
+    via_profile_report: dict[str, Any] | None = None
 
     STAGES: tuple[str, ...] = (
+        "via_profile",
         "pin_access",
         "topology_mesh",
         "global_sections",
@@ -93,7 +98,9 @@ class RoutePipelineSolver:
             return False
         name = self.STAGES[self.stage_index]
         try:
-            if name == "pin_access":
+            if name == "via_profile":
+                self._step_via_profile()
+            elif name == "pin_access":
                 self._step_pin_access()
             elif name == "topology_mesh":
                 self._step_topology_mesh()
@@ -139,15 +146,44 @@ class RoutePipelineSolver:
         except Exception:
             pass
 
+    def _step_via_profile(self) -> None:
+        """Auto-select via diameter by pin-access reachability (physics cliff)."""
+        self._progress("via_profile")
+        assert self.rules is not None
+        if not self.auto_via_profile:
+            self.via_profile_report = {"skipped": True, "reason": "auto_via_profile=False"}
+            self.stage_log.append(
+                PipelineStageResult(name="via_profile", ok=True, detail=self.via_profile_report)
+            )
+            return
+        from physics_router.pin_access import auto_select_via_profile
+
+        self.rules, self.via_profile_report = auto_select_via_profile(
+            self.board, self.rules, profiles=self.via_profiles
+        )
+        self.stage_log.append(
+            PipelineStageResult(
+                name="via_profile",
+                ok=True,
+                detail=dict(self.via_profile_report or {}),
+            )
+        )
+
     def _step_pin_access(self) -> None:
         self._progress("pin_access")
         assert self.rules is not None
         self.pin_access = build_pin_access_plan(self.board, self.rules)
+        detail = (
+            self.pin_access.to_dict() if hasattr(self.pin_access, "to_dict") else {}
+        )
+        if self.via_profile_report:
+            detail = dict(detail)
+            detail["via_profile"] = self.via_profile_report
         self.stage_log.append(
             PipelineStageResult(
                 name="pin_access",
                 ok=True,
-                detail=self.pin_access.to_dict() if hasattr(self.pin_access, "to_dict") else {},
+                detail=detail,
             )
         )
 
@@ -288,9 +324,15 @@ class RoutePipelineSolver:
             "kicad_drc_required": True,
             "stages": [s.name for s in self.stage_log],
             "capacity_mesh": self.capacity_mesh.to_dict() if self.capacity_mesh else None,
+            "via_profile": self.via_profile_report,
+            "shared_escape": (self.routing_plan.metrics.get("shared_escape") if self.routing_plan else None),
         }
         q = dict(self.result.quality or {})
         q["manufacturing_gate"] = gate
+        if self.via_profile_report:
+            q["via_profile"] = self.via_profile_report
+        if self.routing_plan and self.routing_plan.metrics.get("shared_escape"):
+            q["shared_escape"] = self.routing_plan.metrics["shared_escape"]
         q["pipeline"] = "capacity_mesh+hybrid"
         if self.routing_plan is not None:
             q["production_route_plan"] = self.routing_plan.to_dict()
@@ -321,6 +363,8 @@ def run_capacity_pipeline(
     capacity_depth: int | None = None,
     progress_cb: ProgressCallback | None = None,
     raise_on_fail: bool = False,
+    auto_via_profile: bool = True,
+    via_profiles: tuple[str, ...] = ("via_0p6", "via_0p45"),
 ) -> RouteResult:
     """Convenience entry: full capacity-mesh pipeline → copper."""
     solver = RoutePipelineSolver(
@@ -330,6 +374,8 @@ def run_capacity_pipeline(
         effort=effort,
         capacity_depth=capacity_depth,
         progress_cb=progress_cb,
+        auto_via_profile=auto_via_profile,
+        via_profiles=via_profiles,
     )
     while solver.step():
         pass

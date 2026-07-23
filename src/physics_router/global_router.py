@@ -167,18 +167,29 @@ def build_global_route_plan(
     capacity = max(1, int(math.floor(cell / max(0.1, pitch))))
     history: dict[ResourceKey, float] = defaultdict(float)
     assignments: dict[tuple[str, int], SectionAssignment] = {}
+    # Shared pin-escape resources: multipin trees should not pay a full via for
+    # every tree edge when pads share a nearby legal fanout site.
+    escape_map = pin_access.escape_resource_map(merge_mm=0.15)
+    shared_stats = pin_access.shared_escape_resources(merge_mm=0.15)
 
-    def legal_layer(net: str, edge: GraphEdge, layer: str) -> tuple[bool, int]:
+    def legal_layer(
+        net: str, edge: GraphEdge, layer: str
+    ) -> tuple[bool, int, list[int]]:
+        """Return (ok, via_count, resource_ids that would be newly charged)."""
         vertices = topology.hyperedges[net].vertices
         vias = 0
+        resource_ids: list[int] = []
         for endpoint in (edge.u, edge.v):
             vertex = vertices[endpoint]
             if layer in vertex.layers:
                 continue
             if not pin_access.has_inner_access(net, endpoint):
-                return False, 0
+                return False, 0, []
             vias += 1
-        return True, vias
+            rid = escape_map.get((net, endpoint))
+            if rid is not None:
+                resource_ids.append(rid)
+        return True, vias, resource_ids
 
     def make_assignment(
         net: str,
@@ -186,8 +197,9 @@ def build_global_route_plan(
         edge: GraphEdge,
         layer: str,
         occupancy: dict[ResourceKey, int],
-    ) -> SectionAssignment | None:
-        allowed, vias = legal_layer(net, edge, layer)
+        paid_escapes: set[tuple[str, int]],
+    ) -> tuple[SectionAssignment, list[int]] | None:
+        allowed, vias, resource_ids = legal_layer(net, edge, layer)
         if not allowed:
             return None
         vertices = topology.hyperedges[net].vertices
@@ -213,9 +225,26 @@ def build_global_route_plan(
                     mesh_bias = 0.15 * max(0, len(path) - 1)
             except Exception:
                 mesh_bias = 0.0
-        cost = edge.length_mm + 5.0 * vias + 2.5 * present + 18.0 * overflow
+        # Shared-escape charge: first use of a resource = 1.0 via unit; reuse = 0.2
+        via_units = 0.0
+        pending_pay: list[int] = []
+        if not resource_ids and vias:
+            via_units = float(vias)
+        else:
+            seen_local: set[int] = set()
+            for rid in resource_ids:
+                if rid in seen_local:
+                    continue
+                seen_local.add(rid)
+                key = (net, rid)
+                if key in paid_escapes:
+                    via_units += 0.2
+                else:
+                    via_units += 1.0
+                    pending_pay.append(rid)
+        cost = edge.length_mm + 5.0 * via_units + 2.5 * present + 18.0 * overflow
         cost += historical + layer_change + mesh_bias
-        return SectionAssignment(
+        assign = SectionAssignment(
             net=net,
             edge_index=edge_index,
             u=edge.u,
@@ -225,6 +254,7 @@ def build_global_route_plan(
             via_count=vias,
             cost=cost,
         )
+        return assign, pending_pay
 
     section_keys = [
         (net, index, edge)
@@ -242,32 +272,65 @@ def build_global_route_plan(
     )
 
     overflow_history: list[int] = []
+    shared_via_units_saved = 0.0
     for iteration in range(max(1, max_iterations)):
         occupancy: dict[ResourceKey, int] = defaultdict(int)
         next_assignments: dict[tuple[str, int], SectionAssignment] = {}
+        paid_escapes: set[tuple[str, int]] = set()
+        naive_via_sum = 0
+        charged_via_sum = 0.0
         for net, edge_index, edge in section_keys:
-            candidates = [
-                value
-                for layer in layers
-                if (
-                    value := make_assignment(net, edge_index, edge, layer, occupancy)
+            cand_pairs: list[tuple[SectionAssignment, list[int]]] = []
+            for layer in layers:
+                made = make_assignment(
+                    net, edge_index, edge, layer, occupancy, paid_escapes
                 )
-                is not None
-            ]
-            if not candidates:
+                if made is not None:
+                    cand_pairs.append(made)
+            if not cand_pairs:
                 # This should be rare: the exposed pad layers always provide at
                 # least one outer-layer choice. Retain a diagnostic assignment.
                 fallback = topology.hyperedges[net].vertices[edge.u].layers[0]
-                candidates = [
-                    make_assignment(net, edge_index, edge, fallback, occupancy)
-                ]
-            selected = min(
-                (value for value in candidates if value is not None),
-                key=lambda value: (value.cost, layers.index(value.layer)),
+                made = make_assignment(
+                    net, edge_index, edge, fallback, occupancy, paid_escapes
+                )
+                if made is not None:
+                    cand_pairs.append(made)
+            if not cand_pairs:
+                continue
+            selected, pending = min(
+                cand_pairs,
+                key=lambda pair: (pair[0].cost, layers.index(pair[0].layer)),
             )
             next_assignments[(net, edge_index)] = selected
             for resource in selected.cells:
                 occupancy[resource] += 1
+            naive_via_sum += selected.via_count
+            for rid in pending:
+                paid_escapes.add((net, rid))
+
+        # Metrics: sequential shared accounting (mirrors selection order)
+        paid_escapes_m: set[tuple[str, int]] = set()
+        charged_via_sum = 0.0
+        for net, edge_index, edge in section_keys:
+            sel = next_assignments.get((net, edge_index))
+            if sel is None:
+                continue
+            _ok, vias, rids = legal_layer(net, edge, sel.layer)
+            if not rids and vias:
+                charged_via_sum += float(vias)
+                continue
+            seen: set[int] = set()
+            for rid in rids:
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                key = (net, rid)
+                if key in paid_escapes_m:
+                    charged_via_sum += 0.2
+                else:
+                    charged_via_sum += 1.0
+                    paid_escapes_m.add(key)
 
         overflow_cells = {
             resource: demand - capacity
@@ -277,6 +340,7 @@ def build_global_route_plan(
         overflow = sum(overflow_cells.values())
         overflow_history.append(overflow)
         assignments = next_assignments
+        shared_via_units_saved = max(0.0, float(naive_via_sum) - charged_via_sum)
         if overflow == 0:
             break
         for resource, amount in overflow_cells.items():
@@ -302,6 +366,12 @@ def build_global_route_plan(
             "historical_cells": len(history),
             "sections": len(section_keys),
             "planned_vias": sum(value.via_count for value in assignments.values()),
+            "shared_escape": {
+                "merge_mm": shared_stats.get("merge_mm"),
+                "pad_resources": shared_stats.get("pad_resources"),
+                "via_units_saved": round(shared_via_units_saved, 3),
+                "savings_ratio_sites": shared_stats.get("savings_ratio"),
+            },
             "layer_sections": dict(
                 sorted(Counter(value.layer for value in assignments.values()).items())
             ),
