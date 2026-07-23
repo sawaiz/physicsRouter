@@ -305,11 +305,16 @@ def _route_bucket(
         ),
     )
 
-    # Rebuild every contested phase from the same immutable seed. Matrix gets
-    # the full four-order bundle; smaller power/critical buckets get two or
-    # four bounded attempts so an early legal net does not permanently starve
-    # a more useful peer corridor.
-    variant_limit = 6 if strategy == "matrix" else 4 if strategy == "critical" else 2
+    # Rebuild contested phases from the same immutable seed. Cap order variants
+    # hard on dense multipin boards — each variant re-routes the whole bucket,
+    # and ThreadPoolExecutor + Python DRC thrashing stalls 80+ net boards.
+    n_board = len(board.nets)
+    if n_board >= 60:
+        variant_limit = 1
+    elif n_board >= 30:
+        variant_limit = 2 if strategy == "matrix" else 1
+    else:
+        variant_limit = 6 if strategy == "matrix" else 4 if strategy == "critical" else 2
     orders = _matrix_order_variants(order, limit=variant_limit)
 
     def route_variant(variant_order: list[str]) -> RouteResult:
@@ -332,15 +337,15 @@ def _route_bucket(
             routing_plan=routing_plan,
         )
 
-    if len(orders) > 1:
+    if len(orders) > 1 and n_board < 40:
         from concurrent.futures import ThreadPoolExecutor
 
         # route_board releases the GIL while its independent C++ GridMap runs.
-        # Four workers avoids oversubscription once native OpenMP is available.
-        with ThreadPoolExecutor(max_workers=min(4, len(orders))) as executor:
+        # Keep workers low; dense boards stay sequential (GIL + native thrash).
+        with ThreadPoolExecutor(max_workers=min(2, len(orders))) as executor:
             candidates = list(executor.map(route_variant, orders))
     else:
-        candidates = [route_variant(orders[0])]
+        candidates = [route_variant(o) for o in orders]
 
     def candidate_key(candidate: RouteResult) -> tuple:
         reports = {report.net: report for report in candidate.net_reports}
@@ -443,7 +448,10 @@ def hybrid_route(
     # homotopy. Re-open the board as independent temporary candidates, raise
     # historical costs on overused resources, and reroute only conflict nets.
     # Native/organic power areas remain fixed fill resources throughout.
-    if plan.nets_for("matrix") and len(board.nets) >= 4:
+    # On large multipin boards, PathFinder-style negotiation is sequential and
+    # single-iter so we do not GIL-thrash for tens of minutes with no copper.
+    n_board = len(board.nets)
+    if plan.nets_for("matrix") and n_board >= 4 and n_board < 70:
         from physics_router.negotiated_congestion import negotiated_congestion_route
 
         if progress_cb:
@@ -458,9 +466,13 @@ def hybrid_route(
             plan,
             result,
             clearance_mm=rules.constraints.min_clearance_mm,
-            max_iterations=3,
-            workers=4,
+            max_iterations=2 if n_board < 40 else 1,
+            workers=1 if n_board >= 40 else 2,
             routing_plan=routing_plan,
+        )
+    elif plan.nets_for("matrix") and n_board >= 70:
+        result.notes.append(
+            f"hybrid: skip negotiated_congestion on large board ({n_board} nets)"
         )
 
     cl_floor = rules.constraints.min_clearance_mm
