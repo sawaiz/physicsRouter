@@ -81,7 +81,7 @@ def main() -> None:
                 "status": "routing",
                 "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "pipeline": "capacity",
-                "effort": 0.45,
+                "effort": 0.55,
                 "hard_deadline": False,
             },
             indent=2,
@@ -89,12 +89,12 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
-    print("routing (capacity pipeline, inline, no hard deadline)…")
+    print("routing (capacity pipeline, inline, no hard deadline, effort 0.55)…")
     t0 = time.time()
     row = evaluate_board(
         entry,
         pipeline="capacity",
-        effort=0.45,
+        effort=0.55,
         out_dir=OUT,
         hard_deadline=False,
         cbs_repair=False,

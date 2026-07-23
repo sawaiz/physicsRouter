@@ -357,26 +357,39 @@ def route_board_native(
             ns.preferred_layers = [graph_primary] + [
                 i for i in range(cfg.num_layers) if i != graph_primary
             ]
-        is_power_area = nc in ("power", "ground") or name.upper() in (
-            "GND",
-            "VSS",
-            "PGND",
-            "+3V",
-            "+5V",
-            "VCC",
-            "VDD",
-            "VBAT",
+        nu = name.upper()
+        is_power_area = (
+            nc in ("power", "ground")
+            or nu in (
+                "GND",
+                "AGND",
+                "DGND",
+                "VSS",
+                "PGND",
+                "VCC",
+                "VDD",
+                "VBAT",
+                "HV",
+                "+3V",
+                "+5V",
+                "+3V3",
+                "+1V2",
+                "+1V8",
+                "+5V-A",
+                "-5V",
+            )
+            or nu.startswith("+")
+            or nu.startswith("-")
+            or "GND" in nu
         )
         if use_copper_areas and is_power_area and len(anchors) >= 2:
             ns.use_copper_area = True
-            if cfg.num_layers >= 4:
-                ns.area_layer = 1 if nc == "ground" or "GND" in name.upper() else 2
-            elif cfg.num_layers >= 2:
-                ns.area_layer = cfg.num_layers - 1 if nc == "ground" else 0
-            else:
-                ns.area_layer = 0
-            ns.area_margin_mm = max(0.8, float(clearance_mm) * 3.0)
-            ns.area_priority = 10 if nc == "ground" else 20
+            # Prefer F.Cu (layer 0) so SMD pads are inside the pour connectivity
+            # test; inner-only pours left outer SMD power nets incomplete.
+            ns.area_layer = 0
+            # Larger margin → bigger organic hull (helps multipin GND completeness)
+            ns.area_margin_mm = max(1.6, float(clearance_mm) * 6.0)
+            ns.area_priority = 10 if nc == "ground" or "GND" in nu else 20
         nets.append(ns)
 
     # Exclusive bucket calls carry an exact policy order, including rebuild

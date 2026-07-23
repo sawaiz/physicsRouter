@@ -2,6 +2,8 @@
 
 **TL;DR:** Literature that informs physicsRouter — classical EDA, topological routers, ML/RL, TopoR-adjacent patents/papers. Implementation map: [DESIGN.md](DESIGN.md) · [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md). Not a product user guide (see [docs/QUICKSTART.md](docs/QUICKSTART.md)).
 
+**Industry narrative (2026):** DeepPCB’s essays on why autorouters failed for 60 years and the 80/20 augmentation model — applied in-repo as staged routing: [docs/DEEPPCB_NOTES.md](docs/DEEPPCB_NOTES.md).
+
 Companion to the main [README](README.md).
 
 ---

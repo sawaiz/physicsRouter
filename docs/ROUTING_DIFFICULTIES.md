@@ -198,6 +198,17 @@ Inspect:
 
 Policy never changes: **0 hard DRC** is required at every step.
 
+### DeepPCB 80/20 (2026 essays)
+
+See **[DEEPPCB_NOTES.md](DEEPPCB_NOTES.md)**. On boards ≥50 nets we stage:
+
+1. **routine 2-pin** (busywork majority)  
+2. **mid 3–6 pin**  
+3. **heavy multipin** (GND / power / dense)  
+4. **completion recovery** for remaining small open nets  
+
+This matches DeepPCB’s claim that traditional static “power first” heuristics destroy global resource allocation.
+
 Related: [MPPC_BENCHMARK.md](MPPC_BENCHMARK.md) ·
 [AUTOROUTER_FAILURE_ANALYSIS.md](AUTOROUTER_FAILURE_ANALYSIS.md) ·
 [GOLDEN_CORPUS.md](GOLDEN_CORPUS.md) · [CAPACITY_MESH.md](CAPACITY_MESH.md).

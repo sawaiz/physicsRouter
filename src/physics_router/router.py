@@ -1301,7 +1301,9 @@ def _dense_grid_for_net(
 def _native_expansions_for_net(board: BoardModel, net: str, attempt: int = 0) -> int:
     pins = len(board.nets.get(net) or [])
     base = 8000
-    if pins >= 12:
+    if pins >= 40:
+        base = 36000
+    elif pins >= 12:
         base = 28000
     elif pins >= 6:
         base = 16000
@@ -1695,9 +1697,9 @@ def _native_sequential_zero_violation(
         return None
 
     def net_sort_key(n: str) -> tuple:
-        # High weight first; within weight prefer fewer pins (less blockage early),
-        # but multipin matrix gets a denser pass later via retries.
-        return (-_net_priority(config, n), len(board.nets.get(n, [])), n)
+        # Few-pin first so short nets claim local escapes before huge multipin
+        # power nets monopolize corridors; weight is secondary.
+        return (len(board.nets.get(n, [])), -_net_priority(config, n), n)
 
     allowed = set(nets_filter) if nets_filter is not None else None
     if net_order:
@@ -1733,7 +1735,15 @@ def _native_sequential_zero_violation(
     done = 0
 
     def attempt_limit(net_name: str) -> int:
-        return 1 if len(board.nets.get(net_name) or []) >= 8 else max_attempts
+        # Bound multipin rip-up: too many attempts thrash Python DRC (O(n²)).
+        pins = len(board.nets.get(net_name) or [])
+        if pins >= 40:
+            return 3
+        if pins >= 12:
+            return 3
+        if pins >= 8:
+            return 3
+        return max_attempts
 
     def _trial_drc_result() -> RouteResult:
         if seed_result is None:
@@ -1827,8 +1837,10 @@ def _native_sequential_zero_violation(
         if not rippable or attempts.get(net_name, 0) >= attempt_limit(net_name):
             return False
         # Rip one strongest blocker first (last in sort = most pins among lowest prio)
-        # Rip up to 3 peers per attempt to free corridors without thrashing
-        batch = rippable[: max(1, min(3, len(rippable)))]
+        # Larger multipin nets may need a wider corridor clear per attempt.
+        pins = len(board.nets.get(net_name) or [])
+        rip_n = 5 if pins >= 8 else 3
+        batch = rippable[: max(1, min(rip_n, len(rippable)))]
         result = _strip_nets_from_result(result, set(batch))
         for p in batch:
             finished.discard(p)
@@ -1950,12 +1962,22 @@ def _native_sequential_zero_violation(
         fully = _net_fully_connected(
             board, net_name, result.segments, result.vias, areas=result.areas
         )
+        # Intermediate: route-to-route only (pad DRC is O(segs×pads) and thrash)
         rep = native_drc_check(
-            _trial_drc_result(), clearance_mm=clearance_mm, board=board
+            _trial_drc_result(), clearance_mm=clearance_mm, board=None
         )
         involving = _drc_items_involving(rep, net_name)
         shorts = int(rep.get("shorts") or 0)
         hard_ok = not involving and shorts == 0
+        # Full pad/outline oracle only when we are about to commit a full net
+        if fully and hard_ok:
+            rep_full = native_drc_check(
+                _trial_drc_result(), clearance_mm=clearance_mm, board=board
+            )
+            involving = _drc_items_involving(rep_full, net_name)
+            shorts = int(rep_full.get("shorts") or 0)
+            hard_ok = not involving and shorts == 0
+            rep = rep_full
 
         if fully and hard_ok:
             # Full-net commit
@@ -2065,18 +2087,25 @@ def _native_sequential_zero_violation(
         )
 
     # ---- Dense multipin recovery pass: re-try unrouted multipin/matrix ----
+    # Previously limited to buckets of size ≤6 so general (70+ nets) never
+    # recovered; bound by count instead of bucket size.
     unrouted_multi = [
         n
         for n in net_names
         if n in result.unrouted_nets
         and (_is_multipin_net(board, n) or _is_matrix_net(n, config))
     ]
-    if unrouted_multi and len(net_names) <= 6:
-        result.notes.append(
-            f"dense_multipin_pass: retry {len(unrouted_multi)} unrouted multipin/matrix"
-        )
-        # Prefer fewer pins first within recovery so some complete
+    if unrouted_multi:
         unrouted_multi.sort(key=lambda n: (len(board.nets.get(n, [])), n))
+        # Only when the bucket is small enough that recovery is cheap
+        if len(net_names) > 20:
+            unrouted_multi = []
+        else:
+            unrouted_multi = unrouted_multi[:12]
+        if unrouted_multi:
+            result.notes.append(
+                f"dense_multipin_pass: retry {len(unrouted_multi)} unrouted multipin/matrix"
+            )
         for net_name in unrouted_multi:
             # Rip equal-weight matrix peers to give a clear board, then re-route denser
             peers = _space_rip_candidates(result, net_name, config, board)

@@ -12,6 +12,7 @@ Everything else is optional depth. Each page starts with a **TL;DR** so you can 
 |------------|--------|
 | **See the flagship human vs AR benchmark** | [MPPC_BENCHMARK.md](MPPC_BENCHMARK.md) |
 | **Understand grade gaps / failure logs** | [ROUTING_DIFFICULTIES.md](ROUTING_DIFFICULTIES.md) · [mppc_v13_route_diagnostics.md](mppc_v13_route_diagnostics.md) |
+| **DeepPCB 80/20 lessons applied here** | [DEEPPCB_NOTES.md](DEEPPCB_NOTES.md) |
 | Install and route a board in 5 minutes | [QUICKSTART.md](QUICKSTART.md) |
 | Use the web UI, lock nets, keep-outs, plugin | [USER_GUIDE.md](USER_GUIDE.md) |
 | See every CLI flag | [CLI.md](CLI.md) |

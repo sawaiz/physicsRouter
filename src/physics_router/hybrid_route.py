@@ -254,6 +254,441 @@ def _merge_route(
             dst.notes.append(n)
 
 
+def _deeppcb_eighty_twenty_route(
+    board: BoardModel,
+    config: PlacementConfig | None,
+    rules: DesignRules,
+    *,
+    routing_plan: Any | None,
+    progress_cb: ProgressCallback | None,
+) -> RouteResult:
+    """Staged routing: routine 2-pin → mid multipin → heavy multipin → recovery.
+
+    Inspired by DeepPCB's framing that the majority of nets are electrically
+    straightforward busywork while a minority need expert judgment / more budget.
+    Each stage is a zero-violation exclusive native pass; later stages see earlier
+    copper as obstacles (resource allocation, not pure pathfinding).
+    """
+    cl = float(rules.constraints.min_clearance_mm or 0.2)
+    by_pins: dict[str, int] = {
+        n: len(board.nets.get(n) or []) for n in board.nets
+    }
+
+    def weight(n: str) -> float:
+        return float(config.weight_for_net(n)) if config else 1.0
+
+    stages: list[tuple[str, list[str], float]] = [
+        (
+            "routine_2pin",
+            sorted(
+                [n for n, p in by_pins.items() if p <= 2],
+                key=lambda n: (-weight(n), n),
+            ),
+            0.15,
+        ),
+        (
+            "mid_3to6",
+            sorted(
+                [n for n, p in by_pins.items() if 3 <= p <= 6],
+                key=lambda n: (by_pins[n], -weight(n), n),
+            ),
+            0.15,
+        ),
+        (
+            "heavy_multipin",
+            sorted(
+                [n for n, p in by_pins.items() if p >= 7],
+                key=lambda n: (by_pins[n], -weight(n), n),
+            ),
+            0.12,
+        ),
+    ]
+
+    result = RouteResult()
+    result.notes.append(
+        "hybrid: DeepPCB-style 80/20 staged route "
+        "(routine → mid → heavy multipin → recovery)"
+    )
+    done: set[str] = set()
+    for stage_i, (name, nets, grid) in enumerate(stages):
+        nets = [n for n in nets if n not in done]
+        if not nets:
+            continue
+        if progress_cb:
+            try:
+                progress_cb(
+                    stage_i,
+                    len(stages),
+                    f"80_20:{name}",
+                    "start",
+                    {"count": len(nets)},
+                )
+            except Exception:
+                pass
+        partial = clearance_aware_route(
+            board,
+            config,
+            clearance_mm=cl,
+            grid_mm=grid,
+            soft_fallback=False,
+            prefer_native=True,
+            allow_vias=True,
+            net_order=nets,
+            nets_filter=nets,
+            seed_result=result if (result.segments or result.areas) else None,
+            style="isotropic",
+            design_rules=rules,
+            skip_hybrid=True,
+            routing_plan=routing_plan,
+            progress_cb=progress_cb,
+        )
+        # Keep only newly completed nets from this stage
+        newly = 0
+        for n in nets:
+            segs = [s for s in partial.segments if s.net == n]
+            vias = [v for v in partial.vias if v.net == n]
+            areas = [a for a in partial.areas if a.net == n]
+            if not segs and not areas:
+                continue
+            if not _net_fully_connected(board, n, segs, vias, areas=areas):
+                continue
+            from physics_router.router import (
+                NetRouteReport,
+                _rebuild_totals,
+                _strip_nets_from_result,
+            )
+
+            result = _strip_nets_from_result(result, {n})
+            result.segments.extend(segs)
+            result.vias.extend(vias)
+            result.areas.extend(areas)
+            _rebuild_totals(result)
+            result.unrouted_nets = [u for u in result.unrouted_nets if u != n]
+            result.net_reports = [r for r in result.net_reports if r.net != n]
+            rep = next((r for r in partial.net_reports if r.net == n), None)
+            if rep is not None:
+                result.net_reports.append(rep)
+            else:
+                result.net_reports.append(
+                    NetRouteReport(
+                        net=n,
+                        pins=by_pins[n],
+                        segments=len(segs),
+                        vias=len(vias),
+                        status="ok",
+                        method=f"80_20_{name}",
+                    )
+                )
+            done.add(n)
+            newly += 1
+        result.notes.append(
+            f"80_20 {name}: committed {newly}/{len(nets)} "
+            f"(grid={grid}, seed_segs={len(result.segments)})"
+        )
+    result.unrouted_nets = _open_nets(board, result)
+    return result
+
+
+def _open_nets(board: BoardModel, result: RouteResult) -> list[str]:
+    open_nets: list[str] = []
+    for n in board.nets:
+        if _net_fully_connected(
+            board, n, result.segments, result.vias, areas=result.areas
+        ):
+            continue
+        open_nets.append(n)
+    return open_nets
+
+
+def _aabb(outline: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+    xs = [p[0] for p in outline]
+    ys = [p[1] for p in outline]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _boxes_clear(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    clearance: float,
+) -> bool:
+    """True if axis-aligned boxes are separated by ≥ clearance."""
+    return (
+        a[1] + clearance <= b[0]
+        or b[1] + clearance <= a[0]
+        or a[3] + clearance <= b[2]
+        or b[3] + clearance <= a[2]
+    )
+
+
+def _area_conflicts_existing(
+    outline: list[tuple[float, float]],
+    layer: str,
+    net: str,
+    result: RouteResult,
+    clearance: float,
+) -> bool:
+    """Reject pours that overlap foreign tracks/vias/areas (native DRC misses areas)."""
+    box = _aabb(outline)
+    for area in result.areas or []:
+        if area.net == net or area.layer != layer:
+            continue
+        if not _boxes_clear(box, _aabb(area.outline), clearance):
+            return True
+    for seg in result.segments or []:
+        if seg.net == net or seg.layer != layer:
+            continue
+        sx0, sx1 = min(seg.x1, seg.x2), max(seg.x1, seg.x2)
+        sy0, sy1 = min(seg.y1, seg.y2), max(seg.y1, seg.y2)
+        half = float(seg.width_mm or 0.15) * 0.5
+        if not _boxes_clear(
+            box, (sx0 - half, sx1 + half, sy0 - half, sy1 + half), clearance
+        ):
+            return True
+    for via in result.vias or []:
+        if via.net == net:
+            continue
+        r = max(clearance, float(via.size_mm or 0.6) * 0.5)
+        if not _boxes_clear(box, (via.x - r, via.x + r, via.y - r, via.y + r), clearance):
+            return True
+    return False
+
+
+def _try_power_pours(
+    board: BoardModel,
+    config: PlacementConfig | None,
+    rules: DesignRules,
+    result: RouteResult,
+) -> RouteResult:
+    """Commit compact F.Cu pad-hull pours for open power nets when geometrically legal.
+
+    Native DRC does not model area↔area shorts well, so we enforce AABB clearance
+    against existing copper before commit. Compact hulls (small margin) only —
+    full-board GND boxes are rejected when they collide with other pours/tracks.
+    """
+    from physics_router.router import (
+        CopperArea,
+        NetRouteReport,
+        _rebuild_totals,
+        _strip_nets_from_result,
+        _unique_anchor_layers,
+        native_drc_check,
+        point_in_polygon,
+    )
+
+    cl = float(rules.constraints.min_clearance_mm or 0.2)
+    layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
+    layer0 = layers[0]
+
+    candidates = []
+    for net in _open_nets(board, result):
+        lab = config.net_by_name().get(net) if config else None
+        nc = ""
+        if lab is not None:
+            nc = (
+                lab.net_class.value
+                if hasattr(lab.net_class, "value")
+                else str(lab.net_class)
+            )
+        nu = net.upper()
+        is_power = (
+            nc in ("power", "ground")
+            or nu
+            in {
+                "GND",
+                "AGND",
+                "DGND",
+                "VSS",
+                "PGND",
+                "HV",
+                "VCC",
+                "VDD",
+            }
+            or nu.startswith("+")
+            or nu.startswith("-")
+            or "GND" in nu
+        )
+        if not is_power:
+            continue
+        info = _unique_anchor_layers(board, net)
+        if len(info) < 2:
+            continue
+        if not all(layer0 in allowed for _, allowed in info):
+            continue
+        # Skip huge multipin for box pours — they always collide; need tracks
+        if len(info) > 24:
+            continue
+        candidates.append((len(info), net, info))
+
+    candidates.sort()  # few-anchor power first
+    committed: list[str] = []
+    for _n, net, info in candidates:
+        xs = [a[0] for a, _ in info]
+        ys = [a[1] for a, _ in info]
+        # Tight hull — only local power islands, not board-filling rectangles
+        span = max(max(xs) - min(xs), max(ys) - min(ys), 0.1)
+        margin = min(1.2, max(0.6, cl * 3.0 + 0.15 * (span**0.5)))
+        edge = max(0.35, cl * 1.5)
+        bw = float(board.width_mm or 100)
+        bh = float(board.height_mm or 100)
+        minx = max(min(xs) - margin, -bw * 0.5 + edge)
+        maxx = min(max(xs) + margin, bw * 0.5 - edge)
+        miny = max(min(ys) - margin, -bh * 0.5 + edge)
+        maxy = min(max(ys) + margin, bh * 0.5 - edge)
+        if maxx - minx < 0.3 or maxy - miny < 0.3:
+            continue
+        outline = [(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)]
+        if not all(point_in_polygon(ax, ay, outline) for (ax, ay), _ in info):
+            continue
+        if _area_conflicts_existing(outline, layer0, net, result, cl):
+            continue
+        area = CopperArea(
+            outline=outline,
+            layer=layer0,
+            net=net,
+            clearance_mm=cl,
+            min_thickness_mm=max(0.25, cl),
+            priority=10 if "GND" in net.upper() else 20,
+        )
+        trial = _strip_nets_from_result(result, {net})
+        trial.areas = list(trial.areas) + [area]
+        _rebuild_totals(trial)
+        if not _net_fully_connected(
+            board, net, trial.segments, trial.vias, areas=trial.areas
+        ):
+            continue
+        rep = native_drc_check(trial, clearance_mm=cl, board=board)
+        if int(rep.get("shorts") or 0) > 0 or int(rep.get("spacing") or 0) > 0:
+            continue
+        result = trial
+        result.unrouted_nets = [u for u in result.unrouted_nets if u != net]
+        result.net_reports = [r for r in result.net_reports if r.net != net]
+        result.net_reports.append(
+            NetRouteReport(
+                net=net,
+                pins=len(board.nets.get(net) or []),
+                segments=0,
+                vias=0,
+                status="ok",
+                method="power_pour_fcu",
+                notes=[f"compact F.Cu hull margin={margin:.2f}"],
+            )
+        )
+        result.notes.append(f"power_pour committed {net} on {layer0}")
+        committed.append(net)
+
+    if committed:
+        result.notes.append(
+            f"power_pour: {len(committed)} net(s) ({', '.join(committed)})"
+        )
+    result.unrouted_nets = _open_nets(board, result)
+    return result
+
+
+def _completion_recovery_pass(
+    board: BoardModel,
+    config: PlacementConfig | None,
+    rules: DesignRules,
+    result: RouteResult,
+    *,
+    routing_plan: Any | None,
+    progress_cb: ProgressCallback | None,
+) -> RouteResult:
+    """Re-try open nets: power pours first, then few-pin track recovery.
+
+    Hybrid phases only paint their own bucket. This is the grade lever without
+    re-running 80 multipin A* searches for tens of minutes.
+    """
+    result = _try_power_pours(board, config, rules, result)
+
+    open_nets = _open_nets(board, result)
+    if not open_nets:
+        return result
+
+    # Prefer small nets; defer huge multipin (GND already tried as pour)
+    open_nets = sorted(
+        open_nets,
+        key=lambda n: (
+            len(board.nets.get(n) or []),
+            -(config.weight_for_net(n) if config else 1.0),
+            n,
+        ),
+    )
+    # Bound: 2–8 pin nets first (GPIO/SPI/CH), max 40
+    open_nets = [n for n in open_nets if len(board.nets.get(n) or []) <= 12][:40]
+    if not open_nets:
+        result.notes.append("completion_recovery: only huge multipin remain open")
+        return result
+
+    result.notes.append(
+        f"completion_recovery: retry {len(open_nets)} open net(s) "
+        f"(≤12 pins, few-pin first)"
+    )
+    if progress_cb:
+        try:
+            progress_cb(0, 1, "completion_recovery", "start", {"nets": open_nets})
+        except Exception:
+            pass
+
+    cl = float(rules.constraints.min_clearance_mm or 0.2)
+    recovered = clearance_aware_route(
+        board,
+        config,
+        clearance_mm=cl,
+        grid_mm=0.12,
+        soft_fallback=False,
+        prefer_native=True,
+        allow_vias=True,
+        nets_filter=open_nets,
+        seed_result=result,
+        style="isotropic",
+        design_rules=rules,
+        skip_hybrid=True,
+        routing_plan=routing_plan,
+        progress_cb=progress_cb,
+    )
+
+    newly: list[str] = []
+    from physics_router.router import NetRouteReport, _rebuild_totals, _strip_nets_from_result
+
+    for net in open_nets:
+        segs = [s for s in recovered.segments if s.net == net]
+        vias = [v for v in recovered.vias if v.net == net]
+        areas = [a for a in recovered.areas if a.net == net]
+        if not segs and not areas:
+            continue
+        if not _net_fully_connected(board, net, segs, vias, areas=areas):
+            continue
+        result = _strip_nets_from_result(result, {net})
+        result.segments.extend(segs)
+        result.vias.extend(vias)
+        result.areas.extend(areas)
+        _rebuild_totals(result)
+        result.unrouted_nets = [u for u in result.unrouted_nets if u != net]
+        result.net_reports = [r for r in result.net_reports if r.net != net]
+        rep = next((r for r in recovered.net_reports if r.net == net), None)
+        if rep is not None:
+            result.net_reports.append(rep)
+        else:
+            result.net_reports.append(
+                NetRouteReport(
+                    net=net,
+                    pins=len(board.nets.get(net) or []),
+                    segments=len(segs),
+                    vias=len(vias),
+                    status="ok",
+                    method="completion_recovery",
+                )
+            )
+        newly.append(net)
+
+    result.notes.append(
+        f"completion_recovery: committed {len(newly)}/{len(open_nets)} "
+        f"({', '.join(newly[:12])}{'…' if len(newly) > 12 else ''})"
+    )
+    result.unrouted_nets = _open_nets(board, result)
+    return result
+
+
 def _route_bucket(
     board: BoardModel,
     config: PlacementConfig | None,
@@ -305,15 +740,16 @@ def _route_bucket(
     # Always prefer C++ core for the search hot path (phase-level progress only)
     prefer_native = True
 
-    # Within matrix, few-pin first within priority (less blockage early)
+    # Few-pin first within the phase (critical for grade): a 92-pin GND first
+    # seals the board and leaves 2-pin GPIO/SPI open. Weight is secondary.
     planned_order = routing_plan.net_order(config) if routing_plan is not None else []
     planned_rank = {net: index for index, net in enumerate(planned_order)}
     order = sorted(
         nets,
         key=lambda n: (
+            len(board.nets.get(n, [])),
             planned_rank.get(n, len(planned_rank)),
             -plan.assignment(n).weight if plan.assignment(n) else 0,  # type: ignore[union-attr]
-            len(board.nets.get(n, [])),
             n,
         ),
     )
@@ -430,32 +866,56 @@ def hybrid_route(
     )
     result.notes.extend(plan.notes)
 
-    phases = [s for s in _STRATEGY_ORDER if plan.nets_for(s)]
-    phase_n = max(1, len(phases))
-
-    for pi, strategy in enumerate(phases):
-        nets = plan.nets_for(strategy)
-        if not nets:
-            continue
-        partial = _route_bucket(
+    n_board = len(board.nets)
+    # DeepPCB-style 80/20 (deeppcb.ai “60-year routing problem” / “broke your trust”):
+    # route the electrically straightforward majority first so expert multipin
+    # work is not starved by early corridor hogging. Static power-first heuristics
+    # are exactly the failure mode those articles describe.
+    if n_board >= 50:
+        result = _deeppcb_eighty_twenty_route(
             board,
             config,
             rules,
-            nets,
-            strategy=strategy,
-            seed=result if result.segments or result.areas else None,
-            plan=plan,
-            progress_cb=progress_cb,
-            phase_i=pi,
-            phase_n=phase_n,
             routing_plan=routing_plan,
+            progress_cb=progress_cb,
         )
-        _merge_route(result, partial, only_nets=set(nets))
-        result.notes.append(
-            f"hybrid phase {strategy}: +{len(partial.segments)} segs "
-            f"+{partial.via_count} vias +{len(partial.areas)} areas "
-            f"unrouted={len(partial.unrouted_nets)}"
-        )
+    else:
+        # Compact power islands first so multipin A* is not required for small rails
+        result = _try_power_pours(board, config, rules, result)
+        pre_done = {
+            n
+            for n in board.nets
+            if _net_fully_connected(
+                board, n, result.segments, result.vias, areas=result.areas
+            )
+        }
+
+        phases = [s for s in _STRATEGY_ORDER if plan.nets_for(s)]
+        phase_n = max(1, len(phases))
+
+        for pi, strategy in enumerate(phases):
+            nets = [n for n in plan.nets_for(strategy) if n not in pre_done]
+            if not nets:
+                continue
+            partial = _route_bucket(
+                board,
+                config,
+                rules,
+                nets,
+                strategy=strategy,
+                seed=result if result.segments or result.areas else None,
+                plan=plan,
+                progress_cb=progress_cb,
+                phase_i=pi,
+                phase_n=phase_n,
+                routing_plan=routing_plan,
+            )
+            _merge_route(result, partial, only_nets=set(nets))
+            result.notes.append(
+                f"hybrid phase {strategy}: +{len(partial.segments)} segs "
+                f"+{partial.via_count} vias +{len(partial.areas)} areas "
+                f"unrouted={len(partial.unrouted_nets)}"
+            )
 
     # Greedy phase commits are safe but can reserve the only viable matrix
     # homotopy. Re-open the board as independent temporary candidates, raise
@@ -463,7 +923,6 @@ def hybrid_route(
     # Native/organic power areas remain fixed fill resources throughout.
     # On large multipin boards, PathFinder-style negotiation is sequential and
     # single-iter so we do not GIL-thrash for tens of minutes with no copper.
-    n_board = len(board.nets)
     if plan.nets_for("matrix") and n_board >= 4 and n_board < 70:
         from physics_router.negotiated_congestion import negotiated_congestion_route
 
@@ -487,6 +946,17 @@ def hybrid_route(
         result.notes.append(
             f"hybrid: skip negotiated_congestion on large board ({n_board} nets)"
         )
+
+    # --- Completion recovery: nets that failed their phase never retried ---
+    # Without this, open power/matrix/general nets stay open forever.
+    result = _completion_recovery_pass(
+        board,
+        config,
+        rules,
+        result,
+        routing_plan=routing_plan,
+        progress_cb=progress_cb,
+    )
 
     cl_floor = rules.constraints.min_clearance_mm
     layers = list(board.copper_layers) or ["F.Cu", "B.Cu"]
