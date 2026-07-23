@@ -356,7 +356,9 @@ def evaluate_board(
         }
         return row
 
-    timeout_s = float(entry.get("timeout_s") or 120.0)
+    # Note: timeout_s=0 means inline (no process kill); do not use `or 120`.
+    _to = entry.get("timeout_s")
+    timeout_s = float(120.0 if _to is None else _to)
     do_hard = hard_deadline and entry.get("hard_deadline", True)
     t0 = time.time()
     deadline_meta: dict[str, Any] = {}

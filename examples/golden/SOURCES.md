@@ -9,6 +9,7 @@ bash scripts/fetch_golden_boards.sh
 | ID | Upstream | License (typical) | Notes |
 |----|----------|-------------------|-------|
 | `simple_2net` | in-repo fixture | MIT (physicsRouter) | 2-net teaching board |
+| **`mppc_v1.3`** | [muonTelescope/mppcInterface](https://github.com/muonTelescope/mppcInterface) @ **`580c61d`** | upstream | **Primary HEP golden** — 4L complete human route |
 | `halo-90` | [openKolibri/halo-90](https://github.com/openKolibri/halo-90) | project license | Dense charlieplex stress |
 | `vme_wren` | KiCad demos / [OHWR WREN](https://ohwr.org/projects/wren/) | CERN-OHL-W family | CERN White Rabbit event node class, 12-layer demo |
 | `openipmc_hw` | [gitlab.com/openipmc/openipmc-hw](https://gitlab.com/openipmc/openipmc-hw) | open (see repo) | ATCA IPMC — HEP crate mgmt |

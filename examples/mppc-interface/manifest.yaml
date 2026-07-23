@@ -1,0 +1,10 @@
+# mppcInterface v1.3 golden (commit 580c61d)
+boards:
+  - id: mppc_v1.3
+    pcb: examples/mppc-interface/mppcInterface_v1.3.kicad_pcb
+    config: examples/mppc-interface/placement_config.yaml
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 300
+    min_completion: 0.0
+    notes: "HEP SiPM interface — primary topological AR benchmark"

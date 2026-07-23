@@ -22,6 +22,16 @@ clone https://gitlab.com/librespacefoundation/satnogs-comms/satnogs-comms-hardwa
 clone https://gitlab.com/librespacefoundation/pq9ish/pq9-devboard.git pq9-devboard
 clone https://gitlab.com/openflexure/openflexure-simple-illumination.git openflexure-illum
 clone https://gitlab.com/filipayazi/ofm-led.git ofm-led
+clone https://github.com/muonTelescope/mppcInterface.git mppcInterface
+
+# Pin complete 4-layer human golden (v1.3) into examples if missing
+if [[ ! -f "$ROOT/examples/mppc-interface/mppcInterface_v1.3.kicad_pcb" ]] && [[ -d mppcInterface/.git ]]; then
+  mkdir -p "$ROOT/examples/mppc-interface"
+  git -C mppcInterface show 580c61d:pcb/mppcInterface.kicad_pcb \
+    > "$ROOT/examples/mppc-interface/mppcInterface_v1.3.kicad_pcb" || true
+  git -C mppcInterface show 580c61d:pcb/mppcInterface.kicad_pro \
+    > "$ROOT/examples/mppc-interface/mppcInterface_v1.3.kicad_pro" 2>/dev/null || true
+fi
 
 if [[ ! -d kicad-demos/vme-wren ]]; then
   echo "=== kicad demos (sparse) ==="

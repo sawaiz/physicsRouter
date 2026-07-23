@@ -10,6 +10,7 @@ Everything else is optional depth. Each page starts with a **TL;DR** so you can 
 
 | I want to… | Go to |
 |------------|--------|
+| **See the flagship human vs AR benchmark** | [MPPC_BENCHMARK.md](MPPC_BENCHMARK.md) |
 | Install and route a board in 5 minutes | [QUICKSTART.md](QUICKSTART.md) |
 | Use the web UI, lock nets, keep-outs, plugin | [USER_GUIDE.md](USER_GUIDE.md) |
 | See every CLI flag | [CLI.md](CLI.md) |
