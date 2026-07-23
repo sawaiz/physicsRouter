@@ -72,8 +72,22 @@ physics-router serve --host 127.0.0.1 --port 8765
 
 ```bash
 physics-router place --config c.yaml --pcb b.kicad_pcb --out-pcb placed.kicad_pcb
-physics-router improve --config c.yaml --pcb b.kicad_pcb --timeout 120 --grade B
+physics-router improve --config c.yaml --pcb b.kicad_pcb --timeout 120 --grade B \
+  --physics-feedback --physics-export-dir /tmp/em_rounds
 ```
+
+After a **fully legal** route (0 hard DRC, complete nets), SPICE + OpenEMS
+proxies score the copper and feed the next round:
+
+| Feedback | Effect |
+|----------|--------|
+| SPICE / loop | Bump power/GND placement weights; pour proposals |
+| OpenEMS / EMI | Bump EMI-sensitive net weights; corridor hints |
+| Matrix skew | Raise `matrix_length_match` physics weight |
+| Pours | Seed GND/power `CopperArea` outlines for return path |
+| Export | Optional OpenEMS mesh per round (`--physics-export-dir`) |
+
+Incomplete or illegal copper **skips** physics (open > short).
 
 ---
 

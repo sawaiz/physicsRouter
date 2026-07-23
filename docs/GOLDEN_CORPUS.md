@@ -28,6 +28,7 @@ physics-router golden-eval --id simple_2net --rules-profile via_0p6
 | **Shared-escape costing** | Global section planner charges nearby pin escapes once (0.2 residual reuse) |
 | **Auto via profile** | Pipeline stage picks `via_0p6` vs `via_0p45` by inner-reachable SMD count |
 | **Efficiency metrics** | Golden compare: mean L(AR)/L(human), via Δ, CPX-style bundle skew |
+| **Physics feedback loop** | After full legal route: SPICE + OpenEMS proxies → place/topo/pours (`improve --physics-feedback`) |
 
 Artifacts: `viewer/runs/golden_corpus/` · images: `docs/images/golden/`
 

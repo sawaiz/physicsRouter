@@ -50,7 +50,9 @@ All docs map? → **[docs/README.md](docs/README.md)**
 | **3. KiCad plugin** | Inside pcbnew | [kicad_plugins/](kicad_plugins/README.md) |
 
 **Viewer flow:** drop a `.kicad_pcb` (or pick HALO / Muon3) → **Route** → optionally lock nets / keep-outs → **Apply to PCB** → **Check** DRC.  
-OpenEMS / heavy 3D is gated until the route is decent (grade ≥ C, no hard violations).
+OpenEMS / SPICE **proxies** run after a fully legal route in `improve --physics-feedback`
+and feed placement weights, topology hints, and pour proposals. Full FDTD remains
+export-only (`export-openems`) for shortlisted layouts.
 
 ---
 

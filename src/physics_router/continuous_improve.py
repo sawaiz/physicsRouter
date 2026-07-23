@@ -17,6 +17,7 @@ import copy
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from physics_router.models import BoardModel, PlacementConfig
@@ -70,6 +71,10 @@ class ImproveConfig:
     # Run kicad-cli every round if True; else only when native looks clean / final
     kicad_drc_every_round: bool = False
     kicad_drc_timeout_s: float = 120.0
+    # After a fully legal route: SPICE + OpenEMS feedback → next place/topo/pours
+    physics_feedback: bool = True
+    physics_export_dir: str | None = None
+    physics_generate_pours: bool = True
 
 
 @dataclass
@@ -96,6 +101,10 @@ class ImproveSnapshot:
     kicad_errors: int = 0
     kicad_passed: bool | None = None
     kicad_samples: list[str] = field(default_factory=list)
+    spice_cost: float | None = None
+    openems_cost: float | None = None
+    physics_combined: float | None = None
+    physics_eligible: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +127,10 @@ class ImproveSnapshot:
             "summary": self.summary,
             "kicad_available": self.kicad_available,
             "kicad_copper_violations": self.kicad_copper_violations,
+            "spice_cost": self.spice_cost,
+            "openems_cost": self.openems_cost,
+            "physics_combined": self.physics_combined,
+            "physics_eligible": self.physics_eligible,
             "kicad_errors": self.kicad_errors,
             "kicad_passed": self.kicad_passed,
             "kicad_samples": list(self.kicad_samples)[:8],
@@ -159,7 +172,11 @@ class ImproveResult:
 
 
 def _route_score_key(snap: ImproveSnapshot) -> tuple:
-    """Higher is better. Prefer KiCad-clean, then native-clean, score, completion."""
+    """Higher is better. Prefer KiCad-clean, then native-clean, score, completion.
+
+    When physics (SPICE/OpenEMS) ran on a fully legal route, lower combined cost
+    ranks higher among otherwise equal DRC/score candidates.
+    """
     # Unknown kicad ranks below known-clean, above known-fail
     if snap.kicad_available:
         kicad_rank = 2 if snap.kicad_passed else 0
@@ -167,11 +184,15 @@ def _route_score_key(snap: ImproveSnapshot) -> tuple:
         kicad_rank = 1
     clean = 1 if snap.violations == 0 else 0
     complete = 1 if snap.unrouted == 0 else 0
+    phys = snap.physics_combined
+    # Negate cost so lower EM/SPICE is better; missing physics → neutral 0
+    phys_rank = -float(phys) if (snap.physics_eligible and phys is not None) else 0.0
     return (
         kicad_rank,
         clean,
         complete,
         snap.score,
+        phys_rank,
         -snap.kicad_copper_violations,
         -snap.unrouted,
         -snap.vias,
@@ -524,6 +545,9 @@ def continuous_improve(
     notes: list[str] = []
     stop_reason = "unknown"
     met = False
+    # Mutable config so physics feedback can bump weights across rounds
+    live_config = copy.deepcopy(config) if config is not None else PlacementConfig()
+    last_physics: dict[str, Any] | None = None
 
     strategies = _strategy_plan(cfg, work)
     movable = work.movable_refs() if cfg.do_place else []
@@ -531,6 +555,7 @@ def continuous_improve(
         f"improve: timeout={cfg.timeout_s:.0f}s target={cfg.target_grade}"
         f" min_score={cfg.min_score:.0f} drc_clean={cfg.require_drc_clean}"
         f" place={bool(movable)} strategies={len(strategies)}"
+        f" physics_feedback={cfg.physics_feedback}"
     )
 
     def _emit(payload: dict[str, Any]) -> None:
@@ -576,7 +601,7 @@ def continuous_improve(
                     "best": best_snap.to_dict() if best_snap else None,
                 }
             )
-            place_cfg = copy.deepcopy(config) if config else PlacementConfig()
+            place_cfg = copy.deepcopy(live_config)
             place_cfg.num_candidates = max(1, int(cfg.place_candidates))
             # PlacementConfig enforces sa_iterations >= 100
             place_cfg.sa_iterations = max(100, int(cfg.place_sa_iterations))
@@ -587,14 +612,22 @@ def continuous_improve(
                 place_cfg.num_candidates = 1
                 place_cfg.sa_iterations = 100
             try:
-                place_cfg.use_spice = False
-                place_cfg.use_openems = False
+                # Fast geometric SA for most rounds; after physics feedback once,
+                # fold spice/openems proxies into placement energy so position
+                # tracks EMI/loop feedback (still not full FDTD).
+                if last_physics and last_physics.get("eligible"):
+                    place_cfg.use_spice = True
+                    place_cfg.use_openems = True
+                else:
+                    place_cfg.use_spice = False
+                    place_cfg.use_openems = False
                 pres = optimize_placement(work, place_cfg)
                 apply_positions(work, pres.best.positions)
                 placement_cost = float(pres.best.score.total)
                 notes.append(
                     f"r{round_i}: place candidate#{pres.best.candidate_id} "
                     f"cost={placement_cost:.3f}"
+                    + (" +physics_weights" if last_physics and last_physics.get("eligible") else "")
                 )
             except Exception as exc:
                 notes.append(f"r{round_i}: place failed ({exc})")
@@ -635,7 +668,7 @@ def continuous_improve(
             }
         )
         try:
-            route = _run_route(work, config, strat, cfg, progress_cb)
+            route = _run_route(work, live_config, strat, cfg, progress_cb)
         except Exception as exc:
             notes.append(f"r{round_i}: route {strat['name']} failed ({exc})")
             continue
@@ -673,6 +706,66 @@ def continuous_improve(
             )
             snap = _apply_kicad_to_snapshot(snap, route, cfg, force=True)
             snap.elapsed_s = time.time() - t0
+
+        # --- Physics feedback (SPICE + OpenEMS) only on fully legal copper ---
+        if (
+            cfg.physics_feedback
+            and snap.violations == 0
+            and (not cfg.require_complete or snap.unrouted == 0)
+        ):
+            _emit(
+                {
+                    "event": "stage",
+                    "round": round_i,
+                    "stage": "physics_feedback",
+                    "strategy": strat["name"],
+                    "elapsed_s": time.time() - t0,
+                    "best": best_snap.to_dict() if best_snap else None,
+                }
+            )
+            try:
+                from physics_router.physics_feedback import (
+                    apply_feedback_to_config,
+                    score_full_route_physics,
+                )
+
+                export = None
+                if cfg.physics_export_dir:
+                    export = (
+                        Path(cfg.physics_export_dir) / f"round_{round_i}"
+                    )
+                fb = score_full_route_physics(
+                    work,
+                    live_config,
+                    route,
+                    export_dir=export,
+                    require_complete=bool(cfg.require_complete),
+                    generate_pours=bool(cfg.physics_generate_pours),
+                )
+                snap.physics_eligible = fb.eligible
+                if fb.eligible:
+                    snap.spice_cost = fb.spice_cost
+                    snap.openems_cost = fb.openems_cost
+                    snap.physics_combined = fb.combined_cost
+                    snap.summary = (
+                        f"{snap.summary} · physics spice={fb.spice_cost:.1f} "
+                        f"openems={fb.openems_cost:.1f} Σ={fb.combined_cost:.1f}"
+                    )
+                    live_config = apply_feedback_to_config(live_config, fb)
+                    last_physics = fb.to_dict()
+                    notes.append(
+                        f"r{round_i}: physics ok spice={fb.spice_cost:.2f} "
+                        f"openems={fb.openems_cost:.2f} pours={len(fb.copper_areas)} "
+                        f"hints={len(fb.topology_hints)+len(fb.routing_hints)}"
+                    )
+                    if fb.topology_hints:
+                        notes.append(
+                            f"r{round_i}: topology " + "; ".join(fb.topology_hints[:3])
+                        )
+                else:
+                    notes.append(f"r{round_i}: physics skipped ({fb.reason})")
+            except Exception as exc:
+                notes.append(f"r{round_i}: physics feedback failed ({exc})")
 
         snap.met_goal = goal_met(snap, cfg)
         history.append(snap)

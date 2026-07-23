@@ -340,6 +340,22 @@ def pre_route_cmd(config_path: Path, pcb_path: Path | None) -> None:
 @click.option(
     "--allow-drc-fail", is_flag=True, help="Do not require zero DRC violations for goal"
 )
+@click.option(
+    "--physics-feedback/--no-physics-feedback",
+    default=True,
+    help="After full legal route: SPICE+OpenEMS proxies feed place/topo/pours (default on)",
+)
+@click.option(
+    "--physics-export-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write OpenEMS export bundles per successful physics round",
+)
+@click.option(
+    "--no-physics-pours",
+    is_flag=True,
+    help="Do not propose GND/power pours from return-path feedback",
+)
 def improve_cmd(
     config_path: Path,
     pcb_path: Path | None,
@@ -352,8 +368,16 @@ def improve_cmd(
     no_place: bool,
     max_rounds: int | None,
     allow_drc_fail: bool,
+    physics_feedback: bool,
+    physics_export_dir: Path | None,
+    no_physics_pours: bool,
 ) -> None:
-    """Continuously improve place+route until timeout or grade + full DRC pass."""
+    """Continuously improve place+route until timeout or grade + full DRC pass.
+
+    When a round produces complete copper with zero hard DRC, SPICE and OpenEMS
+    proxies score the layout and feed placement weights, topology hints, and
+    pour proposals into the next round.
+    """
     from physics_router.continuous_improve import (
         ImproveConfig,
         continuous_improve,
@@ -380,6 +404,10 @@ def improve_cmd(
         clearance_mm=clearance,
         grid_mm=grid,
         max_rounds=max_rounds,
+        pcb_path=str(pcb_path) if pcb_path else None,
+        physics_feedback=physics_feedback,
+        physics_export_dir=str(physics_export_dir) if physics_export_dir else None,
+        physics_generate_pours=not no_physics_pours,
     )
 
     def on_prog(ev: dict) -> None:
@@ -400,7 +428,8 @@ def improve_cmd(
 
     click.echo(
         f"Improve timeout={timeout_s:.0f}s target={target_grade} min_score≥{ms:.0f} "
-        f"drc_clean={not allow_drc_fail} place={not no_place}"
+        f"drc_clean={not allow_drc_fail} place={not no_place} "
+        f"physics={physics_feedback}"
     )
     result = continuous_improve(board, config, improve=icfg, progress_cb=on_prog)
     payload = result.to_dict()
