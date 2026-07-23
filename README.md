@@ -21,6 +21,7 @@ Plan connectivity as graph topology, then draw free-angle copper with exact clea
 | **What it is** | Research/engineering autorouter for multipin, multilayer PCBs |
 | **Geometry** | Free-angle (TopoR-class idea) via required C++ core `pr_native` |
 | **Planning** | Hypergraph MST · overflow Steiner · DSATUR layers · capacity mesh |
+| **Compute** | **OpenMP** on all cores · **OpenCL** GPU clearance · parallel 2-pin waves · RAM-scaled A* |
 | **Product** | Python CLI · web UI · KiCad I/O · net policy · DRC · golden suite |
 | **Success** | Reachable pads · real vias · full multipin nets · **0 hard DRC** |
 | **Not success** | Tracks that short, stub, or only “look” finished |
@@ -51,21 +52,22 @@ and a fair manufacturing-style score (rip human copper → re-route → grade).
 | Cut preflight | feasible (0 saturated cuts @ 0.3 mm pitch, 4 layers) |
 | Via profile (auto) | `via_0p6` · ~99% SMD escape reach · shared-escape savings ~19% |
 
-### Latest AR scorecard (capacity · effort 0.45 · ~28 min)
+### Latest AR scorecard (DeepPCB 80/20 · capacity · ~37 min)
 
 | Metric | Human | Autorouter |
 |--------|------:|-----------:|
-| Grade / score | — | **F / 18.24** |
-| Completion vs human nets | 100% | **48.2%** (41/85) |
+| Grade / score | — | **D / 39.41** (was F / 18) |
+| Completion vs human nets | 100% | **69.4%** (59/85) |
 | Hard DRC | 0 | **0** (open > short) |
-| Segments · vias · length | 1199 · 155 · 1932 mm | 318 · 94 · 805 mm |
-| Areas / pours | 61 | 3 |
-| Wall time | hand | ~1500 s search |
+| Segments · vias · length | 1199 · 155 · 1932 mm | 367 · 110 · 782 mm |
+| Areas / pours | 61 | 2 |
+| Wall time | hand | ~35 min staged search |
 
-Honest partial: committed copper is legal; power/GND, analog channels, and SPI bus nets remain open.
-Missing include `GND`, `+5V`, `+3V3`, `CH0`–`CH7`, `HV`, FPGA SPI, DACs — pour-heavy multipin work still to do.
+**Staging (DeepPCB 80/20):** routine 2-pin 11/20 · mid 3–6 pin 46/59 · heavy multipin 1/6 · recovery +1.  
+Still open: mostly power multipin (`GND`, `+5V`, `+3V3`, `HV`, `+5V-A`) plus some CH/DAC/SPI/GPIO.
 
-**Why F / how to improve:** [docs/ROUTING_DIFFICULTIES.md](docs/ROUTING_DIFFICULTIES.md) ·
+**Why not A yet / how to improve:** [docs/ROUTING_DIFFICULTIES.md](docs/ROUTING_DIFFICULTIES.md) ·
+[docs/DEEPPCB_NOTES.md](docs/DEEPPCB_NOTES.md) ·
 auto logs `route_diagnostics.{json,md}` on every golden-eval ·
 mppc snapshot [docs/mppc_v13_route_diagnostics.md](docs/mppc_v13_route_diagnostics.md).
 
@@ -258,7 +260,9 @@ More: [docs/GOLDEN_CORPUS.md](docs/GOLDEN_CORPUS.md) · [docs/BENCHMARKS.md](doc
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-bash scripts/build_native.sh
+# macOS: brew install libomp   # multi-core OpenMP
+bash scripts/build_native.sh   # OpenMP + OpenCL when available
+# Windows: scripts\build_native.bat  (MinGW + Ninja; copies runtime DLLs)
 
 # Interactive UI
 physics-router serve --port 8765   # http://127.0.0.1:8765
@@ -273,19 +277,33 @@ python scripts/run_mppc_benchmark.py
 pytest -q
 ```
 
-Verify the C++ core:
+Verify the C++ core (expect OpenMP thread count = CPU cores, GPU if present):
 
 ```bash
-python -c "from physics_router.native_bridge import info; print(info())"
+export OMP_NUM_THREADS=$(sysctl -n hw.ncpu 2>/dev/null || nproc)
+PYTHONPATH=native/build:src python -c "from physics_router.native_bridge import info; print(info())"
 # expect: available=True, version ~ 2.0.0-production-flow
+#         gpu.backend opencl (when present), features.openmp_threads >= 1
 ```
+
+### Parallel / GPU / RAM utilization
+
+| Resource | How physicsRouter uses it |
+|----------|---------------------------|
+| **CPU cores** | OpenMP: outline paint, multi-layer A* probes, clearance fallback; Python thread waves for 2-pin (native releases GIL) |
+| **GPU** | OpenCL `segment_clearance` batch when `use_gpu=True` (Apple / NVIDIA ICD) |
+| **RAM** | Grids up to 8192²; A* expansion budgets scale with ≥12 GB / ≥24 GB hosts |
+| **Env** | `OMP_NUM_THREADS`, `OMP_PROC_BIND=close` via `build_native.sh` / `native_bridge` |
+
+Net **commit** stays sequential (legal copper), so long boards still have a serial tail; intermediate geometry + 2-pin waves fill cores/GPU.
 
 | Need | |
 |------|---|
 | Python **3.10+** | required |
 | CMake **3.16+**, C++17 | required for `pr_native` |
+| `libomp` (macOS Homebrew) | multi-core OpenMP |
 | KiCad **8+** (`kicad-cli`) | authoritative DRC / plots |
-| OpenCL · Ngspice · OpenEMS | optional |
+| OpenCL · Ngspice · OpenEMS | optional GPU / physics |
 
 Guides: [docs/QUICKSTART.md](docs/QUICKSTART.md) · [docs/USER_GUIDE.md](docs/USER_GUIDE.md) · [docs/CLI.md](docs/CLI.md)
 
@@ -380,9 +398,10 @@ Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 | Area | State |
 |------|--------|
 | Package | **0.1.0** · native `2.0.0-production-flow` |
+| Parallelism | OpenMP (all cores) · OpenCL GPU clearance · parallel 2-pin waves |
 | Tests | `pytest -q` (extensive; native required for full collection) |
-| Synthetic / simple boards | Full route + 0 DRC typical |
-| mppc v1.3 | Human golden complete; AR **48% / 0 hard DRC / grade F** (~28 min capacity, open > short) |
+| Synthetic / simple boards | Full route + 0 DRC typical (**grade A** on `simple_2net`) |
+| mppc v1.3 | Human golden complete; AR **~69% / 0 hard DRC / grade D** (DeepPCB 80/20) |
 | OHL gallery | Easy boards A / honest partial; dense often hard-deadline TIMEOUT |
 | HALO-90 | Legal partials; dense CPX still open research |
 | Physics loop | SPICE/OpenEMS after complete legal copper only |
@@ -406,6 +425,7 @@ Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Day-to-day UI / workflows |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install in minutes |
 | [docs/AUTOROUTER_FAILURE_ANALYSIS.md](docs/AUTOROUTER_FAILURE_ANALYSIS.md) | HALO failure lessons |
+| [docs/DEEPPCB_NOTES.md](docs/DEEPPCB_NOTES.md) | 80/20 staging · industry lessons |
 | [docs/README.md](docs/README.md) | Full doc index |
 | [DATASETS.md](DATASETS.md) | Board inventory |
 
@@ -414,8 +434,9 @@ Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 ## Requirements · license
 
 - Python **3.10+**, CMake **3.16+**, C++17  
+- OpenMP (`brew install libomp` on macOS) for multi-core geometry  
 - KiCad **8+** (`kicad-cli`) for authoritative DRC  
-- Optional: OpenCL, Ngspice, OpenEMS  
+- Optional: OpenCL (GPU clearance), Ngspice, OpenEMS  
 
 **MIT** for physicsRouter.
 

@@ -304,12 +304,67 @@ def _deeppcb_eighty_twenty_route(
         ),
     ]
 
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from physics_router.router import (
+        NetRouteReport,
+        _rebuild_totals,
+        _strip_nets_from_result,
+        native_drc_check,
+    )
+
+    n_workers = max(1, min(os.cpu_count() or 4, 8))
     result = RouteResult()
     result.notes.append(
         "hybrid: DeepPCB-style 80/20 staged route "
-        "(routine → mid → heavy multipin → recovery)"
+        f"(routine → mid → heavy · workers={n_workers})"
     )
     done: set[str] = set()
+
+    def _commit_from_partial(
+        partial: RouteResult, nets: list[str], label: str
+    ) -> int:
+        nonlocal result
+        newly = 0
+        for n in nets:
+            segs = [s for s in partial.segments if s.net == n]
+            vias = [v for v in partial.vias if v.net == n]
+            areas = [a for a in partial.areas if a.net == n]
+            if not segs and not areas:
+                continue
+            if not _net_fully_connected(board, n, segs, vias, areas=areas):
+                continue
+            trial = _strip_nets_from_result(result, {n})
+            trial.segments = list(trial.segments) + segs
+            trial.vias = list(trial.vias) + vias
+            trial.areas = list(trial.areas) + areas
+            _rebuild_totals(trial)
+            # Fast route-to-route gate before accepting
+            rep = native_drc_check(trial, clearance_mm=cl, board=None)
+            if int(rep.get("shorts") or 0) > 0:
+                continue
+            result = trial
+            result.unrouted_nets = [u for u in result.unrouted_nets if u != n]
+            result.net_reports = [r for r in result.net_reports if r.net != n]
+            nr = next((r for r in partial.net_reports if r.net == n), None)
+            if nr is not None:
+                result.net_reports.append(nr)
+            else:
+                result.net_reports.append(
+                    NetRouteReport(
+                        net=n,
+                        pins=by_pins[n],
+                        segments=len(segs),
+                        vias=len(vias),
+                        status="ok",
+                        method=label,
+                    )
+                )
+            done.add(n)
+            newly += 1
+        return newly
+
     for stage_i, (name, nets, grid) in enumerate(stages):
         nets = [n for n in nets if n not in done]
         if not nets:
@@ -321,10 +376,78 @@ def _deeppcb_eighty_twenty_route(
                     len(stages),
                     f"80_20:{name}",
                     "start",
-                    {"count": len(nets)},
+                    {"count": len(nets), "workers": n_workers},
                 )
             except Exception:
                 pass
+
+        # Parallel wave for routine 2-pin: native releases GIL; many workers
+        # each route one net against the same seed, then serial DRC-merge.
+        if name == "routine_2pin" and len(nets) >= 4 and n_workers >= 2:
+            seed = result if (result.segments or result.areas) else None
+
+            def _route_one(net: str) -> RouteResult:
+                return clearance_aware_route(
+                    board,
+                    config,
+                    clearance_mm=cl,
+                    grid_mm=grid,
+                    soft_fallback=False,
+                    prefer_native=True,
+                    allow_vias=True,
+                    net_order=[net],
+                    nets_filter=[net],
+                    seed_result=seed,
+                    style="isotropic",
+                    design_rules=rules,
+                    skip_hybrid=True,
+                    routing_plan=routing_plan,
+                    progress_cb=None,
+                )
+
+            wave_ok = 0
+            with ThreadPoolExecutor(max_workers=min(n_workers, len(nets))) as pool:
+                futs = {pool.submit(_route_one, n): n for n in nets}
+                for fut in as_completed(futs):
+                    n = futs[fut]
+                    try:
+                        partial = fut.result()
+                    except Exception as exc:  # noqa: BLE001
+                        result.notes.append(f"80_20 parallel fail {n}: {exc}")
+                        continue
+                    wave_ok += _commit_from_partial(
+                        partial, [n], f"80_20_parallel_{name}"
+                    )
+            result.notes.append(
+                f"80_20 {name}: parallel committed {wave_ok}/{len(nets)} "
+                f"(workers={min(n_workers, len(nets))})"
+            )
+            # Residual serial pass for anything still open in this stage
+            leftover = [n for n in nets if n not in done]
+            if leftover:
+                partial = clearance_aware_route(
+                    board,
+                    config,
+                    clearance_mm=cl,
+                    grid_mm=grid,
+                    soft_fallback=False,
+                    prefer_native=True,
+                    allow_vias=True,
+                    net_order=leftover,
+                    nets_filter=leftover,
+                    seed_result=result if (result.segments or result.areas) else None,
+                    style="isotropic",
+                    design_rules=rules,
+                    skip_hybrid=True,
+                    routing_plan=routing_plan,
+                    progress_cb=progress_cb,
+                )
+                more = _commit_from_partial(partial, leftover, f"80_20_{name}")
+                result.notes.append(
+                    f"80_20 {name}: serial residual {more}/{len(leftover)}"
+                )
+            continue
+
         partial = clearance_aware_route(
             board,
             config,
@@ -342,45 +465,7 @@ def _deeppcb_eighty_twenty_route(
             routing_plan=routing_plan,
             progress_cb=progress_cb,
         )
-        # Keep only newly completed nets from this stage
-        newly = 0
-        for n in nets:
-            segs = [s for s in partial.segments if s.net == n]
-            vias = [v for v in partial.vias if v.net == n]
-            areas = [a for a in partial.areas if a.net == n]
-            if not segs and not areas:
-                continue
-            if not _net_fully_connected(board, n, segs, vias, areas=areas):
-                continue
-            from physics_router.router import (
-                NetRouteReport,
-                _rebuild_totals,
-                _strip_nets_from_result,
-            )
-
-            result = _strip_nets_from_result(result, {n})
-            result.segments.extend(segs)
-            result.vias.extend(vias)
-            result.areas.extend(areas)
-            _rebuild_totals(result)
-            result.unrouted_nets = [u for u in result.unrouted_nets if u != n]
-            result.net_reports = [r for r in result.net_reports if r.net != n]
-            rep = next((r for r in partial.net_reports if r.net == n), None)
-            if rep is not None:
-                result.net_reports.append(rep)
-            else:
-                result.net_reports.append(
-                    NetRouteReport(
-                        net=n,
-                        pins=by_pins[n],
-                        segments=len(segs),
-                        vias=len(vias),
-                        status="ok",
-                        method=f"80_20_{name}",
-                    )
-                )
-            done.add(n)
-            newly += 1
+        newly = _commit_from_partial(partial, nets, f"80_20_{name}")
         result.notes.append(
             f"80_20 {name}: committed {newly}/{len(nets)} "
             f"(grid={grid}, seed_segs={len(result.segments)})"
@@ -599,92 +684,125 @@ def _completion_recovery_pass(
     re-running 80 multipin A* searches for tens of minutes.
     """
     result = _try_power_pours(board, config, rules, result)
-
-    open_nets = _open_nets(board, result)
-    if not open_nets:
-        return result
-
-    # Prefer small nets; defer huge multipin (GND already tried as pour)
-    open_nets = sorted(
-        open_nets,
-        key=lambda n: (
-            len(board.nets.get(n) or []),
-            -(config.weight_for_net(n) if config else 1.0),
-            n,
-        ),
-    )
-    # Bound: 2–8 pin nets first (GPIO/SPI/CH), max 40
-    open_nets = [n for n in open_nets if len(board.nets.get(n) or []) <= 12][:40]
-    if not open_nets:
-        result.notes.append("completion_recovery: only huge multipin remain open")
-        return result
-
-    result.notes.append(
-        f"completion_recovery: retry {len(open_nets)} open net(s) "
-        f"(≤12 pins, few-pin first)"
-    )
-    if progress_cb:
-        try:
-            progress_cb(0, 1, "completion_recovery", "start", {"nets": open_nets})
-        except Exception:
-            pass
-
     cl = float(rules.constraints.min_clearance_mm or 0.2)
-    recovered = clearance_aware_route(
-        board,
-        config,
-        clearance_mm=cl,
-        grid_mm=0.12,
-        soft_fallback=False,
-        prefer_native=True,
-        allow_vias=True,
-        nets_filter=open_nets,
-        seed_result=result,
-        style="isotropic",
-        design_rules=rules,
-        skip_hybrid=True,
-        routing_plan=routing_plan,
-        progress_cb=progress_cb,
-    )
 
-    newly: list[str] = []
-    from physics_router.router import NetRouteReport, _rebuild_totals, _strip_nets_from_result
+    def _merge_recovered(open_nets: list[str], grid: float, label: str) -> int:
+        nonlocal result
+        if not open_nets:
+            return 0
+        if progress_cb:
+            try:
+                progress_cb(0, 1, f"completion_recovery:{label}", "start", {"n": len(open_nets)})
+            except Exception:
+                pass
+        recovered = clearance_aware_route(
+            board,
+            config,
+            clearance_mm=cl,
+            grid_mm=grid,
+            soft_fallback=False,
+            prefer_native=True,
+            allow_vias=True,
+            nets_filter=open_nets,
+            seed_result=result,
+            style="isotropic",
+            design_rules=rules,
+            skip_hybrid=True,
+            routing_plan=routing_plan,
+            progress_cb=progress_cb,
+        )
+        newly = 0
+        from physics_router.router import (
+            NetRouteReport,
+            _rebuild_totals,
+            _strip_nets_from_result,
+        )
 
-    for net in open_nets:
-        segs = [s for s in recovered.segments if s.net == net]
-        vias = [v for v in recovered.vias if v.net == net]
-        areas = [a for a in recovered.areas if a.net == net]
-        if not segs and not areas:
-            continue
-        if not _net_fully_connected(board, net, segs, vias, areas=areas):
-            continue
-        result = _strip_nets_from_result(result, {net})
-        result.segments.extend(segs)
-        result.vias.extend(vias)
-        result.areas.extend(areas)
-        _rebuild_totals(result)
-        result.unrouted_nets = [u for u in result.unrouted_nets if u != net]
-        result.net_reports = [r for r in result.net_reports if r.net != net]
-        rep = next((r for r in recovered.net_reports if r.net == net), None)
-        if rep is not None:
-            result.net_reports.append(rep)
-        else:
-            result.net_reports.append(
-                NetRouteReport(
-                    net=net,
-                    pins=len(board.nets.get(net) or []),
-                    segments=len(segs),
-                    vias=len(vias),
-                    status="ok",
-                    method="completion_recovery",
+        for net in open_nets:
+            segs = [s for s in recovered.segments if s.net == net]
+            vias = [v for v in recovered.vias if v.net == net]
+            areas = [a for a in recovered.areas if a.net == net]
+            if not segs and not areas:
+                continue
+            if not _net_fully_connected(board, net, segs, vias, areas=areas):
+                continue
+            result = _strip_nets_from_result(result, {net})
+            result.segments.extend(segs)
+            result.vias.extend(vias)
+            result.areas.extend(areas)
+            _rebuild_totals(result)
+            result.unrouted_nets = [u for u in result.unrouted_nets if u != net]
+            result.net_reports = [r for r in result.net_reports if r.net != net]
+            rep = next((r for r in recovered.net_reports if r.net == net), None)
+            if rep is not None:
+                result.net_reports.append(rep)
+            else:
+                result.net_reports.append(
+                    NetRouteReport(
+                        net=net,
+                        pins=len(board.nets.get(net) or []),
+                        segments=len(segs),
+                        vias=len(vias),
+                        status="ok",
+                        method=f"completion_recovery_{label}",
+                    )
                 )
-            )
-        newly.append(net)
+            newly += 1
+        result.notes.append(
+            f"completion_recovery[{label}]: committed {newly}/{len(open_nets)}"
+        )
+        return newly
 
-    result.notes.append(
-        f"completion_recovery: committed {len(newly)}/{len(open_nets)} "
-        f"({', '.join(newly[:12])}{'…' if len(newly) > 12 else ''})"
+    # DeepPCB: finish the easy 80% completely before thrashing on multipin.
+    open_2 = sorted(
+        [n for n in _open_nets(board, result) if len(board.nets.get(n) or []) <= 2]
     )
+    if open_2:
+        # Rip a few lowest-weight completed multipin peers to reopen corridors
+        from physics_router.router import _strip_nets_from_result
+
+        completed = [
+            r.net
+            for r in (result.net_reports or [])
+            if r.status == "ok" and len(board.nets.get(r.net) or []) >= 3
+        ]
+        completed.sort(
+            key=lambda n: (
+                config.weight_for_net(n) if config else 1.0,
+                -len(board.nets.get(n) or []),
+                n,
+            )
+        )
+        rip = completed[: min(8, len(completed))]
+        if rip:
+            result = _strip_nets_from_result(result, set(rip))
+            for n in rip:
+                if n not in result.unrouted_nets:
+                    result.unrouted_nets.append(n)
+            result.notes.append(
+                f"completion_recovery: rip {len(rip)} multipin for 2-pin salvage"
+            )
+        _merge_recovered(open_2, 0.12, "2pin_salvage")
+        # Re-route the ripped multipin after 2-pin salvage
+        mid = sorted(
+            [n for n in rip if n in board.nets],
+            key=lambda n: (len(board.nets.get(n) or []), n),
+        )
+        if mid:
+            _merge_recovered(mid, 0.15, "multipin_restore")
+
+    open_mid = sorted(
+        [
+            n
+            for n in _open_nets(board, result)
+            if 3 <= len(board.nets.get(n) or []) <= 12
+        ],
+        key=lambda n: (len(board.nets.get(n) or []), n),
+    )[:40]
+    if open_mid:
+        _merge_recovered(open_mid, 0.12, "mid_retry")
+
+    result = _try_power_pours(board, config, rules, result)
     result.unrouted_nets = _open_nets(board, result)
     return result
 
@@ -786,12 +904,13 @@ def _route_bucket(
             routing_plan=routing_plan,
         )
 
-    if len(orders) > 1 and n_board < 40:
+    if len(orders) > 1 and n_board < 60:
+        import os
         from concurrent.futures import ThreadPoolExecutor
 
-        # route_board releases the GIL while its independent C++ GridMap runs.
-        # Keep workers low; dense boards stay sequential (GIL + native thrash).
-        with ThreadPoolExecutor(max_workers=min(2, len(orders))) as executor:
+        # route_board releases the GIL; use up to cpu_count workers for variants.
+        workers = max(1, min(len(orders), os.cpu_count() or 4, 8))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             candidates = list(executor.map(route_variant, orders))
     else:
         candidates = [route_variant(o) for o in orders]

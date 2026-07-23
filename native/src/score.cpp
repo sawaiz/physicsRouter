@@ -1,6 +1,9 @@
 #include "pr_native/score.hpp"
 #include <chrono>
 #include <cmath>
+#ifdef PR_HAS_OPENMP
+#include <omp.h>
+#endif
 
 namespace pr {
 

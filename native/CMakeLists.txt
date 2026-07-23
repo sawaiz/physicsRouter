@@ -26,11 +26,32 @@ target_include_directories(pr_core PUBLIC
 target_link_libraries(pr_core PUBLIC Threads::Threads)
 
 if(PR_WITH_OPENMP)
+  # Apple Silicon / Homebrew: find libomp explicitly when CMake's default fails
+  if(APPLE AND NOT OpenMP_CXX_FOUND)
+    foreach(_omp_root "/opt/homebrew/opt/libomp" "/usr/local/opt/libomp")
+      if(EXISTS "${_omp_root}/lib/libomp.dylib" OR EXISTS "${_omp_root}/lib/libomp.a")
+        set(OpenMP_C_FLAGS "-Xpreprocessor -fopenmp -I${_omp_root}/include")
+        set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${_omp_root}/include")
+        set(OpenMP_C_LIB_NAMES "omp")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        set(OpenMP_omp_LIBRARY "${_omp_root}/lib/libomp.dylib")
+        if(NOT EXISTS "${OpenMP_omp_LIBRARY}")
+          set(OpenMP_omp_LIBRARY "${_omp_root}/lib/libomp.a")
+        endif()
+        list(APPEND CMAKE_PREFIX_PATH "${_omp_root}")
+        break()
+      endif()
+    endforeach()
+  endif()
   find_package(OpenMP)
   if(OpenMP_CXX_FOUND)
     target_link_libraries(pr_core PUBLIC OpenMP::OpenMP_CXX)
+    # MinGW/GCC needs libgomp explicitly for GOMP_* symbols
+    if(MINGW OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT APPLE))
+      target_link_libraries(pr_core PUBLIC gomp)
+    endif()
     target_compile_definitions(pr_core PUBLIC PR_HAS_OPENMP=1)
-    message(STATUS "OpenMP enabled")
+    message(STATUS "OpenMP enabled (${OpenMP_CXX_FLAGS})")
   else()
     message(STATUS "OpenMP not found — CPU serial for parallel regions")
   endif()
@@ -38,10 +59,46 @@ endif()
 
 if(PR_WITH_OPENCL)
   find_package(OpenCL QUIET)
+  if(NOT OpenCL_FOUND AND WIN32)
+    # NVIDIA CUDA toolkit / ICD common paths
+    foreach(_cl_root
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.3"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.0"
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8")
+      if(EXISTS "${_cl_root}/include/CL/cl.h")
+        set(OpenCL_INCLUDE_DIR "${_cl_root}/include")
+        if(EXISTS "${_cl_root}/lib/x64/OpenCL.lib")
+          set(OpenCL_LIBRARY "${_cl_root}/lib/x64/OpenCL.lib")
+          set(OpenCL_FOUND TRUE)
+        endif()
+        break()
+      endif()
+    endforeach()
+    # Windows system ICD loader
+    if(NOT OpenCL_FOUND AND EXISTS "C:/Windows/System32/OpenCL.dll")
+      find_path(OpenCL_INCLUDE_DIR CL/cl.h
+        PATHS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA" PATH_SUFFIXES include
+        "C:/Program Files (x86)/Intel/OpenCL SDK/include")
+      find_library(OpenCL_LIBRARY OpenCL
+        PATHS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA" PATH_SUFFIXES lib/x64
+        "C:/Windows/System32")
+      if(OpenCL_INCLUDE_DIR AND OpenCL_LIBRARY)
+        set(OpenCL_FOUND TRUE)
+      endif()
+    endif()
+  endif()
   if(OpenCL_FOUND)
-    target_link_libraries(pr_core PUBLIC OpenCL::OpenCL)
+    if(TARGET OpenCL::OpenCL)
+      target_link_libraries(pr_core PUBLIC OpenCL::OpenCL)
+    else()
+      target_include_directories(pr_core PUBLIC ${OpenCL_INCLUDE_DIR})
+      target_link_libraries(pr_core PUBLIC ${OpenCL_LIBRARY})
+    endif()
     target_compile_definitions(pr_core PUBLIC PR_HAS_OPENCL=1)
-    # Embed kernel path relative to source
     target_compile_definitions(pr_core PRIVATE
       PR_OPENCL_KERNEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/kernels")
     message(STATUS "OpenCL GPU enabled")

@@ -30,6 +30,7 @@ Source material (user link resolved to DeepPCB essays):
 | Resource allocation first | Capacity mesh + PathFinder history + cut preflight (`capacity_mesh`, `global_router`, `graph_theory`) |
 | Don’t seal the board with early multipin | **80/20 staged route** on boards ≥50 nets: 2-pin → 3–6 pin → heavy multipin → recovery (`hybrid_route._deeppcb_eighty_twenty_route`) |
 | Avoid static power-first on dense boards | Large boards skip classic hybrid power/critical/matrix/general order |
+| Fill the machine (cores / GPU / RAM) | OpenMP multi-layer A* + outline paint; OpenCL clearance; parallel 2-pin thread waves; RAM-scaled expansions (`native_bridge`, `build_native.sh`) |
 | Open > short | Manufacturing gate + full-net commit + no soft illegal fallbacks |
 | Intermediate speed for iteration | Fast route-to-route DRC mid-search; full pad DRC only on commit (`router._native_sequential_zero_violation`) |
 | Diagnostics for trust | `route_diagnostics` JSON/MD on every golden-eval |

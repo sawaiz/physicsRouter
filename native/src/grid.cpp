@@ -10,8 +10,9 @@ GridMap::GridMap(double x_min, double x_max, double y_min, double y_max, double 
       grid_(std::max(0.05, grid_mm)), layers_(std::max(1, num_layers)) {
   w_ = std::max(1, static_cast<int>(std::ceil((x_max_ - x_min_) / grid_)) + 1);
   h_ = std::max(1, static_cast<int>(std::ceil((y_max_ - y_min_) / grid_)) + 1);
-  // Cap grid size for memory
-  constexpr int kMaxDim = 4096;
+  // Cap grid size for memory — raise when host has headroom (desktop 32 GB).
+  // ~8192² × 4 layers × 1 byte ≈ 256 MB for cells alone; still modest on 16 GB+.
+  constexpr int kMaxDim = 8192;
   if (w_ > kMaxDim || h_ > kMaxDim) {
     double sx = static_cast<double>(w_) / kMaxDim;
     double sy = static_cast<double>(h_) / kMaxDim;
@@ -25,8 +26,21 @@ GridMap::GridMap(double x_min, double x_max, double y_min, double y_max, double 
 }
 
 void GridMap::clear() {
+#ifdef PR_HAS_OPENMP
+#pragma omp parallel
+  {
+#pragma omp sections
+    {
+#pragma omp section
+      std::fill(cells_.begin(), cells_.end(), 0);
+#pragma omp section
+      std::fill(hole_cells_.begin(), hole_cells_.end(), 0);
+    }
+  }
+#else
   std::fill(cells_.begin(), cells_.end(), 0);
   std::fill(hole_cells_.begin(), hole_cells_.end(), 0);
+#endif
 }
 
 int GridMap::world_to_ix(double x) const {

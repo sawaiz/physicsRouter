@@ -11,10 +11,44 @@ Python remains the TopoR policy/file-format host; C++ owns geometry.
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 _native = None
 _load_error: str | None = None
+
+
+def _host_parallelism() -> dict[str, Any]:
+    """Detect CPU cores and rough RAM for expansion / thread budgets."""
+    cores = os.cpu_count() or 4
+    # Prefer physical-ish bound for OpenMP when oversubscribed hyperthreads
+    try:
+        import psutil  # type: ignore
+
+        ram_gb = float(psutil.virtual_memory().total) / (1024**3)
+    except Exception:
+        ram_gb = 8.0
+        # Linux
+        try:
+            with open("/proc/meminfo", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("MemTotal:"):
+                        ram_gb = float(line.split()[1]) / (1024 * 1024)
+                        break
+        except Exception:
+            pass
+        # macOS
+        if ram_gb == 8.0:
+            try:
+                import subprocess
+
+                out = subprocess.check_output(
+                    ["sysctl", "-n", "hw.memsize"], text=True
+                ).strip()
+                ram_gb = float(out) / (1024**3)
+            except Exception:
+                pass
+    return {"cores": int(cores), "ram_gb": float(ram_gb)}
 
 
 def _try_load() -> Any:
@@ -40,10 +74,12 @@ def info() -> dict[str, Any]:
     if m is None:
         return {"available": False, "error": _load_error}
     ver = m.version() if hasattr(m, "version") else "unknown"
+    host = _host_parallelism()
     return {
         "available": True,
         "version": ver,
         "gpu": dict(m.gpu_probe()),
+        "host": host,
         "features": {
             "isotropic": True,
             "post_rubberband": True,
@@ -64,6 +100,7 @@ def info() -> dict[str, Any]:
             "no_via_in_pad": True,
             "pin_access_oracle": True,
             "section_layer_planning": True,
+            "openmp_threads": host["cores"],
         },
     }
 
@@ -155,22 +192,35 @@ def route_board_native(
     cfg.soft_fallback = bool(soft_fallback)
     cfg.allow_vias = bool(allow_vias)
     cfg.use_gpu = bool(use_gpu)
-    # Scale A* budget with resolution; denser grids get more expansions
+    host = _host_parallelism()
+    if hasattr(cfg, "threads"):
+        # Drive OpenMP to all logical cores (oversubscribe slightly on HT)
+        cfg.threads = int(host["cores"])
+        os.environ.setdefault("OMP_NUM_THREADS", str(cfg.threads))
+        os.environ.setdefault("OMP_PROC_BIND", "close")
+    # Scale A* budget with resolution + RAM headroom
     n_nets = max(1, len(board.nets))
     base_exp = 5000 * max(1.0, 0.35 / max(float(grid_mm), 0.05))
-    # Cap for speed on large multipin boards (e.g. HALO 23 nets × 90 LEDs)
+    ram_scale = 1.0
+    if host["ram_gb"] >= 24:
+        ram_scale = 2.0
+    elif host["ram_gb"] >= 12:
+        ram_scale = 1.5
+    exp_cap = int((24000 if n_nets > 16 else 40000) * ram_scale)
     if max_expansions is not None:
         cfg.max_expansions = int(max(1000, max_expansions))
     else:
         cfg.max_expansions = int(
-            min(12000 if n_nets > 16 else 20000, max(3000, base_exp))
+            min(exp_cap, max(3000, base_exp * ram_scale))
         )
     # Exclusive multipin (1 net): allow higher budget for full connectivity
     if exclusive_nets and net_order and len(net_order) == 1 and max_expansions is None:
         name0 = net_order[0]
         n_pins = len(board.nets.get(name0) or [])
         if n_pins >= 8:
-            cfg.max_expansions = int(max(cfg.max_expansions, min(32000, 4000 * n_pins)))
+            cfg.max_expansions = int(
+                max(cfg.max_expansions, min(int(48000 * ram_scale), 4000 * n_pins))
+            )
     if hasattr(cfg, "isotropic"):
         cfg.isotropic = bool(isotropic)
     if hasattr(cfg, "post_rubberband"):

@@ -8,6 +8,9 @@
 #include <queue>
 #include <sstream>
 #include <unordered_map>
+#ifdef PR_HAS_OPENMP
+#include <omp.h>
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -546,21 +549,32 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
        !allowed(layers.front(), goal_allowed));
 
   // A same-layer edge is legal only when both physical pads expose that layer.
+  // Probe preferred layers in parallel (read-only grid), then paint the winner.
   if (!prefer_layer_escape) {
+    std::vector<int> try_layers;
     for (int layer : layers) {
-      if (!allowed(layer, start_allowed) || !allowed(layer, goal_allowed))
-        continue;
-      auto poly = route_point_costed(grid, a, b, layer, net_id,
-                                     cfg.max_expansions, cfg.isotropic,
-                                     history);
+      if (allowed(layer, start_allowed) && allowed(layer, goal_allowed))
+        try_layers.push_back(layer);
+    }
+    std::vector<std::vector<Vec2>> layer_polys(try_layers.size());
+#ifdef PR_HAS_OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+    for (int li = 0; li < static_cast<int>(try_layers.size()); ++li) {
+      layer_polys[static_cast<size_t>(li)] = route_point_costed(
+          grid, a, b, try_layers[static_cast<size_t>(li)], net_id,
+          cfg.max_expansions, cfg.isotropic, history);
+    }
+    for (size_t li = 0; li < try_layers.size(); ++li) {
       ++alts;
-      if (poly.size() >= 2) {
+      if (layer_polys[li].size() >= 2) {
         method = cfg.isotropic ? "isotropic" : "astar";
-        emit_poly(poly, layer, net_id, width, out_segs);
-        paint_poly(grid, poly, layer, net_id, width, cfg.clearance_mm);
+        emit_poly(layer_polys[li], try_layers[li], net_id, width, out_segs);
+        paint_poly(grid, layer_polys[li], try_layers[li], net_id, width,
+                   cfg.clearance_mm);
         return true;
       }
-      blocked_layers.push_back(layer);
+      blocked_layers.push_back(try_layers[li]);
     }
   }
   if (!cfg.allow_vias || layers.size() < 2)
@@ -1052,9 +1066,16 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
   else
     result.notes.push_back("gpu: unavailable — OpenMP/serial CPU");
 
+  int thread_count = cfg.threads;
 #ifdef PR_HAS_OPENMP
-  result.notes.push_back("openmp: enabled");
+  if (thread_count <= 0)
+    thread_count = omp_get_max_threads();
+  omp_set_num_threads(std::max(1, thread_count));
+  result.notes.push_back("openmp: enabled threads=" +
+                         std::to_string(std::max(1, thread_count)));
 #else
+  if (thread_count <= 0)
+    thread_count = 1;
   result.notes.push_back("openmp: disabled");
 #endif
   result.notes.push_back(std::string("style: ") + (cfg.isotropic ? "isotropic" : "grid"));
@@ -1081,15 +1102,21 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
     const double edge_margin =
         std::max(0.0, cfg.edge_clearance_mm) + 0.5 * obstacle_track_width;
     auto &cells = grid.data();
-    for (int layer = 0; layer < grid.layers(); ++layer) {
-      for (int iy = 0; iy < grid.height(); ++iy) {
-        for (int ix = 0; ix < grid.width(); ++ix) {
+    const int gh = grid.height();
+    const int gw = grid.width();
+    const int gl = grid.layers();
+#ifdef PR_HAS_OPENMP
+#pragma omp parallel for collapse(2) schedule(static)
+#endif
+    for (int layer = 0; layer < gl; ++layer) {
+      for (int iy = 0; iy < gh; ++iy) {
+        for (int ix = 0; ix < gw; ++ix) {
           Vec2 point{grid.ix_to_world(ix), grid.iy_to_world(iy)};
           if (!point_in_polygon(point, cfg.board_outline) ||
               polygon_edge_distance(point, cfg.board_outline) < edge_margin) {
-            size_t index = (static_cast<size_t>(layer) * grid.height() + iy) *
-                               grid.width() +
-                           ix;
+            size_t index = (static_cast<size_t>(layer) * gh + iy) *
+                               static_cast<size_t>(gw) +
+                           static_cast<size_t>(ix);
             cells[index] = 255;
           }
         }
