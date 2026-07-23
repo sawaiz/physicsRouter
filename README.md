@@ -1,36 +1,58 @@
 # physicsRouter
 
-**Tested topological autorouting for KiCad.**  
-Plan connectivity as graph topology, then draw free-angle copper with exact clearance — **open nets beat illegal copper**.
+**Tested topological autorouting for KiCad.**
+
+Plan connectivity as graph topology, then draw free-angle copper with exact clearance.
+**Open nets beat illegal copper** — a partial legal route is success; pretty tracks that short are failure.
+
+```text
+.kicad_pcb
+    → model + nets
+    → via profile · pin access · overflow Steiner · cut preflight
+    → capacity mesh · PathFinder-style sections
+    → free-angle copper (C++ ExactMap)
+    → manufacturing gate (full multipin nets · 0 hard DRC)
+    → optional SPICE / OpenEMS  (only after fully legal copper)
+    → re-place / re-topo / pours
+```
 
 | | |
 |---|---|
-| **Focus** | Effective, measured multipin / multilayer PCB routing (TopoR-class geometry + PathFinder-style planning) |
-| **Geometry** | Required C++ core `pr_native` (ExactMap + free-angle search) |
-| **Product** | Python CLI · web UI · net policy · KiCad I/O · DRC · golden benchmarks |
+| **What it is** | Research/engineering autorouter for multipin, multilayer PCBs |
+| **Geometry** | Free-angle (TopoR-class idea) via required C++ core `pr_native` |
+| **Planning** | Hypergraph MST · overflow Steiner · DSATUR layers · capacity mesh |
+| **Product** | Python CLI · web UI · KiCad I/O · net policy · DRC · golden suite |
 | **Success** | Reachable pads · real vias · full multipin nets · **0 hard DRC** |
-| **Not success** | Pretty tracks that short, stub, or only “look” finished |
-
-```text
-.kicad_pcb → model → pin-access + capacity mesh + Steiner topology
-         → free-angle copper → native DRC → optional KiCad DRC
-         → (if complete) SPICE/OpenEMS feedback → re-place / re-topo / pours
-```
+| **Not success** | Tracks that short, stub, or only “look” finished |
 
 ---
 
 ## Flagship benchmark: mppcInterface v1.3
 
-**Primary golden board** — HEP SiPM/MPPC readout ([muonTelescope/mppcInterface](https://github.com/muonTelescope/mppcInterface) @ **`580c61d`**).  
-Complete **4-layer human route** (not HEAD’s later 2-layer tree). Design notes cite **sPHENIX-class** bias/coincidence topologies.
+**Primary golden board** — HEP SiPM/MPPC readout from
+[muonTelescope/mppcInterface](https://github.com/muonTelescope/mppcInterface)
+@ commit **`580c61d`** (*Initial update to 1.3*).
 
-| Human golden | Value |
-|--------------|------:|
-| Size | **65 × 30 mm** |
+This is a complete **4-layer human route** (not HEAD’s later 2-layer tree with unroutes).
+Upstream design notes cite **sPHENIX-class** bias and coincidence topologies.
+It is the board physicsRouter optimizes against: dense multipin, mixed HV/analog/digital/power,
+and a fair manufacturing-style score (rip human copper → re-route → grade).
+
+### Human golden (oracle)
+
+| | Value |
+|---|------:|
+| Outline | **65 × 30 mm** |
 | Parts / nets | **161 / 85** (all nets have copper) |
-| Layers | F · In1 · In2 · B |
+| Layers | F.Cu · In1.Cu · In2.Cu · B.Cu |
 | Segments · vias · pours | **1199 · 155 · 61** |
 | Track length | **1931.8 mm** |
+| Topology guide (AR planner) | ~1563 mm · **60** Steiner multipin nets |
+| Cut preflight | feasible (0 saturated cuts @ 0.3 mm pitch, 4 layers) |
+| Via profile (auto) | `via_0p6` · ~99% SMD escape reach · shared-escape savings ~19% |
+
+Pinned PCB + config: [`examples/mppc-interface/`](examples/mppc-interface/)  
+Full write-up: **[docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)**
 
 ![mppc human vs AR](docs/images/golden/mppc_v13_compare.png)
 
@@ -38,95 +60,178 @@ Complete **4-layer human route** (not HEAD’s later 2-layer tree). Design notes
 
 ![mppc human layers](docs/images/golden/mppc_v13_human_layers.png)
 
-**Full write-up:** [docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md) · files under [examples/mppc-interface/](examples/mppc-interface/)
+### Score policy
+
+| Rule | Meaning |
+|------|---------|
+| Completion | Fraction of **human** nets the AR fully commits |
+| Hard DRC | Must stay **0** on committed copper |
+| Open > short | Incomplete net with empty copper beats illegal stubs |
+| Length / vias | Secondary; shorter length with open nets is **not** better |
+| Physics | SPICE / OpenEMS proxies only **after** complete + legal copper |
 
 ```bash
+# Reproduce the flagship run
+bash scripts/build_native.sh
 python scripts/run_mppc_benchmark.py
-# or
+
+# Or explicit capacity pipeline
 physics-router route \
   --pcb examples/mppc-interface/mppcInterface_v1.3.kicad_pcb \
   --config examples/mppc-interface/placement_config.yaml \
-  --pipeline capacity --effort 0.5
+  --pipeline capacity --effort 0.5 \
+  --out-json /tmp/mppc_ar.json --out-pcb /tmp/mppc_ar.kicad_pcb
+
+physics-router golden-eval --manifest examples/mppc-interface/manifest.yaml
 ```
 
-**Score policy:** completion vs human nets · hard DRC = 0 · open > short.  
-SPICE/OpenEMS proxies apply only after a **fully legal** route (`improve --physics-feedback`).
+Artifacts land under `viewer/runs/mppc_v1.3/` (`human_route.json`, topology, pin-access, benchmark row).
 
 ---
 
-## Scope (what this project is for)
+## Why this project exists
 
-physicsRouter is a **research/engineering autorouter** aimed at:
+Commercial and open autorouters often optimize for **looks** or grid paths and then fail hard DRC
+on dense multipin boards (charlieplex LEDs, HEP front-ends, crowded OHL instruments).
+physicsRouter is built to answer a narrower question:
 
-1. **Topological planning** — hypergraphs, overflow-aware Steiner trees, cut-capacity certificates, DSATUR layer colors, shared pin-escape costing  
-2. **Free-angle geometry** — clearance-legal copper (not only 45°/90° grids)  
-3. **Honest evaluation** — rip human copper → re-route → score against the original  
-4. **Dense / multipin stress** — charlieplex (HALO-90), HEP instruments (mppc), OHL product boards  
+> Can we plan **topology** (what connects, on which layers, through which corridors),
+> then emit **clearance-legal free-angle copper**, and prove progress against **real human goldens**?
 
-It is **not** a full schematic-to-fab suite, and it does not claim commercial TopoR parity on every dense board yet. The goal is **measured** progress under a manufacturing gate.
+Inspiration and literature (not a clone of any proprietary engine):
 
-### Pipeline (capacity / production)
+- **TopoR / Dayan–Dai rubber-band** — topology before geometry; free angles  
+- **PathFinder** — negotiated congestion / history costs  
+- **TritonRoute-style pin access** — legal escapes before global pathing  
+- **Capacity mesh** (tscircuit-class idea in C++) — where is room before paint  
+- **Steiner packing · cut certificates · DSATUR** — graph plane before A\*  
+
+See [RESEARCH.md](RESEARCH.md) · [docs/TOPOR.md](docs/TOPOR.md) · [DESIGN.md](DESIGN.md).
+
+---
+
+## Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  CLI · HTTP server · web viewer · KiCad plugin (Python)     │
+│  config · jobs · import · export · DRC/ERC · OpenEMS        │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+     ┌───────────────────────┼───────────────────────┐
+     ▼                       ▼                       ▼
+ placement / physics    route_pipeline          kicad_io / tools
+ net_import / rules     pin_access / hybrid     design_rules
+ graph_theory / golden  negotiated congestion   physics_feedback
+     │                       │
+     │                       ▼
+     │                 pr_native (C++17)
+     │                 ExactMap · free-angle · capacity mesh · native DRC
+     ▼
+  Ngspice / OpenEMS proxies  (optional, post-legal only)
+```
+
+| Layer | Owns |
+|-------|------|
+| **Python** | Policy, UI, files, jobs, net labels, golden-eval, graph topology |
+| **C++ `pr_native`** | Clearance map, free-angle search, capacity mesh, native DRC |
+| **KiCad** | Authoritative DRC/ERC, STEP/GLB, official plots |
+
+### Capacity / production pipeline
 
 ```text
 via_profile → pin_access → topology_mesh → global_sections
           → detailed free-angle → manufacturing_gate
+          → (optional) physics_feedback → re-place / pours
 ```
 
-| Stage | Graph / physics idea |
-|-------|----------------------|
-| Via profile | Auto 0.60 vs 0.45 mm vias by pad reachability |
-| Pin access | Legal offset vias; shared-escape resource map |
-| Topology | Crossing-aware / **overflow Steiner** + annular multipin |
-| Global sections | Capacity mesh · PathFinder history · shared via charge |
-| Detail | C++ ExactMap free-angle search |
-| Gate | Full multipin connectivity + 0 native hard DRC |
-| Feedback | SPICE + OpenEMS **after** legal complete copper |
+| Stage | What it does |
+|-------|----------------|
+| **Via profile** | Auto-select `via_0p6` vs `via_0p45` by pad escape reachability |
+| **Pin access** | Legal offset vias; **shared-escape** resource map (charge co-located sites once) |
+| **Topology** | Hypergraph MST · **overflow-aware Steiner** · annular multipin · DSATUR layers |
+| **Cut preflight** | Geometric demand vs capacity certificates (saturated cuts ⇒ replan signal) |
+| **Global sections** | Hierarchical capacity mesh · PathFinder history · shared via charge |
+| **Detail** | C++ ExactMap free-angle search (no illegal straight fallbacks) |
+| **Gate** | Full multipin connectivity + **0** native hard DRC; whole-net commit only |
+| **Physics** | SPICE + OpenEMS **after** legal complete copper → feed place/topo/route/pours |
 
-Literature map: [RESEARCH.md](RESEARCH.md) (PathFinder, rubber-band, TritonRoute, MLV-CBS, Steiner packing).
+Modules: `pin_access` · `graph_theory` · `capacity_mesh` · `global_router` · `route_pipeline` · `router` · `physics_feedback` · `golden_eval`.
+
+---
+
+## What “good” means
+
+1. Every pad of a **committed** net is multilayer-connected  
+2. Failed nets leave **no** stubs (open > short)  
+3. Layer changes use **real** rule-sized vias (not point vias)  
+4. Native DRC: **zero** hard violations  
+5. Prefer KiCad copper DRC on the applied board  
+6. Optional: SPICE / OpenEMS proxies **after** (1–5), never instead of them  
 
 ---
 
 ## Benchmarks & galleries
 
-### mppcInterface (HEP golden)
+### 1. mppcInterface v1.3 (HEP — primary)
 
-See top of this page · [docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)
+See top of this page · [docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md) · [examples/mppc-interface/](examples/mppc-interface/)
 
-### OHL / open-hardware suite
+### 2. OHL / open-hardware suite
 
-Rip-and-reroute vs human copper on CERN-OHL and public demos:
+Rip-and-reroute vs original human copper on CERN-OHL and public demos.
+Policy: open > short; hard DRC = 0 on committed copper.
 
 ![OHL scoreboard](docs/images/golden/ohl_scoreboard.png)
 
 ![OHL length](docs/images/golden/ohl_length_compare.png)
 
-| Board | License | Result (latest gallery) |
-|-------|---------|-------------------------|
+| Board | License | Latest gallery |
+|-------|---------|----------------|
 | `simple_2net` | fixture | **A** · 100% · 0 DRC |
 | `ecc83_pp` / `_v2` | KiCad demo | **A** · 100% · 0 DRC |
 | `ofm_illumination` | CERN-OHL | D · 50% · 0 DRC (honest partial) |
 | `openflexure_illum` | CERN-OHL-S | F · 25% · 0 DRC (pour-heavy) |
-| Dense OHL (PQ9, OpenIPMC, …) | CERN-OHL / open | often TIMEOUT under hard deadline |
+| `pic_programmer` / dense OHL | KiCad / CERN-OHL | 0% or TIMEOUT under hard deadline |
 
-Full table + per-board copper plots: **[examples/golden/RESULTS.md](examples/golden/RESULTS.md)** · [examples/golden/README.md](examples/golden/README.md)
+Full table + per-board copper plots (human left · AR right):
+**[examples/golden/RESULTS.md](examples/golden/RESULTS.md)** · [examples/golden/README.md](examples/golden/README.md) · [examples/golden/SOURCES.md](examples/golden/SOURCES.md)
 
 ```bash
 bash scripts/fetch_golden_boards.sh
 python scripts/run_ohl_golden_gallery.py --effort 0.45
+physics-router golden-eval --manifest examples/golden/ci_manifest.yaml
 ```
 
-### HALO-90 (dense charlieplex stress)
+### 3. HALO-90 (dense charlieplex stress)
 
-In-repo LED earring board: zero-violation **partial** routes by design.  
+In-repo LED earring board: **zero-violation partials by design**.
+Dense CPX remains an open research stress case.
+
 [examples/halo-90/](examples/halo-90/) · [docs/AUTOROUTER_FAILURE_ANALYSIS.md](docs/AUTOROUTER_FAILURE_ANALYSIS.md)
 
-### Corpus charts
+### 4. Corpus charts
 
 ![human scale](docs/images/golden/01_human_scale.png)
 
 ![layer strategy](docs/images/golden/02_layer_strategy.png)
 
 More: [docs/GOLDEN_CORPUS.md](docs/GOLDEN_CORPUS.md) · [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
+
+### 5. Routing process (visual)
+
+![process strip](docs/images/routing_process/6_process_strip.png)
+
+| Stage | Module |
+|-------|--------|
+| Pad / zone / Edge.Cuts | `kicad_io` |
+| Pin-access + shared escapes | `pin_access` |
+| Overflow Steiner + cuts | `graph_theory` |
+| Capacity mesh + sections | `capacity_mesh` · `global_router` · C++ |
+| Free-angle copper | `pr_native` ExactMap |
+| Atomic full-net commit | `router` / hybrid policy |
+| Physics feedback | `physics_feedback` (SPICE · OpenEMS proxies) |
+| Oracle | KiCad `kicad-cli` DRC |
 
 ---
 
@@ -137,20 +242,34 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 bash scripts/build_native.sh
 
-# Interactive
+# Interactive UI
 physics-router serve --port 8765   # http://127.0.0.1:8765
 
 # Headless any board
 physics-router smoke --pcb path/to/board.kicad_pcb --fail-on-drc
 
-# Primary golden
+# Flagship golden
 python scripts/run_mppc_benchmark.py
 
-# Tests
+# Tests (native required for full collection)
 pytest -q
 ```
 
-**Docs:** [docs/QUICKSTART.md](docs/QUICKSTART.md) · [docs/USER_GUIDE.md](docs/USER_GUIDE.md) · [docs/README.md](docs/README.md)
+Verify the C++ core:
+
+```bash
+python -c "from physics_router.native_bridge import info; print(info())"
+# expect: available=True, version ~ 2.0.0-production-flow
+```
+
+| Need | |
+|------|---|
+| Python **3.10+** | required |
+| CMake **3.16+**, C++17 | required for `pr_native` |
+| KiCad **8+** (`kicad-cli`) | authoritative DRC / plots |
+| OpenCL · Ngspice · OpenEMS | optional |
+
+Guides: [docs/QUICKSTART.md](docs/QUICKSTART.md) · [docs/USER_GUIDE.md](docs/USER_GUIDE.md) · [docs/CLI.md](docs/CLI.md)
 
 ---
 
@@ -168,11 +287,11 @@ physics-router route --pcb board.kicad_pcb \
   --pipeline capacity --effort 0.55 \
   --out-json route.json --out-pcb routed.kicad_pcb --fail-on-drc
 
-# Score vs human copper
+# Score vs human copper (rip-and-reroute)
 physics-router golden-eval --manifest examples/mppc-interface/manifest.yaml
 physics-router golden-eval --manifest examples/golden/ci_manifest.yaml
 
-# Place + route + physics feedback (only after full legal copper)
+# Place + route + physics feedback (only meaningful after full legal copper)
 physics-router improve --config placement_config.yaml --pcb board.kicad_pcb \
   --timeout 180 --grade B --physics-feedback
 
@@ -180,33 +299,42 @@ physics-router improve --config placement_config.yaml --pcb board.kicad_pcb \
 physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 ```
 
----
-
-## What “good” means
-
-1. Every pad of a **committed** net is multilayer-connected  
-2. Failed nets leave **no** stubs (open > short)  
-3. Layer changes use **real vias** (rule-sized, not point vias)  
-4. Native DRC: **zero** hard violations  
-5. Prefer KiCad copper DRC on the applied board  
-6. Optional: SPICE / OpenEMS proxies **after** (1–5), never instead of them  
+Net policy / placement configs are YAML (`examples/*/placement_config.yaml`).
+Without a config, nets auto-import from the PCB (and schematic when present).
 
 ---
 
-## Routing process (visual)
+## Graph theory plane (what is new)
 
-![process strip](docs/images/routing_process/6_process_strip.png)
+Before geometric search, the board is a **hypergraph**: one vertex per pad anchor,
+one hyperedge per multipin net.
 
-| Stage | Module |
-|-------|--------|
-| Pad / zone / Edge.Cuts | `kicad_io` |
-| Pin-access + shared escapes | `pin_access` |
-| Overflow Steiner + cuts | `graph_theory` |
-| Capacity mesh + sections | `capacity_mesh` · `global_router` · C++ |
-| Free-angle copper | `pr_native` ExactMap |
-| Atomic full-net commit | `router` / hybrid policy |
-| Physics feedback | `physics_feedback` (SPICE · OpenEMS proxies) |
-| Oracle | KiCad `kicad-cli` DRC |
+| Feature | Role |
+|---------|------|
+| Kruskal / Prim trees | Length + projected-crossing preference for guides |
+| **Overflow-aware Steiner** | Extra Steiner candidates under occupancy pressure |
+| DSATUR coloring | Layer assignment on the net conflict graph |
+| **Cut-capacity preflight** | Demand vs capacity certificates before detail route |
+| Shared-escape map | Multipin pin-access sites charged once per cluster |
+| Auto via profile | 0.60 vs 0.45 mm by measured escape reachability |
+| Post-route audit | Cycles, crossings, articulations, bridges, layer usage |
+
+This separates **topological intent** from **geometric legality**. Both are inspectable
+in route quality / topology JSON.
+
+---
+
+## Physics feedback (when it runs)
+
+OpenEMS and SPICE are **not** used to score partial illegal copper.
+They run only after a route is **electrically complete** and **hard-DRC clean**:
+
+1. Manufacturing gate passes  
+2. Optional `improve --physics-feedback` (or continuous-improve stage)  
+3. Proxies (loop area, critical nets, emission heuristics, Ngspice where available)  
+4. Results feed re-placement, re-topology, routing priorities, and pour growth  
+
+Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 
 ---
 
@@ -214,13 +342,18 @@ physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 
 | Path | Role |
 |------|------|
-| [`src/physics_router/`](src/physics_router/) | CLI, server, policy, planning, golden-eval |
-| [`native/`](native/) | C++ geometry core |
-| [`examples/mppc-interface/`](examples/mppc-interface/) | **Primary golden** (v1.3 PCB) |
-| [`examples/golden/`](examples/golden/) | OHL suite · RESULTS · manifests |
+| [`src/physics_router/`](src/physics_router/) | CLI, server, policy, planning, golden-eval, graph theory |
+| [`native/`](native/) | C++ ExactMap · capacity mesh · pybind (`pr_native`) |
+| [`examples/mppc-interface/`](examples/mppc-interface/) | **Primary golden** — pinned v1.3 4L PCB |
+| [`examples/golden/`](examples/golden/) | OHL suite · RESULTS · manifests · SOURCES |
 | [`examples/halo-90/`](examples/halo-90/) | Dense multipin stress |
-| [`docs/`](docs/) | Guides · benches · architecture |
-| [`tests/`](tests/) | Unit + golden + graph + physics feedback |
+| [`examples/demo/`](examples/demo/) | Synthetic demo · FreeRouting interchange |
+| [`docs/`](docs/) | Guides · benches · architecture · image galleries |
+| [`scripts/`](scripts/) | Build native · mppc / OHL gallery · fetch goldens · CI |
+| [`tests/`](tests/) | Unit + golden + graph + physics + native |
+| [`kicad_plugins/`](kicad_plugins/) | pcbnew action plugin |
+| [`viewer/`](viewer/) | Web UI assets · run artifacts |
+| [`third_party/`](third_party/) | Fetched golden boards (see fetch script) |
 
 ---
 
@@ -228,13 +361,14 @@ physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 
 | Area | State |
 |------|--------|
-| Version | **0.2.0** · native `2.0.0-production-flow` |
-| Tests | `pytest -q` (extensive suite; native required for full collection) |
-| Synthetic | Full route + 0 DRC typical |
-| mppc v1.3 | Pinned complete human golden; AR scored via golden-eval |
-| OHL gallery | Easy boards A/partial; dense often hard-deadline TIMEOUT |
+| Package | **0.1.0** · native `2.0.0-production-flow` |
+| Tests | `pytest -q` (extensive; native required for full collection) |
+| Synthetic / simple boards | Full route + 0 DRC typical |
+| mppc v1.3 | Pinned complete human golden; topology + pin-access planned; AR scored via golden-eval |
+| OHL gallery | Easy boards A / honest partial; dense often hard-deadline TIMEOUT |
 | HALO-90 | Legal partials; dense CPX still open research |
 | Physics loop | SPICE/OpenEMS after complete legal copper only |
+| Non-goals today | Guaranteed 100% on every dense board; fab sign-off without human/KiCad review |
 
 ---
 
@@ -243,13 +377,19 @@ physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 | Doc | Content |
 |-----|---------|
 | [docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md) | **Flagship human vs AR report** |
-| [examples/golden/RESULTS.md](examples/golden/RESULTS.md) | OHL gallery table + plots |
-| [docs/GOLDEN_CORPUS.md](docs/GOLDEN_CORPUS.md) | Corpus + metrics + physics |
+| [examples/golden/RESULTS.md](examples/golden/RESULTS.md) | OHL gallery table + copper plots |
+| [docs/GOLDEN_CORPUS.md](docs/GOLDEN_CORPUS.md) | Corpus metrics + physics notes |
 | [docs/CAPACITY_MESH.md](docs/CAPACITY_MESH.md) | Pipeline stages |
-| [DESIGN.md](DESIGN.md) | Architecture decisions |
-| [RESEARCH.md](RESEARCH.md) | Papers · graph theory · TopoR |
-| [docs/CLI.md](docs/CLI.md) | Full CLI |
+| [docs/ARCHITECTURE_ROUTER.md](docs/ARCHITECTURE_ROUTER.md) | Router architecture depth |
+| [DESIGN.md](DESIGN.md) | Architecture decisions · open > short |
+| [RESEARCH.md](RESEARCH.md) | Papers · graph theory · TopoR map |
+| [docs/TOPOR.md](docs/TOPOR.md) | Commercial TopoR product reference |
+| [docs/CLI.md](docs/CLI.md) | Full CLI reference |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Day-to-day UI / workflows |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install in minutes |
 | [docs/AUTOROUTER_FAILURE_ANALYSIS.md](docs/AUTOROUTER_FAILURE_ANALYSIS.md) | HALO failure lessons |
+| [docs/README.md](docs/README.md) | Full doc index |
+| [DATASETS.md](DATASETS.md) | Board inventory |
 
 ---
 
@@ -259,5 +399,7 @@ physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 - KiCad **8+** (`kicad-cli`) for authoritative DRC  
 - Optional: OpenCL, Ngspice, OpenEMS  
 
-**MIT** for physicsRouter.  
-Third-party boards (mppcInterface, HALO-90, OHL clones under `third_party/`) keep their own licenses — see [examples/golden/SOURCES.md](examples/golden/SOURCES.md).
+**MIT** for physicsRouter.
+
+Third-party boards (mppcInterface, HALO-90, OHL clones under `third_party/`) keep their own licenses —
+see [examples/golden/SOURCES.md](examples/golden/SOURCES.md). Always record the upstream git SHA when publishing benchmarks.
