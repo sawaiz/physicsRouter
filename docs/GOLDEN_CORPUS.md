@@ -3,10 +3,28 @@
 **TL;DR:** Human-routed open boards form a rip-and-reroute suite. Charts show copper scale, layer strategy, via density, and autorouter completion — with **physical reasons** behind decisions.
 
 ```bash
+bash scripts/fetch_golden_boards.sh               # third_party clones
 python scripts/golden_corpus_analyze.py           # inventory + charts
 python scripts/golden_corpus_analyze.py --route-easy
 physics-router golden-eval --manifest examples/golden/manifest.yaml --extract-only
+
+# CI path (in-repo fixtures only)
+physics-router golden-eval --manifest examples/golden/ci_manifest.yaml --hard-deadline
+
+# Via-profile A/B (pin-access feasibility)
+physics-router golden-eval --id simple_2net --rules-profile via_0p45
+physics-router golden-eval --id simple_2net --rules-profile via_0p6
 ```
+
+### Features (production)
+
+| Feature | Behavior |
+|---------|----------|
+| **Zone-aware goldens** | Human filled zones count as copper; pour-only nets flagged in `missing_zone_pours` |
+| **Pin-access + shared escapes** | Per-board `pin_access.json`; nearby sites merge so multipin trees charge one via |
+| **Rules profiles** | `via_0p45` / `via_0p6` / `source` / JLCPCB floors for A/B reachability |
+| **Hard deadline** | Child process killed at `timeout_s` (prevents StickHub-class hangs) |
+| **CBS repair** | Bounded conflict-cluster re-route after AR (`--cbs-repair`) |
 
 Artifacts: `viewer/runs/golden_corpus/` · images: `docs/images/golden/`
 

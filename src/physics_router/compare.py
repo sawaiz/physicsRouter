@@ -125,7 +125,14 @@ def _per_net_table(result: RouteResult) -> dict[str, dict[str, Any]]:
             continue
         row = by_net.setdefault(
             s.net,
-            {"length_mm": 0.0, "segments": 0, "vias": 0, "layers": set()},
+            {
+                "length_mm": 0.0,
+                "segments": 0,
+                "vias": 0,
+                "areas": 0,
+                "layers": set(),
+                "zone_only": False,
+            },
         )
         row["length_mm"] += ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
         row["segments"] += 1
@@ -135,24 +142,53 @@ def _per_net_table(result: RouteResult) -> dict[str, dict[str, Any]]:
             continue
         row = by_net.setdefault(
             v.net,
-            {"length_mm": 0.0, "segments": 0, "vias": 0, "layers": set()},
+            {
+                "length_mm": 0.0,
+                "segments": 0,
+                "vias": 0,
+                "areas": 0,
+                "layers": set(),
+                "zone_only": False,
+            },
         )
         row["vias"] += 1
+    for area in result.areas or []:
+        if not area.net:
+            continue
+        row = by_net.setdefault(
+            area.net,
+            {
+                "length_mm": 0.0,
+                "segments": 0,
+                "vias": 0,
+                "areas": 0,
+                "layers": set(),
+                "zone_only": False,
+            },
+        )
+        row["areas"] += 1
+        row["layers"].add(area.layer)
     out: dict[str, dict[str, Any]] = {}
     for net, row in by_net.items():
         layers = sorted(row["layers"])
+        segs = int(row["segments"])
+        vias = int(row["vias"])
+        areas = int(row["areas"])
         out[net] = {
             "length_mm": round(float(row["length_mm"]), 4),
-            "segments": int(row["segments"]),
-            "vias": int(row["vias"]),
+            "segments": segs,
+            "vias": vias,
+            "areas": areas,
             "layers": layers,
+            "zone_only": areas > 0 and segs == 0 and vias == 0,
             "primary_layer": max(
                 layers,
                 key=lambda ly: sum(
                     ((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) ** 0.5
                     for s in result.segments
                     if s.net == net and s.layer == ly
-                ),
+                )
+                + (1.0 if any(a.net == net and a.layer == ly for a in (result.areas or [])) else 0.0),
             )
             if layers
             else None,
@@ -181,6 +217,8 @@ def compare_to_golden(
     hu_nets = _per_net_table(human)
     human_copper_nets = set(hu_nets)
     ar_copper_nets = set(ar_nets)
+    human_zone_only = {n for n, r in hu_nets.items() if r.get("zone_only")}
+    ar_zone_only = {n for n, r in ar_nets.items() if r.get("zone_only")}
 
     # Prefer explicit unrouted lists; fall back to copper presence.
     ar_open = set(autorouter.unrouted_nets or [])
@@ -189,8 +227,16 @@ def compare_to_golden(
     hu_open = set(human.unrouted_nets or [])
 
     human_done = sorted(human_copper_nets - hu_open)
-    ar_done_of_human = sorted(n for n in human_done if n in ar_copper_nets and n not in ar_open)
+    # Zone-only human nets: AR may complete via areas OR tracks/vias.
+    ar_done_of_human = sorted(
+        n
+        for n in human_done
+        if n in ar_copper_nets and n not in ar_open
+    )
     missing = sorted(n for n in human_done if n not in ar_done_of_human)
+    # Pour-only human nets missing AR tracks are soft-missing if AR has no copper:
+    # still count as missing for completion, but flag for physics report.
+    missing_zone_pours = sorted(n for n in missing if n in human_zone_only)
     extra = sorted(ar_copper_nets - human_copper_nets)
 
     n_human = max(len(human_done), 1)
@@ -281,9 +327,14 @@ def compare_to_golden(
             "ar_completed_of_human": len(ar_done_of_human),
             "ratio": round(completion_vs_human, 4),
             "missing_nets": missing,
+            "missing_zone_pours": missing_zone_pours,
+            "human_zone_only_nets": sorted(human_zone_only),
+            "ar_zone_only_nets": sorted(ar_zone_only),
             "extra_ar_nets": extra,
             "ar_unrouted": sorted(ar_open),
             "human_unrouted": sorted(hu_open),
+            "human_areas": len(human.areas or []),
+            "ar_areas": len(autorouter.areas or []),
         },
         "per_net": per_net,
         "layer_agreement": {

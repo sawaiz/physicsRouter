@@ -1,0 +1,13 @@
+# CI-safe golden boards (in-repo fixtures only — no third_party clones).
+# physics-router golden-eval --manifest examples/golden/ci_manifest.yaml
+
+boards:
+  - id: simple_2net
+    pcb: tests/fixtures/golden/simple_2net.kicad_pcb
+    difficulty: easy
+    expect: manufacturing_gate
+    timeout_s: 90
+    min_completion: 1.0
+    hard_deadline: true
+    cbs_repair: true
+    notes: "Two-net fixture; full completion + 0 hard DRC."

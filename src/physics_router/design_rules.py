@@ -649,6 +649,56 @@ def apply_manufacturer_floors(
     return rules
 
 
+def apply_rules_profile(
+    rules: DesignRules,
+    profile: str | None,
+) -> DesignRules:
+    """Apply a named via/clearance profile for golden A/B experiments.
+
+    Profiles
+    --------
+    ``source`` / ``project`` / ``kicad``
+        Keep loaded KiCad numbers (no manufacturer floors).
+    ``4layer_recommended`` / ``4layer_capability`` / …
+        JLCPCB floors via :func:`apply_manufacturer_floors` (raises mins).
+    ``via_0p45`` / ``via_0p6``
+        Override only via diameter/drill (0.45/0.20 vs 0.60/0.30) for pin-access
+        feasibility cliffs without changing track clearance.
+    """
+    if not profile:
+        return rules
+    p = profile.strip().lower().replace(" ", "").replace("-", "_")
+    if p in ("source", "project", "kicad", "none", "raw"):
+        rules.notes = list(rules.notes or [])
+        tag = "rules_profile: source project (no manufacturer floors)"
+        if tag not in rules.notes:
+            rules.notes.append(tag)
+        return rules
+    if p in ("via_0p45", "via045", "via_0.45"):
+        rules.constraints.min_via_diameter_mm = 0.45
+        rules.constraints.min_via_drill_mm = 0.20
+        rules.constraints.min_via_annular_mm = max(
+            rules.constraints.min_via_annular_mm, 0.125
+        )
+        for nc in rules.net_classes.values():
+            nc.via_diameter_mm = max(nc.via_diameter_mm, 0.45)
+            nc.via_drill_mm = max(nc.via_drill_mm, 0.20)
+        rules.notes = list(rules.notes or [])
+        rules.notes.append("rules_profile: via_0p45 (0.45/0.20 mm)")
+        return rules
+    if p in ("via_0p6", "via06", "via_0.6", "via_0p60"):
+        rules.constraints.min_via_diameter_mm = 0.60
+        rules.constraints.min_via_drill_mm = 0.30
+        for nc in rules.net_classes.values():
+            nc.via_diameter_mm = max(nc.via_diameter_mm, 0.60)
+            nc.via_drill_mm = max(nc.via_drill_mm, 0.30)
+        rules.notes = list(rules.notes or [])
+        rules.notes.append("rules_profile: via_0p6 (0.60/0.30 mm)")
+        return rules
+    # JLCPCB named profiles
+    return apply_manufacturer_floors(rules, manufacturer="JLCPCB", profile=profile)
+
+
 def load_design_rules(
     pcb_path: str | Path | None = None,
     pro_path: str | Path | None = None,

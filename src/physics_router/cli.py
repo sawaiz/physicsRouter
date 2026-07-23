@@ -1041,6 +1041,21 @@ def compare_routes_cmd(
     help="Run KiCad DRC oracle on AR copper (needs kicad-cli)",
 )
 @click.option(
+    "--rules-profile",
+    default=None,
+    help="source | via_0p45 | via_0p6 | 4layer_recommended | 4layer_capability | …",
+)
+@click.option(
+    "--hard-deadline/--soft-timeout",
+    default=True,
+    help="Kill native route after timeout_s (default hard; soft only warns)",
+)
+@click.option(
+    "--cbs-repair/--no-cbs-repair",
+    default=True,
+    help="Bounded conflict-cluster CBS repair after route (default on)",
+)
+@click.option(
     "--fail-on-fail/--no-fail-on-fail",
     default=True,
     help="Exit 2 if any board fails its expect gate (default on)",
@@ -1053,6 +1068,9 @@ def golden_eval_cmd(
     out_dir: Path | None,
     extract_only: bool,
     kicad_drc: bool,
+    rules_profile: str | None,
+    hard_deadline: bool,
+    cbs_repair: bool,
     fail_on_fail: bool,
 ) -> None:
     """Rip human copper on golden boards, autoroute, score vs human routing.
@@ -1075,13 +1093,17 @@ def golden_eval_cmd(
         board_ids=ids,
         run_kicad_drc=kicad_drc,
         extract_only=extract_only,
+        rules_profile=rules_profile,
+        hard_deadline=hard_deadline,
+        cbs_repair=cbs_repair,
     )
     counts = summary.get("counts") or {}
     click.echo(
         f"golden-eval: {counts.get('passed', 0)} passed · "
         f"{counts.get('failed', 0)} failed · {counts.get('skipped', 0)} skipped "
         f"(pipeline={pipeline} effort={effort}"
-        f"{' extract-only' if extract_only else ''})"
+        f"{' extract-only' if extract_only else ''}"
+        f"{' profile=' + rules_profile if rules_profile else ''})"
     )
     for row in summary.get("boards") or []:
         if row.get("skipped"):
@@ -1089,13 +1111,17 @@ def golden_eval_cmd(
             continue
         if extract_only:
             h = row.get("human") or {}
+            pa = row.get("pin_access") or {}
             click.echo(
                 f"  human {row.get('id')}: segs={h.get('segments')} "
-                f"vias={h.get('vias')} L={h.get('length_mm')}mm "
-                f"nets={h.get('nets_with_copper')}"
+                f"vias={h.get('vias')} areas={h.get('areas')} "
+                f"L={h.get('length_mm')}mm nets={h.get('nets_with_copper')} "
+                f"inner_reach={pa.get('inner_reachable_anchors')}"
             )
             continue
         status = "PASS" if row.get("passed") else "FAIL"
+        if row.get("timed_out"):
+            status = "TIMEOUT"
         click.echo(
             f"  {status} {row.get('id')}: grade={row.get('golden_grade')} "
             f"score={row.get('golden_score')} "
@@ -1106,6 +1132,9 @@ def golden_eval_cmd(
         missing = row.get("missing_nets") or []
         if missing:
             click.echo(f"         missing: {', '.join(missing[:12])}")
+        mz = row.get("missing_zone_pours") or []
+        if mz:
+            click.echo(f"         zone_pours_open: {', '.join(mz[:8])}")
     click.echo(f"  summary → {summary.get('out_json')}")
     if fail_on_fail and not summary.get("passed"):
         sys.exit(2)

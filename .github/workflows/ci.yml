@@ -34,6 +34,24 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
+      - name: Golden feature tests
+        run: pytest -q tests/test_golden_eval.py tests/test_golden_features.py
+
+      - name: Golden extract + easy route (CI manifest)
+        run: |
+          physics-router golden-eval \
+            --manifest examples/golden/ci_manifest.yaml \
+            --extract-only \
+            --out-dir viewer/runs/ci_golden_extract \
+            --no-fail-on-fail
+          physics-router golden-eval \
+            --manifest examples/golden/ci_manifest.yaml \
+            --pipeline capacity \
+            --effort 0.4 \
+            --hard-deadline \
+            --no-cbs-repair \
+            --out-dir viewer/runs/ci_golden_route
+
       - name: Score regression (synthetic always; HALO if vendored)
         run: python scripts/ci_regression.py
 
@@ -48,4 +66,5 @@ jobs:
             examples/demo/
             viewer/
             docs/route_comparison.md
+            viewer/runs/ci_golden_route/
           if-no-files-found: warn

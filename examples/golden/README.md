@@ -14,18 +14,24 @@ Policy: **open nets beat shorts**. Length/via wins only count when AR finishes h
 ## Run
 
 ```bash
-# Full suite (routes each board)
-physics-router golden-eval --manifest examples/golden/manifest.yaml
+# Full suite (routes each board; hard deadline kills hung native search)
+physics-router golden-eval --manifest examples/golden/manifest.yaml --hard-deadline
+
+# CI-safe in-repo fixture only
+physics-router golden-eval --manifest examples/golden/ci_manifest.yaml
 
 # Extract human copper only (no native route — good CI smoke for parsers)
 physics-router golden-eval --manifest examples/golden/manifest.yaml --extract-only
 
-# One board, write under viewer/runs/golden_suite/
-physics-router golden-eval --id simple_2net --pipeline capacity --effort 0.55
+# One board + via profile A/B + CBS repair
+physics-router golden-eval --id simple_2net --pipeline capacity --effort 0.55 \
+  --rules-profile via_0p45 --cbs-repair
 
 # Optional KiCad oracle (needs kicad-cli)
 physics-router golden-eval --id simple_2net --kicad-drc
 ```
+
+Artifacts also include `pin_access.json` (inner reachability + shared-escape savings).
 
 Artifacts per board: `human_route.json`, `ar_route.json`, `*_ar.kicad_pcb`,
 `golden_compare.json`, `golden_compare.md`. Suite summary: `suite_results.json`.

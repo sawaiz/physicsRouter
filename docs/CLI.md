@@ -96,11 +96,16 @@ physics-router pre-route --config c.yaml --pcb board.kicad_pcb
 ```bash
 physics-router golden-eval [--manifest examples/golden/manifest.yaml] \
   [--id simple_2net] [--pipeline capacity] [--effort 0.55] \
-  [--extract-only] [--kicad-drc] [--out-dir DIR]
+  [--extract-only] [--kicad-drc] [--out-dir DIR] \
+  [--rules-profile via_0p45|via_0p6|source|4layer_capability] \
+  [--hard-deadline|--soft-timeout] [--cbs-repair|--no-cbs-repair]
 ```
 
-Rip-and-reroute known-good PCBs and score against extracted human copper.
-See [examples/golden/README.md](../examples/golden/README.md).
+Rip-and-reroute known-good PCBs and score against extracted human copper
+(tracks **and** zone pours). Hard deadline kills hung native search. CI uses
+`examples/golden/ci_manifest.yaml`.
+
+See [examples/golden/README.md](../examples/golden/README.md) · [GOLDEN_CORPUS.md](GOLDEN_CORPUS.md).
 
 ## FreeRouting {#freerouting}
 

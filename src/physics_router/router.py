@@ -4535,6 +4535,60 @@ def _field_net_name(block: str, code_to_name: dict[int, str]) -> str:
     return ""
 
 
+def extract_copper_areas_from_kicad_pcb(path: str | Path) -> list[CopperArea]:
+    """Parse non-keepout copper zones into :class:`CopperArea` pours.
+
+    Pour-heavy human boards (power/GND planes, science LED boards) often connect
+    nets primarily via filled zones rather than tracks. Golden scoring must treat
+    those nets as having human copper.
+    """
+    from physics_router.kicad_io import _extract_zones, parse_sexpr
+
+    path = Path(path)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        root = parse_sexpr(text)
+    except Exception:
+        return []
+    # Copper layer names from board layers list when present
+    copper_layers: list[str] = []
+    if isinstance(root, list):
+        for child in root[1:]:
+            if not (isinstance(child, list) and child and child[0] == "layers"):
+                continue
+            for ly in child[1:]:
+                if not isinstance(ly, list) or len(ly) < 3:
+                    continue
+                name = str(ly[1])
+                kind = str(ly[2]) if len(ly) > 2 else ""
+                if kind == "signal" or name.endswith(".Cu"):
+                    copper_layers.append(name)
+    if not copper_layers:
+        copper_layers = ["F.Cu", "B.Cu"]
+
+    areas: list[CopperArea] = []
+    for z in _extract_zones(root, copper_layers):
+        if z.get("keepout"):
+            continue
+        net = z.get("net")
+        if not net:
+            continue
+        pts = z.get("points") or []
+        if len(pts) < 3:
+            continue
+        outline = [(float(p[0]), float(p[1])) for p in pts]
+        areas.append(
+            CopperArea(
+                outline=outline,
+                layer=str(z.get("layer") or "F.Cu"),
+                net=str(net),
+                clearance_mm=0.2,
+                min_thickness_mm=0.25,
+            )
+        )
+    return areas
+
+
 def extract_routes_from_kicad_pcb(
     path: str | Path,
     *,
@@ -4553,6 +4607,8 @@ def extract_routes_from_kicad_pcb(
     path = Path(path)
     text = path.read_text(encoding="utf-8", errors="replace")
     code_to_name = parse_kicad_net_code_map(text)
+
+    areas = extract_copper_areas_from_kicad_pcb(path)
 
     segs: list[RouteSegment] = []
     for block in _sexpr_blocks(text, "segment"):
@@ -4591,7 +4647,10 @@ def extract_routes_from_kicad_pcb(
         )
 
     length = sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in segs)
-    copper_nets = {s.net for s in segs if s.net} | {v.net for v in vias if v.net}
+    zone_nets = {a.net for a in areas if a.net}
+    copper_nets = (
+        {s.net for s in segs if s.net} | {v.net for v in vias if v.net} | zone_nets
+    )
     unrouted: list[str] = []
     if board_nets is not None:
         for name, pads in board_nets.items():
@@ -4622,20 +4681,23 @@ def extract_routes_from_kicad_pcb(
             segments=by_net_seg.get(net, 0),
             vias=by_net_via.get(net, 0),
             status="ok" if net in copper_nets else "unrouted",
-            method="human_extract",
+            method="human_extract" if net not in zone_nets or net in by_net_len else "zone_pour",
+            notes=(["zone_pour"] if net in zone_nets and net not in by_net_seg else []),
         )
-        for net in sorted(set(by_net_len) | set(by_net_via) | set(unrouted))
+        for net in sorted(set(by_net_len) | set(by_net_via) | zone_nets | set(unrouted))
     ]
 
     result = RouteResult(
         segments=segs,
         vias=vias,
+        areas=areas,
         via_count=len(vias),
         total_length_mm=round(length, 4),
         unrouted_nets=unrouted,
         notes=[
             f"extracted from {path.name}",
-            f"segments={len(segs)} vias={len(vias)} nets_with_copper={len(copper_nets)}",
+            f"segments={len(segs)} vias={len(vias)} areas={len(areas)} "
+            f"nets_with_copper={len(copper_nets)} zone_nets={len(zone_nets)}",
         ],
         net_reports=reports,
     )

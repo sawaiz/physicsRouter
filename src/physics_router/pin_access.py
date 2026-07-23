@@ -92,12 +92,74 @@ class PinAccessPlan:
     def has_inner_access(self, net: str, anchor_index: int) -> bool:
         return bool(self.sites_for(net, anchor_index))
 
+    def shared_escape_resources(self, merge_mm: float = 0.15) -> dict[str, Any]:
+        """Cluster nearby access sites so multipin trees charge one escape once.
+
+        Physics: a legal offset via next to a package can fan out several same-net
+        branches. Counting one via per tree edge over-taxes dense rings (HALO CPX).
+        Sites within ``merge_mm`` on the same net collapse to one resource.
+        """
+        clusters: list[dict[str, Any]] = []
+        total_sites = 0
+        for net, pads in self.by_net.items():
+            sites: list[AccessSite] = []
+            for pad in pads:
+                sites.extend(pad.candidates)
+            total_sites += len(sites)
+            used = [False] * len(sites)
+            for i, site in enumerate(sites):
+                if used[i]:
+                    continue
+                members = [site]
+                used[i] = True
+                for j in range(i + 1, len(sites)):
+                    if used[j]:
+                        continue
+                    other = sites[j]
+                    if math.hypot(site.x - other.x, site.y - other.y) <= merge_mm:
+                        members.append(other)
+                        used[j] = True
+                clusters.append(
+                    {
+                        "net": net,
+                        "x": round(sum(m.x for m in members) / len(members), 4),
+                        "y": round(sum(m.y for m in members) / len(members), 4),
+                        "n_sites": len(members),
+                        "pads": sorted({f"{m.ref}.{m.pad}" for m in members}),
+                    }
+                )
+        n_resources = len(clusters)
+        return {
+            "merge_mm": merge_mm,
+            "raw_sites": total_sites,
+            "shared_resources": n_resources,
+            "savings": max(0, total_sites - n_resources),
+            "savings_ratio": round(
+                (total_sites - n_resources) / total_sites, 4
+            )
+            if total_sites
+            else 0.0,
+            "clusters": clusters[:200],
+        }
+
     def to_dict(self) -> dict[str, Any]:
+        shared = self.shared_escape_resources()
+        metrics = dict(self.metrics)
+        metrics["shared_escapes"] = {
+            k: shared[k]
+            for k in (
+                "merge_mm",
+                "raw_sites",
+                "shared_resources",
+                "savings",
+                "savings_ratio",
+            )
+        }
         return {
             "via_diameter_mm": self.via_diameter_mm,
             "via_drill_mm": self.via_drill_mm,
             "clearance_mm": self.clearance_mm,
-            "metrics": dict(self.metrics),
+            "metrics": metrics,
             "pads": {
                 net: [
                     {
