@@ -22,12 +22,14 @@ def _host_parallelism() -> dict[str, Any]:
     """Detect CPU cores and rough RAM for expansion / thread budgets."""
     cores = os.cpu_count() or 4
     # Prefer physical-ish bound for OpenMP when oversubscribed hyperthreads
+    ram_gb = 8.0
     try:
         import psutil  # type: ignore
 
         ram_gb = float(psutil.virtual_memory().total) / (1024**3)
     except Exception:
-        ram_gb = 8.0
+        pass
+    if ram_gb <= 8.5:
         # Linux
         try:
             with open("/proc/meminfo", encoding="utf-8") as fh:
@@ -37,17 +39,41 @@ def _host_parallelism() -> dict[str, Any]:
                         break
         except Exception:
             pass
+    if ram_gb <= 8.5:
         # macOS
-        if ram_gb == 8.0:
-            try:
-                import subprocess
+        try:
+            import subprocess
 
-                out = subprocess.check_output(
-                    ["sysctl", "-n", "hw.memsize"], text=True
-                ).strip()
-                ram_gb = float(out) / (1024**3)
-            except Exception:
-                pass
+            out = subprocess.check_output(
+                ["sysctl", "-n", "hw.memsize"], text=True
+            ).strip()
+            ram_gb = float(out) / (1024**3)
+        except Exception:
+            pass
+    if ram_gb <= 8.5:
+        # Windows
+        try:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                ram_gb = float(stat.ullTotalPhys) / (1024**3)
+        except Exception:
+            pass
     return {"cores": int(cores), "ram_gb": float(ram_gb)}
 
 
