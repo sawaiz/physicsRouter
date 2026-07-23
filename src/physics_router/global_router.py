@@ -142,7 +142,17 @@ def build_global_route_plan(
     size informs *cell_mm* and mesh path lengths bias section cost.
     """
     layers = list(board.copper_layers or ["F.Cu", "B.Cu"])
-    topology = plan_graph_topology(board, config, layers=layers)
+    pitch = float(
+        rules.constraints.min_track_width_mm + rules.constraints.min_clearance_mm
+    )
+    topology = plan_graph_topology(
+        board,
+        config,
+        layers=layers,
+        use_overflow_steiner=True,
+        track_pitch_mm=max(0.15, pitch),
+        cell_mm=cell_mm,
+    )
     if capacity_mesh is None and effort > 0:
         try:
             from physics_router.capacity_mesh import build_capacity_mesh
@@ -377,5 +387,7 @@ def build_global_route_plan(
             ),
             "capacity_mesh": capacity_mesh.to_dict() if capacity_mesh is not None else None,
             "effort": effort,
+            "topology_steiner_nets": (topology.metrics or {}).get("steiner_nets"),
+            "cut_preflight": (topology.metrics or {}).get("cut_preflight"),
         },
     )

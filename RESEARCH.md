@@ -189,7 +189,61 @@ Beyond raw path search, research and practice emphasize **pre-route policy** tha
 
 ---
 
-## 8. Full bibliography (selected)
+## 8. Graph theory upgrades (design note, 2026)
+
+**Status:** Implemented in `graph_theory.py` + wired through global planning and pre-route.
+
+### 8.1 Overflow-aware Steiner trees (not pin MST only)
+
+**Theory:** Multipin nets are Steiner trees in a capacitated metric. Classical MST on pins is optimal only without Steiner points and without congestion. Packing Steiner trees under capacity is NP-hard (electronic connection packing); practice uses metric-closure heuristics + dual ascent (PathFinder).
+
+**Design (physicsRouter):**
+1. Generate bounded **Hanan grid + edge midpoints** as Steiner candidates.
+2. Kruskal MST on terminals ∪ candidates with edge weight  
+   \(w = L + \lambda_{\mathrm{cross}}\,C + \lambda_{\mathrm{ovf}}\,\max\mathrm{occ}(e)\).
+3. Prune degree-1 non-terminals; contract Steiner paths to pin–pin tree edges.
+4. Keep Steiner result only if weight ≤ MST weight (else MST).
+5. Progressive **occupancy map** from higher-priority nets biases later trees off full cells.
+
+**Related literature:** NeuralSteiner (NeurIPS 2024) learns Steiner *points* under overflow; we use classical candidates + the same overflow idea without a neural net. Dayan/Dai rubber-band assigns layers *after* topology—overflow Steiner improves the topology fed to that stage.
+
+### 8.2 Cut-capacity preflight (certificates)
+
+**Theory:** Multi-commodity flow cannot exceed cut capacity. For a geometric cut \(S\), if nets forced to cross \(S\) (pins on both sides) exceed  
+\(\lfloor |S|/\mathrm{pitch}\rfloor \times L_{\mathrm{cu}}\), the instance is **infeasible under the model**.
+
+**Design:** Axis-aligned cuts at 25/50/75% of width/height; demand = forced nets; capacity = track slots. Exposed in:
+- `plan_graph_topology(...).metrics["cut_preflight"]`
+- `pre_route_analysis(...).cut_preflight` (congestion warning if saturated)
+- `GlobalRoutePlan.metrics["cut_preflight"]`
+
+**Use:** Honest open nets, skip thrashing, advise more layers / coarser pitch—not a silent partial with shorts.
+
+### 8.3 Further graph directions (not yet shipped)
+
+| Idea | Graph primitive | Priority |
+|------|-----------------|----------|
+| Hierarchical CBS on CPX cluster | MAPF composition | High |
+| Section list-coloring (layer lists) | List coloring of tree edges | High |
+| Min-cost b-matching pin access | Bipartite assignment | Medium |
+| Dual free-space detours | Shortest path in dual | Medium |
+| GNN Steiner points | Learned candidates | Low (optional) |
+
+See also conversation survey: MAPF/CBS, PathFinder duals, TritonRoute pin access, MLV-CBS.
+
+### 8.4 Implementation map
+
+| Module | API |
+|--------|-----|
+| `graph_theory.overflow_aware_steiner_tree` | Multipin Steiner under overflow |
+| `graph_theory.cut_capacity_preflight` | Cut certificates |
+| `graph_theory.plan_graph_topology` | Steiner + annular + DSATUR + cuts |
+| `global_router.build_global_route_plan` | Consumes topology; exposes cut/steiner metrics |
+| `routing_strategies.pre_route_analysis` | Surfaces saturated cuts |
+
+---
+
+## 9. Full bibliography (selected)
 
 ### Classical & topological
 

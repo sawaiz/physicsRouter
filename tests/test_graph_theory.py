@@ -203,7 +203,9 @@ def test_topology_plan_is_exported_by_native_bridge() -> None:
     raw = route_board_native(_crossing_board(), None, grid_mm=0.5, use_gpu=False)
     assert raw is not None
     plan = raw["quality"]["graph_topology_plan"]
-    assert plan["planner"] == "hypergraph+crossing_mst+dsatur"
+    assert "hypergraph" in plan["planner"]
+    assert "dsatur" in plan["planner"]
+    assert "cut_preflight" in plan
     assert plan["hyperedges"] == 3
 
 

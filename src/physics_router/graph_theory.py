@@ -181,8 +181,11 @@ def minimum_spanning_tree(
     *,
     foreign_edges: Iterable[tuple[tuple[float, float], tuple[float, float]]] = (),
     crossing_penalty_mm: float = 0.0,
+    occupancy: dict[tuple[int, int], float] | None = None,
+    cell_mm: float = 1.0,
+    overflow_penalty_mm: float = 0.0,
 ) -> list[GraphEdge]:
-    """Kruskal tree with a geometric crossing penalty against foreign guides."""
+    """Kruskal tree with geometric crossing + optional overflow costs."""
     vertices = hyperedge.vertices
     if len(vertices) < 2:
         return []
@@ -196,6 +199,9 @@ def minimum_spanning_tree(
                 for start, end in foreign
             )
             length = _distance(a, b)
+            overflow = _segment_overflow(
+                (a.x, a.y), (b.x, b.y), occupancy, cell_mm=cell_mm
+            )
             candidates.append(
                 GraphEdge(
                     net=hyperedge.net,
@@ -203,7 +209,9 @@ def minimum_spanning_tree(
                     v=j,
                     length_mm=length,
                     crossing_cost=crossings,
-                    weight=length + crossing_penalty_mm * crossings,
+                    weight=length
+                    + crossing_penalty_mm * crossings
+                    + overflow_penalty_mm * overflow,
                 )
             )
     candidates.sort(key=lambda edge: (edge.weight, edge.length_mm, edge.u, edge.v))
@@ -216,6 +224,417 @@ def minimum_spanning_tree(
         if len(selected) == len(vertices) - 1:
             break
     return _root_tree(selected, len(vertices))
+
+
+def _segment_overflow(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    occupancy: dict[tuple[int, int], float] | None,
+    *,
+    cell_mm: float = 1.0,
+) -> float:
+    """Sample max occupancy along a straight guide (overflow-aware Steiner/MST)."""
+    if not occupancy:
+        return 0.0
+    cell = max(0.2, float(cell_mm))
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    samples = max(2, int(math.ceil(length / (0.5 * cell))))
+    peak = 0.0
+    for i in range(samples + 1):
+        t = i / samples
+        x = a[0] + (b[0] - a[0]) * t
+        y = a[1] + (b[1] - a[1]) * t
+        key = (int(math.floor(x / cell)), int(math.floor(y / cell)))
+        peak = max(peak, float(occupancy.get(key, 0.0)))
+    return peak
+
+
+def _steiner_candidate_points(
+    vertices: list[GraphVertex],
+    *,
+    max_extra: int = 48,
+) -> list[tuple[float, float]]:
+    """Hanan-style + edge-midpoint Steiner candidates for multipin nets.
+
+    Graph theory: Steiner vertices in the metric closure improve multipin trees
+    under congestion (NeuralSteiner / classical RST construction). We keep a
+    bounded set for deterministic Kruskal on terminals ∪ candidates.
+    """
+    if len(vertices) < 3:
+        return []
+    xs = sorted({round(v.x, 4) for v in vertices})
+    ys = sorted({round(v.y, 4) for v in vertices})
+    # Hanan grid intersections (not coinciding with terminals)
+    term = {(round(v.x, 4), round(v.y, 4)) for v in vertices}
+    hanan: list[tuple[float, float]] = []
+    for x in xs:
+        for y in ys:
+            p = (x, y)
+            if p not in term:
+                hanan.append(p)
+    # Edge midpoints (local Steiner for long branches)
+    mids: list[tuple[float, float]] = []
+    for i, a in enumerate(vertices):
+        for j in range(i + 1, len(vertices)):
+            b = vertices[j]
+            mids.append((0.5 * (a.x + b.x), 0.5 * (a.y + b.y)))
+    # Prefer midpoints near the geometric median, then Hanan
+    cx = statistics.median(v.x for v in vertices)
+    cy = statistics.median(v.y for v in vertices)
+
+    def dist_key(p: tuple[float, float]) -> float:
+        return math.hypot(p[0] - cx, p[1] - cy)
+
+    # Dedup
+    seen: set[tuple[float, float]] = set()
+    ordered: list[tuple[float, float]] = []
+    for p in sorted(mids, key=dist_key) + sorted(hanan, key=dist_key):
+        key = (round(p[0], 3), round(p[1], 3))
+        if key in seen or key in term:
+            continue
+        # Skip midpoints that coincide with a pin
+        if any(math.hypot(p[0] - v.x, p[1] - v.y) < 1e-3 for v in vertices):
+            continue
+        seen.add(key)
+        ordered.append(p)
+        if len(ordered) >= max_extra:
+            break
+    return ordered
+
+
+def overflow_aware_steiner_tree(
+    hyperedge: NetHyperedge,
+    *,
+    foreign_edges: Iterable[tuple[tuple[float, float], tuple[float, float]]] = (),
+    crossing_penalty_mm: float = 0.0,
+    occupancy: dict[tuple[int, int], float] | None = None,
+    cell_mm: float = 1.0,
+    overflow_penalty_mm: float = 2.0,
+    max_steiner: int = 48,
+) -> list[GraphEdge]:
+    """Approximate Steiner tree on pins + overflow-weighted candidate points.
+
+    Algorithm (classical Steiner heuristic on an extended metric):
+    1. Add bounded Hanan/midpoint Steiner candidates.
+    2. Kruskal MST on terminals ∪ candidates with weight =
+       length + crossing_penalty·crossings + overflow_penalty·max_occupancy.
+    3. Iteratively prune degree-1 non-terminals (Steiner leaves).
+    4. Map remaining edges back to terminal indices only when both ends are
+       terminals; otherwise split paths through Steiner points into a tree on
+       the original pin indices by contracting Steiner paths.
+
+    Falls back to :func:`minimum_spanning_tree` when steiner gains nothing.
+    """
+    terminals = hyperedge.vertices
+    n_term = len(terminals)
+    if n_term < 2:
+        return []
+    if n_term == 2:
+        return minimum_spanning_tree(
+            hyperedge,
+            foreign_edges=foreign_edges,
+            crossing_penalty_mm=crossing_penalty_mm,
+            occupancy=occupancy,
+            cell_mm=cell_mm,
+            overflow_penalty_mm=overflow_penalty_mm,
+        )
+
+    foreign = list(foreign_edges)
+    steiner_pts = _steiner_candidate_points(terminals, max_extra=max_steiner)
+    # Points: [0..n_term) terminals, then Steiner
+    points: list[tuple[float, float]] = [(v.x, v.y) for v in terminals]
+    points.extend(steiner_pts)
+    n_all = len(points)
+    is_terminal = [i < n_term for i in range(n_all)]
+
+    candidates: list[tuple[float, float, int, int, int, float]] = []
+    # weight, length, u, v, crossings, overflow
+    for i in range(n_all):
+        for j in range(i + 1, n_all):
+            a, b = points[i], points[j]
+            length = math.hypot(a[0] - b[0], a[1] - b[1])
+            # Skip very long Steiner-only edges (keeps graph sparse-ish)
+            if not is_terminal[i] and not is_terminal[j] and length > 0:
+                pair_d = [
+                    _distance(terminals[p], terminals[q])
+                    for p in range(n_term)
+                    for q in range(p + 1, n_term)
+                ]
+                med = statistics.median(pair_d) if pair_d else 1.0
+                if length > 3.0 * max(med, 1e-3):
+                    continue
+            crossings = sum(
+                segments_properly_cross(a, b, start, end) for start, end in foreign
+            )
+            overflow = _segment_overflow(a, b, occupancy, cell_mm=cell_mm)
+            weight = (
+                length
+                + crossing_penalty_mm * crossings
+                + overflow_penalty_mm * overflow
+            )
+            candidates.append((weight, length, i, j, crossings, overflow))
+    candidates.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
+
+    dsu = _DisjointSet(n_all)
+    mst_edges: list[tuple[int, int, float, int, float]] = []  # u,v,len,cross,w
+    for weight, length, u, v, crossings, _ov in candidates:
+        if not dsu.union(u, v):
+            continue
+        mst_edges.append((u, v, length, crossings, weight))
+        if len(mst_edges) >= n_all - 1:
+            break
+
+    # Adjacency for pruning
+    adj: dict[int, list[tuple[int, float, int, float]]] = {i: [] for i in range(n_all)}
+    for u, v, length, crossings, weight in mst_edges:
+        adj[u].append((v, length, crossings, weight))
+        adj[v].append((u, length, crossings, weight))
+
+    # Prune degree-1 Steiner vertices
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n_term, n_all):
+            if len(adj[i]) == 1:
+                nbr, length, crossings, weight = adj[i][0]
+                adj[i].clear()
+                adj[nbr] = [e for e in adj[nbr] if e[0] != i]
+                changed = True
+            elif len(adj[i]) == 0 and i >= n_term:
+                pass
+
+    # Contract paths through remaining Steiner points into terminal-terminal edges
+    # by walking the forest restricted to edges still in adj.
+    term_edges: list[GraphEdge] = []
+    visited_undirected: set[tuple[int, int]] = set()
+
+    def walk_from_terminal(start: int) -> None:
+        stack = [(start, start, 0.0, 0, -1)]  # node, path_start_term, length, cross, parent
+        while stack:
+            node, origin, acc_len, acc_cross, parent = stack.pop()
+            for nbr, length, crossings, _w in adj[node]:
+                if nbr == parent:
+                    continue
+                key = (min(node, nbr), max(node, nbr))
+                if key in visited_undirected and node != start:
+                    continue
+                new_len = acc_len + length
+                new_cross = acc_cross + crossings
+                if is_terminal[nbr] and nbr != origin:
+                    ekey = (min(origin, nbr), max(origin, nbr))
+                    if ekey not in visited_undirected:
+                        visited_undirected.add(ekey)
+                        term_edges.append(
+                            GraphEdge(
+                                net=hyperedge.net,
+                                u=origin,
+                                v=nbr,
+                                length_mm=new_len,
+                                crossing_cost=new_cross,
+                                weight=new_len + crossing_penalty_mm * new_cross,
+                            )
+                        )
+                    # continue through terminal? no — start new walks from each terminal
+                elif not is_terminal[nbr]:
+                    visited_undirected.add(key)
+                    stack.append((nbr, origin, new_len, new_cross, node))
+
+    for t in range(n_term):
+        walk_from_terminal(t)
+
+    # Kruskal on terminal edges to ensure a tree (walk may over-generate)
+    term_edges.sort(key=lambda e: (e.weight, e.length_mm, e.u, e.v))
+    dsu_t = _DisjointSet(n_term)
+    selected: list[GraphEdge] = []
+    for edge in term_edges:
+        if not dsu_t.union(edge.u, edge.v):
+            continue
+        selected.append(edge)
+        if len(selected) == n_term - 1:
+            break
+
+    # Fallback if steiner contraction failed to connect all terminals
+    if len(selected) < n_term - 1:
+        return minimum_spanning_tree(
+            hyperedge,
+            foreign_edges=foreign,
+            crossing_penalty_mm=crossing_penalty_mm,
+            occupancy=occupancy,
+            cell_mm=cell_mm,
+            overflow_penalty_mm=overflow_penalty_mm,
+        )
+
+    # Prefer steiner only if it improves weight vs pure MST under same costs
+    mst = minimum_spanning_tree(
+        hyperedge,
+        foreign_edges=foreign,
+        crossing_penalty_mm=crossing_penalty_mm,
+        occupancy=occupancy,
+        cell_mm=cell_mm,
+        overflow_penalty_mm=overflow_penalty_mm,
+    )
+    steiner_w = sum(e.weight for e in selected)
+    mst_w = sum(e.weight for e in mst)
+    if steiner_w > mst_w * 1.001:
+        return mst
+    return _root_tree(selected, n_term)
+
+
+def occupancy_from_trees(
+    hyperedges: dict[str, NetHyperedge],
+    trees: dict[str, list[GraphEdge]],
+    *,
+    cell_mm: float = 1.0,
+) -> dict[tuple[int, int], float]:
+    """Rasterize guide trees into a coarse occupancy map (for overflow Steiner)."""
+    cell = max(0.2, float(cell_mm))
+    occ: dict[tuple[int, int], float] = {}
+    for net, edges in trees.items():
+        verts = hyperedges[net].vertices
+        for edge in edges:
+            a = verts[edge.u]
+            b = verts[edge.v]
+            length = math.hypot(a.x - b.x, a.y - b.y)
+            samples = max(2, int(math.ceil(length / (0.5 * cell))))
+            for i in range(samples + 1):
+                t = i / samples
+                x = a.x + (b.x - a.x) * t
+                y = a.y + (b.y - a.y) * t
+                key = (int(math.floor(x / cell)), int(math.floor(y / cell)))
+                occ[key] = occ.get(key, 0.0) + 1.0
+    return occ
+
+
+@dataclass(frozen=True)
+class CutCertificate:
+    """Min-cut style capacity certificate for a coarse geometric cut."""
+
+    kind: str
+    description: str
+    demand: int
+    capacity: int
+    nets_forced: tuple[str, ...]
+    coordinate: float
+
+    @property
+    def saturated(self) -> bool:
+        return self.demand > self.capacity
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "description": self.description,
+            "demand": self.demand,
+            "capacity": self.capacity,
+            "nets_forced": list(self.nets_forced),
+            "coordinate": round(self.coordinate, 3),
+            "saturated": self.saturated,
+            "slack": self.capacity - self.demand,
+        }
+
+
+def cut_capacity_preflight(
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    net_names: Iterable[str] | None = None,
+    track_pitch_mm: float | None = None,
+    copper_layers: int | None = None,
+) -> dict[str, Any]:
+    """Certify coarse cut capacities vs nets forced to cross (impossibility).
+
+    Graph theory: multi-commodity demand across a cut cannot exceed cut capacity.
+    For each axis-aligned cut through the board, count nets with pins on both
+    sides (forced crossings) and estimate track slots as
+    ``floor(cut_length / pitch) * signal_layers``.
+
+    Saturated cuts prove the current stackup/pitch cannot complete all nets
+    without layer changes that share the same scarce corridor — the router
+    should prefer open nets over thrashing.
+    """
+    hyperedges = build_board_hypergraph(board, config, net_names=net_names)
+    pitch = float(
+        track_pitch_mm
+        if track_pitch_mm is not None
+        else max(0.25, 0.3)  # conservative default
+    )
+    # Prefer rules-like pitch if config carries nothing — use min of board size scale
+    if track_pitch_mm is None:
+        pitch = max(0.2, min(board.width_mm, board.height_mm) * 0.01)
+        pitch = max(0.2, min(pitch, 0.5))
+    n_layers = int(copper_layers or len(board.copper_layers or ["F.Cu", "B.Cu"]))
+    # Signal-ish layers: all copper layers as upper bound on parallel tracks
+    certificates: list[CutCertificate] = []
+
+    def pins_for_net(he: NetHyperedge) -> list[tuple[float, float]]:
+        return [(v.x, v.y) for v in he.vertices]
+
+    # Vertical cuts
+    for frac in (0.25, 0.5, 0.75):
+        x_cut = board.width_mm * frac
+        forced: list[str] = []
+        for name, he in hyperedges.items():
+            pts = pins_for_net(he)
+            if len(pts) < 2:
+                continue
+            left = any(p[0] < x_cut - 1e-6 for p in pts)
+            right = any(p[0] > x_cut + 1e-6 for p in pts)
+            if left and right:
+                forced.append(name)
+        # Capacity: vertical cut length = board height
+        cap = max(1, int(math.floor(board.height_mm / max(0.1, pitch)))) * max(1, n_layers)
+        certificates.append(
+            CutCertificate(
+                kind="vertical",
+                description=f"x={x_cut:.2f}mm (frac={frac})",
+                demand=len(forced),
+                capacity=cap,
+                nets_forced=tuple(sorted(forced)),
+                coordinate=x_cut,
+            )
+        )
+
+    # Horizontal cuts
+    for frac in (0.25, 0.5, 0.75):
+        y_cut = board.height_mm * frac
+        forced = []
+        for name, he in hyperedges.items():
+            pts = pins_for_net(he)
+            if len(pts) < 2:
+                continue
+            below = any(p[1] < y_cut - 1e-6 for p in pts)
+            above = any(p[1] > y_cut + 1e-6 for p in pts)
+            if below and above:
+                forced.append(name)
+        cap = max(1, int(math.floor(board.width_mm / max(0.1, pitch)))) * max(1, n_layers)
+        certificates.append(
+            CutCertificate(
+                kind="horizontal",
+                description=f"y={y_cut:.2f}mm (frac={frac})",
+                demand=len(forced),
+                capacity=cap,
+                nets_forced=tuple(sorted(forced)),
+                coordinate=y_cut,
+            )
+        )
+
+    saturated = [c for c in certificates if c.saturated]
+    worst = max(certificates, key=lambda c: c.demand - c.capacity) if certificates else None
+    return {
+        "algorithm": "geometric_cut_capacity_preflight",
+        "track_pitch_mm": round(pitch, 4),
+        "copper_layers": n_layers,
+        "certificates": [c.to_dict() for c in certificates],
+        "saturated_cuts": len(saturated),
+        "saturated": [c.to_dict() for c in saturated],
+        "worst": worst.to_dict() if worst else None,
+        "feasible_under_model": len(saturated) == 0,
+        "notes": [
+            "Demand = nets with pins on both sides of the cut (must cross).",
+            "Capacity = floor(cut_length/pitch)*copper_layers (upper bound).",
+            "Saturated ⇒ no packing of all forced nets without sharing scarce corridors.",
+        ],
+    }
 
 
 def annular_spanning_tree(
@@ -475,8 +894,19 @@ def plan_graph_topology(
     net_names: Iterable[str] | None = None,
     layers: list[str] | None = None,
     crossing_penalty_mm: float | None = None,
+    use_overflow_steiner: bool = True,
+    overflow_penalty_mm: float = 2.0,
+    cell_mm: float | None = None,
+    run_cut_preflight: bool = True,
+    track_pitch_mm: float | None = None,
 ) -> GraphTopologyPlan:
-    """Plan crossing-aware net trees and color their conflict graph by layer."""
+    """Plan crossing/overflow-aware net trees and color conflict graph by layer.
+
+    When ``use_overflow_steiner`` is True, multipin nets (≥3 pins) are planned
+    with :func:`overflow_aware_steiner_tree` under a raster occupancy map from
+    already-placed higher-priority guides (NeuralSteiner-style overflow avoidance
+    without a neural net). Cut-capacity certificates are attached in metrics.
+    """
     copper = list(layers or board.copper_layers or ["F.Cu", "B.Cu"])
     hyperedges = build_board_hypergraph(board, config, net_names=net_names)
     # The placement—not the currently selected routing bucket—defines the
@@ -495,18 +925,23 @@ def plan_graph_topology(
         statistics.median(point[0] for point in layout_points),
         statistics.median(point[1] for point in layout_points),
     ) if layout_points else (0.0, 0.0)
+    cell = float(cell_mm or max(0.5, min(board.width_mm, board.height_mm) * 0.04))
 
     def select_tree(
         edge: NetHyperedge,
         *,
         foreign_edges: Iterable[tuple[tuple[float, float], tuple[float, float]]] = (),
         penalty: float = 0.0,
-    ) -> tuple[list[GraphEdge], bool]:
+        occupancy: dict[tuple[int, int], float] | None = None,
+    ) -> tuple[list[GraphEdge], str]:
         foreign = list(foreign_edges)
         mst = minimum_spanning_tree(
             edge,
             foreign_edges=foreign,
             crossing_penalty_mm=penalty,
+            occupancy=occupancy,
+            cell_mm=cell,
+            overflow_penalty_mm=overflow_penalty_mm if occupancy else 0.0,
         )
         annular = annular_spanning_tree(
             edge,
@@ -514,38 +949,84 @@ def plan_graph_topology(
             foreign_edges=foreign,
             crossing_penalty_mm=penalty,
         )
-        # Retain the lane topology when it is competitive with unconstrained
-        # MST weight.  The small allowance pays for lower degree and preserved
-        # annular corridors that the geometrizer can actually realize.
-        if annular and sum(value.weight for value in annular) <= 1.12 * max(
-            1e-9, sum(value.weight for value in mst)
-        ):
-            return annular, True
-        return mst, False
+        steiner: list[GraphEdge] | None = None
+        if use_overflow_steiner and len(edge.vertices) >= 3:
+            steiner = overflow_aware_steiner_tree(
+                edge,
+                foreign_edges=foreign,
+                crossing_penalty_mm=penalty,
+                occupancy=occupancy,
+                cell_mm=cell,
+                overflow_penalty_mm=overflow_penalty_mm if occupancy else 0.0,
+            )
+        # Rank candidates: annular if competitive, else best of steiner/mst
+        mst_w = sum(value.weight for value in mst)
+        candidates: list[tuple[float, str, list[GraphEdge]]] = [(mst_w, "mst", mst)]
+        if annular:
+            ann_w = sum(value.weight for value in annular)
+            if ann_w <= 1.12 * max(1e-9, mst_w):
+                candidates.append((ann_w, "annular", annular))
+        if steiner is not None:
+            st_w = sum(value.weight for value in steiner)
+            candidates.append((st_w, "steiner", steiner))
+        candidates.sort(key=lambda t: (t[0], t[1]))
+        best_w, kind, best_tree = candidates[0]
+        return best_tree, kind
 
-    initial_selected = {name: select_tree(edge) for name, edge in hyperedges.items()}
-    initial = {name: value[0] for name, value in initial_selected.items()}
-    conflict = crossing_conflict_graph(hyperedges, initial)
-    assignment = dsatur_layer_coloring(conflict, hyperedges, copper)
     penalty = crossing_penalty_mm
     if penalty is None:
         penalty = max(1.0, math.hypot(board.width_mm, board.height_mm) * 0.08)
 
+    # Priority order for progressive occupancy (high priority paints first)
+    order = sorted(hyperedges, key=lambda n: (-hyperedges[n].priority, n))
+    initial: dict[str, list[GraphEdge]] = {}
+    initial_kind: dict[str, str] = {}
+    occ: dict[tuple[int, int], float] = {}
+    for name in order:
+        tree, kind = select_tree(
+            hyperedges[name],
+            penalty=penalty,
+            occupancy=occ if use_overflow_steiner else None,
+        )
+        initial[name] = tree
+        initial_kind[name] = kind
+        # Paint this net into occupancy for later nets
+        tmp = occupancy_from_trees(
+            {name: hyperedges[name]}, {name: tree}, cell_mm=cell
+        )
+        for k, v in tmp.items():
+            occ[k] = occ.get(k, 0.0) + v
+
+    conflict = crossing_conflict_graph(hyperedges, initial)
+    assignment = dsatur_layer_coloring(conflict, hyperedges, copper)
+
     refined: dict[str, list[GraphEdge]] = {}
     annular_nets: list[str] = []
-    for name in sorted(hyperedges, key=lambda n: (-hyperedges[n].priority, n)):
+    steiner_nets: list[str] = []
+    refined_kind: dict[str, str] = {}
+    occ_refined: dict[tuple[int, int], float] = {}
+    for name in order:
         same_layer_foreign: list[tuple[tuple[float, float], tuple[float, float]]] = []
         for other, tree in initial.items():
             if other == name or assignment.get(other) != assignment.get(name):
                 continue
             same_layer_foreign.extend(_tree_segments(hyperedges[other], tree))
-        refined[name], used_annular = select_tree(
+        refined[name], kind = select_tree(
             hyperedges[name],
             foreign_edges=same_layer_foreign,
             penalty=penalty,
+            occupancy=occ_refined if use_overflow_steiner else None,
         )
-        if used_annular:
+        refined_kind[name] = kind
+        if kind == "annular":
             annular_nets.append(name)
+        if kind == "steiner":
+            steiner_nets.append(name)
+        tmp = occupancy_from_trees(
+            {name: hyperedges[name]}, {name: refined[name]}, cell_mm=cell
+        )
+        for k, v in tmp.items():
+            occ_refined[k] = occ_refined.get(k, 0.0) + v
 
     refined_conflict = crossing_conflict_graph(hyperedges, refined)
     projected_crossings = sum(
@@ -568,6 +1049,17 @@ def plan_graph_topology(
             degree[edge.u] += 1
             degree[edge.v] += 1
         max_degree = max(max_degree, max(degree, default=0))
+
+    cut_report = None
+    if run_cut_preflight:
+        cut_report = cut_capacity_preflight(
+            board,
+            config,
+            net_names=net_names,
+            track_pitch_mm=track_pitch_mm,
+            copper_layers=len(copper),
+        )
+
     return GraphTopologyPlan(
         hyperedges=hyperedges,
         trees=refined,
@@ -585,7 +1077,13 @@ def plan_graph_topology(
             ),
             "annular_nets": sorted(annular_nets),
             "annular_net_count": len(annular_nets),
-            "planner": "hypergraph+crossing_mst+dsatur",
+            "steiner_nets": sorted(steiner_nets),
+            "steiner_net_count": len(steiner_nets),
+            "tree_kinds": dict(sorted(refined_kind.items())),
+            "overflow_steiner": use_overflow_steiner,
+            "occupancy_cells": len(occ_refined),
+            "cut_preflight": cut_report,
+            "planner": "hypergraph+overflow_steiner+annular+dsatur+cut_preflight",
         },
     )
 

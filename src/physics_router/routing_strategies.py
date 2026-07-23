@@ -62,9 +62,10 @@ class PreRouteReport:
     suggestions: list[str] = field(default_factory=list)
     recommended_grid_mm: float = 0.1
     recommended_clearance_mm: float = 0.2
+    cut_preflight: dict | None = None
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "net_count": self.net_count,
             "pin_count": self.pin_count,
             "copper_layers": self.copper_layers,
@@ -74,6 +75,9 @@ class PreRouteReport:
             "recommended_grid_mm": self.recommended_grid_mm,
             "recommended_clearance_mm": self.recommended_clearance_mm,
         }
+        if self.cut_preflight is not None:
+            out["cut_preflight"] = self.cut_preflight
+        return out
 
 
 def pre_route_analysis(
@@ -143,6 +147,32 @@ def pre_route_analysis(
         f"track≥{rules.constraints.min_track_width_mm}mm, "
         f"via≥{rules.constraints.min_via_diameter_mm}mm."
     )
+
+    # Graph-theoretic cut capacity certificate (multi-commodity demand vs slots)
+    try:
+        from physics_router.graph_theory import cut_capacity_preflight
+
+        pitch = (
+            rules.constraints.min_track_width_mm + rules.constraints.min_clearance_mm
+        )
+        cuts = cut_capacity_preflight(
+            board,
+            config,
+            track_pitch_mm=max(0.15, pitch),
+            copper_layers=n_layers,
+        )
+        report.cut_preflight = cuts
+        if not cuts.get("feasible_under_model", True):
+            report.congestion_warning = True
+            worst = cuts.get("worst") or {}
+            report.suggestions.append(
+                f"Cut capacity saturated ({cuts.get('saturated_cuts')} cut(s)): "
+                f"demand={worst.get('demand')} > capacity={worst.get('capacity')} "
+                f"on {worst.get('description')} — expect open nets or more layers; "
+                "open copper beats illegal packing (graph cut certificate)."
+            )
+    except Exception:
+        pass
     return report
 
 
