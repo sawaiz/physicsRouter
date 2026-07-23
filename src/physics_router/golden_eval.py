@@ -464,6 +464,31 @@ def evaluate_board(
         json.dumps(cmp, indent=2) + "\n", encoding="utf-8"
     )
 
+    # Structured failure / difficulty log for grade improvement
+    try:
+        from physics_router.route_diagnostics import analyze_route_result, write_diagnostics
+
+        diag = analyze_route_result(
+            ar,
+            human=human,
+            board=board,
+            comparison=cmp,
+            board_id=board_id,
+            extra={
+                "pipeline": str(entry.get("pipeline") or pipeline),
+                "effort": float(
+                    entry.get("effort") if entry.get("effort") is not None else effort
+                ),
+                "via_profile": (via_profile_report or {}).get("selected")
+                if via_profile_report
+                else profile,
+            },
+        )
+        diag_paths = write_diagnostics(diag, work, basename="route_diagnostics")
+    except Exception as exc:  # noqa: BLE001 — never fail eval on diagnostics
+        diag = {"error": str(exc)}
+        diag_paths = {}
+
     completion_ratio = float((cmp.get("completion") or {}).get("ratio") or 0.0)
     min_completion = float(entry.get("min_completion") or 0.0)
     expect = str(entry.get("expect") or "partial_ok").lower()
@@ -507,6 +532,19 @@ def evaluate_board(
             "comparison_md": str(md_path),
             "kicad_drc": kicad_drc,
             "cbs_repair": cbs_log,
+            "diagnostics": {
+                "summary": (diag or {}).get("summary"),
+                "difficulties": [
+                    {
+                        "id": d.get("id"),
+                        "severity": d.get("severity"),
+                        "summary": d.get("summary"),
+                    }
+                    for d in ((diag or {}).get("difficulties") or [])
+                ],
+                "recommended_actions": (diag or {}).get("recommended_actions"),
+                "paths": diag_paths,
+            },
             "passed": passed,
             "pipeline": str(entry.get("pipeline") or pipeline),
             "effort": float(

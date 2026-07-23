@@ -1,0 +1,4726 @@
+{
+  "kind": "route_diagnostics",
+  "board_id": "mppc_v1.3",
+  "generated_at": "2026-07-23T14:40:56",
+  "summary": {
+    "ok_nets": 41,
+    "unrouted_nets": 44,
+    "completion": 0.4824,
+    "segments": 318,
+    "vias": 94,
+    "areas": 3,
+    "length_mm": 805.055,
+    "hard_drc": 0,
+    "manufacturing_gate_passed": false,
+    "pipeline": "capacity_mesh+hybrid",
+    "status_counts": {
+      "ok": 41,
+      "unrouted": 44
+    }
+  },
+  "grade": {
+    "golden_grade": "F",
+    "golden_score": 18.24,
+    "completion_ratio": 0.4824,
+    "score_formula": "score \u2248 100*completion \u2212 min(30, 5*missing_nets); length/via bonuses only when completion \u2265 99%",
+    "to_reach_D_35": "Need roughly completion \u2265 0.65 with 0 hard DRC",
+    "to_reach_C_55": "Need roughly completion \u2265 0.85 with 0 hard DRC",
+    "to_reach_B_75": "Need roughly completion \u2265 0.95 with 0 hard DRC",
+    "to_reach_A_90": "Need roughly completion \u2265 0.99 + efficiency"
+  },
+  "missing_by_category": {
+    "analog_channel": [
+      "CH0",
+      "CH1",
+      "CH2",
+      "CH3",
+      "CH4",
+      "CH5",
+      "CH6",
+      "CH7",
+      "DAC0",
+      "DAC1",
+      "DAC3",
+      "DAC4",
+      "DAC6",
+      "DAC7"
+    ],
+    "digital_bus": [
+      "CLK",
+      "MISO",
+      "MOSI",
+      "SCLK",
+      "~CS_{DAC}",
+      "~CS_{FPGA}"
+    ],
+    "gpio": [
+      "GPIO17",
+      "GPIO18",
+      "GPIO22",
+      "GPIO23",
+      "GPIO27"
+    ],
+    "led": [
+      "LED-0",
+      "LED-1",
+      "LED-2"
+    ],
+    "local_rc": [
+      "Net-(C11-Pad1)",
+      "Net-(R12-Pad2)",
+      "Net-(R16-Pad2)",
+      "Net-(R20-Pad2)",
+      "Net-(R24-Pad2)",
+      "Net-(R28-Pad2)",
+      "Net-(R3-Pad2)",
+      "Net-(R32-Pad2)",
+      "Net-(R36-Pad2)",
+      "Net-(R8-Pad2)"
+    ],
+    "other": [
+      "FPGA_{DONE}",
+      "~FPGA_{RST}"
+    ],
+    "power_gnd": [
+      "+3V3",
+      "+5V",
+      "GND",
+      "HV"
+    ]
+  },
+  "missing_pin_stats": [
+    {
+      "net": "GND",
+      "pins": 92,
+      "category": "power_gnd"
+    },
+    {
+      "net": "+3V3",
+      "pins": 18,
+      "category": "power_gnd"
+    },
+    {
+      "net": "+5V",
+      "pins": 12,
+      "category": "power_gnd"
+    },
+    {
+      "net": "HV",
+      "pins": 11,
+      "category": "power_gnd"
+    },
+    {
+      "net": "MOSI",
+      "pins": 4,
+      "category": "digital_bus"
+    },
+    {
+      "net": "Net-(C11-Pad1)",
+      "pins": 4,
+      "category": "local_rc"
+    },
+    {
+      "net": "SCLK",
+      "pins": 4,
+      "category": "digital_bus"
+    },
+    {
+      "net": "CH0",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH1",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH2",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH3",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH4",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH5",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH6",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "CH7",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC0",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC1",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC3",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC4",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC6",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "DAC7",
+      "pins": 3,
+      "category": "analog_channel"
+    },
+    {
+      "net": "MISO",
+      "pins": 3,
+      "category": "digital_bus"
+    },
+    {
+      "net": "Net-(R12-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R16-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R20-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R24-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R28-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R32-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R36-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "Net-(R8-Pad2)",
+      "pins": 3,
+      "category": "local_rc"
+    },
+    {
+      "net": "CLK",
+      "pins": 2,
+      "category": "digital_bus"
+    },
+    {
+      "net": "FPGA_{DONE}",
+      "pins": 2,
+      "category": "other"
+    },
+    {
+      "net": "GPIO17",
+      "pins": 2,
+      "category": "gpio"
+    },
+    {
+      "net": "GPIO18",
+      "pins": 2,
+      "category": "gpio"
+    },
+    {
+      "net": "GPIO22",
+      "pins": 2,
+      "category": "gpio"
+    },
+    {
+      "net": "GPIO23",
+      "pins": 2,
+      "category": "gpio"
+    },
+    {
+      "net": "GPIO27",
+      "pins": 2,
+      "category": "gpio"
+    },
+    {
+      "net": "LED-0",
+      "pins": 2,
+      "category": "led"
+    },
+    {
+      "net": "LED-1",
+      "pins": 2,
+      "category": "led"
+    },
+    {
+      "net": "LED-2",
+      "pins": 2,
+      "category": "led"
+    }
+  ],
+  "hybrid_plan": {
+    "counts": {
+      "power": 6,
+      "general": 74,
+      "critical": 5
+    },
+    "notes": [
+      "strategy counts: power=6, critical=5, general=74"
+    ]
+  },
+  "phases": [
+    {
+      "strategy": "power",
+      "segments": 135,
+      "vias": 42,
+      "areas": 3,
+      "unrouted": 3
+    },
+    {
+      "strategy": "critical",
+      "segments": 135,
+      "vias": 42,
+      "areas": 3,
+      "unrouted": 5
+    },
+    {
+      "strategy": "general",
+      "segments": 318,
+      "vias": 94,
+      "areas": 3,
+      "unrouted": 36
+    }
+  ],
+  "ripup": {
+    "total_events": 23,
+    "empty_events": 23,
+    "top_nets": [
+      {
+        "net": "FPGA_{DONE}",
+        "attempts": 3
+      },
+      {
+        "net": "GPIO17",
+        "attempts": 3
+      },
+      {
+        "net": "GPIO18",
+        "attempts": 3
+      },
+      {
+        "net": "GPIO22",
+        "attempts": 3
+      },
+      {
+        "net": "Net-(C11-Pad1)",
+        "attempts": 3
+      },
+      {
+        "net": "Net-(R3-Pad2)",
+        "attempts": 3
+      },
+      {
+        "net": "GPIO23",
+        "attempts": 1
+      },
+      {
+        "net": "Net-(R12-Pad2)",
+        "attempts": 1
+      },
+      {
+        "net": "Net-(C12-Pad1)",
+        "attempts": 1
+      },
+      {
+        "net": "Net-(Q1-Pad1)",
+        "attempts": 1
+      },
+      {
+        "net": "DAC5",
+        "attempts": 1
+      }
+    ],
+    "sample": [
+      {
+        "outcome": "empty",
+        "net": "FPGA_{DONE}",
+        "peers": [
+          "Net-(C21-Pad1)",
+          "Net-(L5-Pad1)",
+          "Net-(L6-Pad2)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "FPGA_{DONE}",
+        "peers": [
+          "Net-(Q1-Pad1)",
+          "Net-(R3-Pad2)",
+          "Net-(R4-Pad1)"
+        ],
+        "attempt": 2
+      },
+      {
+        "outcome": "empty",
+        "net": "FPGA_{DONE}",
+        "peers": [
+          "~CS_{HV}",
+          "DAC2",
+          "DAC5"
+        ],
+        "attempt": 3
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO17",
+        "peers": [
+          "Net-(C24-Pad1)",
+          "Net-(C26-Pad2)",
+          "Net-(C29-Pad1)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO17",
+        "peers": [
+          "Net-(C31-Pad2)",
+          "Net-(C34-Pad1)",
+          "Net-(C36-Pad2)"
+        ],
+        "attempt": 2
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO17",
+        "peers": [
+          "Net-(C39-Pad1)",
+          "Net-(C41-Pad2)",
+          "Net-(C44-Pad1)"
+        ],
+        "attempt": 3
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO18",
+        "peers": [
+          "Net-(C46-Pad2)",
+          "Net-(C49-Pad1)",
+          "Net-(C51-Pad2)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO18",
+        "peers": [
+          "Net-(C54-Pad1)",
+          "Net-(C56-Pad2)",
+          "Net-(C59-Pad1)"
+        ],
+        "attempt": 2
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO18",
+        "peers": [
+          "Net-(C61-Pad2)",
+          "Net-(C65-Pad2)",
+          "Net-(C68-Pad1)"
+        ],
+        "attempt": 3
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO22",
+        "peers": [
+          "Net-(D4-Pad2)",
+          "Net-(C11-Pad1)",
+          "Net-(C27-Pad1)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO22",
+        "peers": [
+          "Net-(C32-Pad1)",
+          "Net-(C42-Pad1)",
+          "Net-(C47-Pad1)"
+        ],
+        "attempt": 2
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO22",
+        "peers": [
+          "Net-(C52-Pad1)",
+          "Net-(C57-Pad1)",
+          "Net-(C62-Pad1)"
+        ],
+        "attempt": 3
+      },
+      {
+        "outcome": "empty",
+        "net": "GPIO23",
+        "peers": [
+          "/5V-BOOST"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(R12-Pad2)",
+        "peers": [
+          "Net-(C37-Pad1)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(C12-Pad1)",
+        "peers": [
+          "Net-(R2-Pad2)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(C11-Pad1)",
+        "peers": [
+          "Net-(C21-Pad1)",
+          "Net-(L5-Pad1)",
+          "Net-(L6-Pad2)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(C11-Pad1)",
+        "peers": [
+          "Net-(Q1-Pad1)",
+          "Net-(R3-Pad2)",
+          "Net-(R4-Pad1)"
+        ],
+        "attempt": 2
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(C11-Pad1)",
+        "peers": [
+          "~CS_{HV}",
+          "DAC2",
+          "DAC5"
+        ],
+        "attempt": 3
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(Q1-Pad1)",
+        "peers": [
+          "Net-(C21-Pad1)",
+          "Net-(L5-Pad1)",
+          "Net-(L6-Pad2)"
+        ],
+        "attempt": 1
+      },
+      {
+        "outcome": "empty",
+        "net": "Net-(R3-Pad2)",
+        "peers": [
+          "Net-(Q1-Pad1)",
+          "Net-(C24-Pad1)",
+          "Net-(C26-Pad2)"
+        ],
+        "attempt": 1
+      }
+    ]
+  },
+  "corridor_bloat": [
+    {
+      "net": "Net-(C51-Pad2)",
+      "ar_mm": 7.72,
+      "human_mm": 1.75,
+      "ratio": 4.41,
+      "ar_vias": 2,
+      "human_vias": 0
+    },
+    {
+      "net": "Net-(C56-Pad2)",
+      "ar_mm": 7.72,
+      "human_mm": 1.75,
+      "ratio": 4.41,
+      "ar_vias": 2,
+      "human_vias": 0
+    },
+    {
+      "net": "Net-(C61-Pad2)",
+      "ar_mm": 7.72,
+      "human_mm": 1.75,
+      "ratio": 4.41,
+      "ar_vias": 2,
+      "human_vias": 0
+    },
+    {
+      "net": "+5V-A",
+      "ar_mm": 302.44,
+      "human_mm": 84.7,
+      "ratio": 3.57,
+      "ar_vias": 20,
+      "human_vias": 10
+    },
+    {
+      "net": "Net-(R2-Pad2)",
+      "ar_mm": 10.01,
+      "human_mm": 3.44,
+      "ratio": 2.91,
+      "ar_vias": 4,
+      "human_vias": 0
+    },
+    {
+      "net": "/5V-BOOST",
+      "ar_mm": 24.62,
+      "human_mm": 10.7,
+      "ratio": 2.3,
+      "ar_vias": 6,
+      "human_vias": 3
+    },
+    {
+      "net": "-5V",
+      "ar_mm": 189.18,
+      "human_mm": 94.18,
+      "ratio": 2.01,
+      "ar_vias": 18,
+      "human_vias": 10
+    },
+    {
+      "net": "Net-(Q1-Pad1)",
+      "ar_mm": 10.86,
+      "human_mm": 5.66,
+      "ratio": 1.92,
+      "ar_vias": 0,
+      "human_vias": 0
+    }
+  ],
+  "capacity": {
+    "final_overflow": 51,
+    "overflow_history": [
+      56,
+      50,
+      60,
+      56,
+      51,
+      57,
+      50,
+      56,
+      48,
+      43,
+      49,
+      51
+    ],
+    "mesh_overflow_nodes": 3206,
+    "planned_vias": 363,
+    "layer_sections": {
+      "B.Cu": 41,
+      "F.Cu": 119,
+      "In1.Cu": 94,
+      "In2.Cu": 59
+    },
+    "shared_escape": {
+      "merge_mm": 0.15,
+      "pad_resources": 392,
+      "via_units_saved": 56.8,
+      "savings_ratio_sites": 0.1913
+    },
+    "via_profile": {
+      "algorithm": "auto_via_profile",
+      "selected": "via_0p6",
+      "trials": [
+        {
+          "profile": "via_0p6",
+          "inner_reachable_anchors": 364,
+          "tested_smd_anchors": 367,
+          "reach_ratio": 0.9918,
+          "candidate_sites": 2760,
+          "via_diameter_mm": 0.6,
+          "via_drill_mm": 0.3,
+          "shared": {
+            "merge_mm": 0.15,
+            "raw_sites": 2760,
+            "shared_resources": 2232,
+            "pad_resources": 392,
+            "savings": 528,
+            "savings_ratio": 0.1913,
+            "clusters": [
+              {
+                "net": "+5V-A",
+                "x": -31.32,
+                "y": 2.65,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2921,
+                "y": 2.4378,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2921,
+                "y": 2.8622,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2101,
+                "y": 2.24,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2101,
+                "y": 3.06,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.0798,
+                "y": 2.0702,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.5,
+                "y": 1.83,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9202,
+                "y": 2.0702,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.0611,
+                "y": -0.8575,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.095,
+                "y": -0.6,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9617,
+                "y": -1.0975,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.0611,
+                "y": -0.3425,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9617,
+                "y": -0.1025,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.1,
+                "y": 0.395,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.2383,
+                "y": -1.0975,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.1389,
+                "y": -0.8575,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.0611,
+                "y": -2.6575,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.095,
+                "y": -2.4,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9617,
+                "y": -2.8975,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.0611,
+                "y": -2.1425,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9617,
+                "y": -1.9025,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.2383,
+                "y": -2.8975,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.1389,
+                "y": -2.6575,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.2383,
+                "y": -1.9025,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.495,
+                "y": 7.3,
+                "n_sites": 2,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.5438,
+                "y": 7.4993,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.5438,
+                "y": 7.1007,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.4668,
+                "y": 7.685,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.8,
+                "y": 7.92,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.4668,
+                "y": 6.915,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.18,
+                "y": 7.3,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.7,
+                "y": 8.82,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.7,
+                "y": 7.505,
+                "n_sites": 2,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -25.085,
+                "y": 8.8668,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.8993,
+                "y": 8.9438,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.8993,
+                "y": 7.4562,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.7,
+                "y": 8.97,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -25.16,
+                "y": 8.9967,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.54,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.308,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.415,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.1313,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.5836,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C25.1",
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.1,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.265,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -18.9191,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -21.145,
+                "y": 6.35,
+                "n_sites": 2,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.8152,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -21.1852,
+                "y": 6.614,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.4252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.2,
+                "y": 7.22,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.9748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.74,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.508,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.615,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.3313,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.7836,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C30.1",
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.3,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.465,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.1191,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -16.345,
+                "y": 6.35,
+                "n_sites": 2,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -16.0152,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -16.3852,
+                "y": 6.614,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.6252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.4,
+                "y": 7.22,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.1748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.47,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.2152,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.9836,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C35.1",
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.62,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.5852,
+                "y": 6.614,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.8252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.6,
+                "y": 7.22,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.3748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.94,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.708,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.815,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.5313,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.5,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.665,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.3191,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.67,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.4152,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.1836,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C40.1",
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.7852,
+                "y": 6.614,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.0252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.82,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.8,
+                "y": 7.22,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.5748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.14,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.908,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.015,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.7313,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.7,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.865,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.5191,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.5252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.3,
+                "y": 7.295,
+                "n_sites": 2,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.0748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.9164,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C45.1",
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.564,
+                "y": 7.3352,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.6848,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.43,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.192,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.96,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.3687,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.085,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.5809,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.235,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.4,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.992,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.76,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 14.1687,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.885,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 14.3809,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 14.035,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.2,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.7164,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C50.1",
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.3252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.1,
+                "y": 7.295,
+                "n_sites": 2,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.8748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.364,
+                "y": 7.3352,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.4848,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.23,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.792,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.56,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.9687,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.685,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 19.1809,
+                "y": 4.2191,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.835,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.0,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.5164,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C55.1",
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.1252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.9,
+                "y": 7.295,
+                "n_sites": 2,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.6748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.164,
+                "y": 7.3352,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.2848,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.03,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.592,
+                "y": 4.608,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.36,
+                "y": 4.4301,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.7687,
+                "y": 4.4313,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.485,
+                "y": 4.2135,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.635,
+                "y": 3.9537,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.8,
+                "y": 7.07,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.3164,
+                "y": 7.0583,
+                "n_sites": 2,
+                "pads": [
+                  "C60.1",
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.81,
+                "y": 3.6506,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.135,
+                "y": 7.1034,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.9252,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.7,
+                "y": 7.22,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.4748,
+                "y": 7.1904,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.964,
+                "y": 7.3352,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.0848,
+                "y": 6.9652,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 21.83,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.32,
+                "y": 3.95,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2921,
+                "y": 3.7378,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2921,
+                "y": 4.1622,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2101,
+                "y": 3.54,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2101,
+                "y": 4.36,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.0798,
+                "y": 4.5298,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -30.5,
+                "y": 4.77,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -29.9202,
+                "y": 4.5298,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.8617,
+                "y": -3.7975,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.9611,
+                "y": -3.5575,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.995,
+                "y": -3.3,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.9611,
+                "y": -3.0425,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.1383,
+                "y": -3.7975,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.8617,
+                "y": -2.8025,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.0389,
+                "y": -3.5575,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.005,
+                "y": -3.3,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.5,
+                "y": 12.22,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -26.0445,
+                "y": 12.1445,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.9225,
+                "y": 12.3318,
+                "n_sites": 2,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.6993,
+                "y": 12.3438,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.5,
+                "y": 12.37,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.3007,
+                "y": 12.3438,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.1,
+                "y": 12.2668,
+                "n_sites": 2,
+                "pads": [
+                  "C1.2",
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.7,
+                "y": 12.22,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.8993,
+                "y": 12.3438,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.7,
+                "y": 12.37,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.5007,
+                "y": 12.3438,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.315,
+                "y": 12.2668,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.08,
+                "y": 11.6,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.1555,
+                "y": 12.1445,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.255,
+                "y": 14.2,
+                "n_sites": 2,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.95,
+                "y": 13.58,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.2062,
+                "y": 14.0007,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 2.335,
+                "y": 13.5332,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.4055,
+                "y": 13.6555,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 2.1493,
+                "y": 13.4562,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.565,
+                "y": 13.5332,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.695,
+                "y": 14.2,
+                "n_sites": 2,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.7438,
+                "y": 14.0007,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.6668,
+                "y": 13.815,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.0,
+                "y": 13.58,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.5445,
+                "y": 13.6555,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.385,
+                "y": 13.5332,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.1993,
+                "y": 13.4562,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.25,
+                "y": 14.04,
+                "n_sites": 2,
+                "pads": [
+                  "U12.7"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.4258,
+                "y": 14.1452,
+                "n_sites": 2,
+                "pads": [
+                  "U12.7"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.0742,
+                "y": 14.1452,
+                "n_sites": 2,
+                "pads": [
+                  "U12.7"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "profile": "via_0p45",
+          "inner_reachable_anchors": 364,
+          "tested_smd_anchors": 367,
+          "reach_ratio": 0.9918,
+          "candidate_sites": 2847,
+          "via_diameter_mm": 0.45,
+          "via_drill_mm": 0.2,
+          "shared": {
+            "merge_mm": 0.15,
+            "raw_sites": 2847,
+            "shared_resources": 2233,
+            "pad_resources": 394,
+            "savings": 614,
+            "savings_ratio": 0.2157,
+            "clusters": [
+              {
+                "net": "+5V-A",
+                "x": -31.245,
+                "y": 2.65,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2196,
+                "y": 2.4572,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.2196,
+                "y": 2.8428,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.1452,
+                "y": 2.2775,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.1452,
+                "y": 3.0225,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.0268,
+                "y": 2.1232,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -31.0268,
+                "y": 3.1768,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.5,
+                "y": 1.905,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9887,
+                "y": -0.8381,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.02,
+                "y": -0.6,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.8967,
+                "y": -1.06,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9887,
+                "y": -0.3619,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.8967,
+                "y": -0.14,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.1,
+                "y": 0.32,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.3033,
+                "y": -1.06,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.2113,
+                "y": -0.8381,
+                "n_sites": 1,
+                "pads": [
+                  "L5.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9887,
+                "y": -2.6381,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -30.02,
+                "y": -2.4,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.8967,
+                "y": -2.86,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.9887,
+                "y": -2.1619,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -29.8967,
+                "y": -1.94,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.3033,
+                "y": -2.86,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.2113,
+                "y": -2.6381,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -28.3033,
+                "y": -1.94,
+                "n_sites": 1,
+                "pads": [
+                  "C14.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 24.3326,
+                "y": 7.3,
+                "n_sites": 3,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.8705,
+                "y": 7.8357,
+                "n_sites": 2,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.6589,
+                "y": 7.8264,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.2736,
+                "y": 7.4411,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.2736,
+                "y": 7.1589,
+                "n_sites": 1,
+                "pads": [
+                  "C15.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.7705,
+                "y": 8.7357,
+                "n_sites": 2,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.7705,
+                "y": 7.6643,
+                "n_sites": 2,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.5589,
+                "y": 8.7264,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -25.0475,
+                "y": 8.8019,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.8799,
+                "y": 8.8713,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -24.8799,
+                "y": 7.5287,
+                "n_sites": 1,
+                "pads": [
+                  "C16.2"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.6775,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.5775,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.3611,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.4525,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.1843,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.5551,
+                "y": 6.9896,
+                "n_sites": 2,
+                "pads": [
+                  "C25.1",
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.1,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.3025,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C25.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -21.07,
+                "y": 6.35,
+                "n_sites": 2,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.7621,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.4058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -20.2,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.9942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -19.8025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U1.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.8775,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.7775,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.5611,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.6525,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.3843,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.7551,
+                "y": 6.9896,
+                "n_sites": 2,
+                "pads": [
+                  "C30.1",
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.3,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -14.5025,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C30.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -16.27,
+                "y": 6.35,
+                "n_sites": 2,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.9621,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.6058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.4,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.1942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -15.0025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U2.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.395,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.1621,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.9551,
+                "y": 6.9896,
+                "n_sites": 2,
+                "pads": [
+                  "C35.1",
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -11.545,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.8058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.6,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.3942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.2025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U3.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.0775,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.9775,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.7611,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.8525,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.5843,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -10.5,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -9.7025,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C35.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.595,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.3621,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.1551,
+                "y": 6.9896,
+                "n_sites": 2,
+                "pads": [
+                  "C40.1",
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.7128,
+                "y": 6.5946,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -6.0058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.8,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.5942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.4025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U4.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.2775,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.1775,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.9611,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.0525,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.7843,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -5.7,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": -4.9025,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C40.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.6975,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.5058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.3,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.0942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.9025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.5446,
+                "y": 7.2628,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.7379,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 7.505,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U5.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.8225,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.1389,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.9225,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.3157,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.0475,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.5278,
+                "y": 4.2722,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 9.1975,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 8.4,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C45.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.6225,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.9389,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.7225,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 14.1157,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.8475,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 14.3278,
+                "y": 4.2722,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.9975,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.2,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C50.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.4975,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.3058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.1,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.8942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.7025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 13.3446,
+                "y": 7.2628,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.5379,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 12.305,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U6.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.4225,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.7389,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.5225,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.9157,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.6475,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 19.1278,
+                "y": 4.2722,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.7975,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.0,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C55.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.2975,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.1058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.9,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.6942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.5025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 18.1446,
+                "y": 7.2628,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.3379,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 17.105,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U7.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.2225,
+                "y": 4.6682,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.5389,
+                "y": 4.6611,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.3225,
+                "y": 4.495,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.7157,
+                "y": 4.4843,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.4475,
+                "y": 4.2785,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.5975,
+                "y": 4.0187,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.2375,
+                "y": 6.9264,
+                "n_sites": 2,
+                "pads": [
+                  "C60.1",
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.8,
+                "y": 6.995,
+                "n_sites": 1,
+                "pads": [
+                  "C60.1"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 23.0975,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.9058,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.7,
+                "y": 7.145,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.4942,
+                "y": 7.1179,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.3025,
+                "y": 7.0385,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 22.1379,
+                "y": 6.9121,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V-A",
+                "x": 21.905,
+                "y": 6.35,
+                "n_sites": 1,
+                "pads": [
+                  "U8.5"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.245,
+                "y": 3.95,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2196,
+                "y": 3.7572,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.2196,
+                "y": 4.1428,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.1452,
+                "y": 3.5775,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.1452,
+                "y": 4.3225,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.0268,
+                "y": 3.4232,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -31.0268,
+                "y": 4.4768,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -30.5,
+                "y": 4.695,
+                "n_sites": 1,
+                "pads": [
+                  "JP1.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.7967,
+                "y": -3.76,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.8887,
+                "y": -3.5381,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.92,
+                "y": -3.3,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.8887,
+                "y": -3.0619,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.2033,
+                "y": -3.76,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -4.7967,
+                "y": -2.84,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.1113,
+                "y": -3.5381,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.08,
+                "y": -3.3,
+                "n_sites": 1,
+                "pads": [
+                  "L7.1"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -26.0357,
+                "y": 11.6705,
+                "n_sites": 2,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -26.0264,
+                "y": 11.4589,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.5705,
+                "y": 12.1357,
+                "n_sites": 2,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.9914,
+                "y": 12.0914,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.3589,
+                "y": 12.1264,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.8475,
+                "y": 12.2019,
+                "n_sites": 1,
+                "pads": [
+                  "C1.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.7705,
+                "y": 12.1357,
+                "n_sites": 2,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.5589,
+                "y": 12.1264,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -25.0475,
+                "y": 12.2019,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.8799,
+                "y": 12.2713,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.1643,
+                "y": 11.6705,
+                "n_sites": 2,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -24.1736,
+                "y": 11.4589,
+                "n_sites": 1,
+                "pads": [
+                  "C2.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.4143,
+                "y": 14.2705,
+                "n_sites": 2,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.4236,
+                "y": 14.0589,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.2787,
+                "y": 14.3799,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 2.0205,
+                "y": 13.6643,
+                "n_sites": 2,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.255,
+                "y": 14.2,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 1.809,
+                "y": 13.6736,
+                "n_sites": 1,
+                "pads": [
+                  "C3.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.5357,
+                "y": 14.2705,
+                "n_sites": 2,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.5264,
+                "y": 14.0589,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.6713,
+                "y": 14.3799,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.695,
+                "y": 14.2,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -3.0705,
+                "y": 13.6643,
+                "n_sites": 2,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": -2.8589,
+                "y": 13.6736,
+                "n_sites": 1,
+                "pads": [
+                  "C4.2"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.25,
+                "y": 13.965,
+                "n_sites": 2,
+                "pads": [
+                  "U12.7"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.3946,
+                "y": 14.0087,
+                "n_sites": 1,
+                "pads": [
+                  "U12.7"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.1054,
+                "y": 14.0087,
+                "n_sites": 1,
+                "pads": [
+                  "U12.7"
+                ]
+              },
+              {
+                "net": "+5V",
+                "x": 0.25,
+                "y": 12.785,
+                "n_sites": 2,
+                "pads": [
+                  "U12.7"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "reason": "maximize inner-reachable SMD anchors under exact pad/via geometry; tie-break larger via for manufacturability"
+    }
+  },
+  "difficulties": [
+    {
+      "id": "incomplete_nets",
+      "severity": "high",
+      "summary": "44 nets open (48% complete)",
+      "detail": {
+        "missing_count": 44,
+        "by_category": {
+          "analog_channel": 14,
+          "digital_bus": 6,
+          "gpio": 5,
+          "led": 3,
+          "local_rc": 10,
+          "other": 2,
+          "power_gnd": 4
+        }
+      },
+      "improvements": [
+        "Raise net weights for missing power/bus nets in placement_config.yaml",
+        "Route power with pours/zones after legal tracks (improve --physics-feedback)",
+        "Prefer few-pin nets first within power class so GND does not starve last"
+      ]
+    },
+    {
+      "id": "power_gnd_open",
+      "severity": "high",
+      "summary": "Power/GND open: +3V3, +5V, GND, HV",
+      "detail": {
+        "nets": [
+          "+3V3",
+          "+5V",
+          "GND",
+          "HV"
+        ],
+        "ar_areas": 3,
+        "human_areas": 61
+      },
+      "improvements": [
+        "Human goldens use large pours (zones) for GND/power \u2014 AR under-uses areas",
+        "Add dedicated power-plane / zone fill stage after multipin connectivity",
+        "Ensure config lists +5V/+3V3/GND with net_class power/ground and high weight"
+      ]
+    },
+    {
+      "id": "ripup_exhausted",
+      "severity": "high",
+      "summary": "23 empty rip-up attempts (no legal alternate)",
+      "detail": {
+        "events": 23,
+        "top_nets": [
+          {
+            "net": "FPGA_{DONE}",
+            "attempts": 3
+          },
+          {
+            "net": "GPIO17",
+            "attempts": 3
+          },
+          {
+            "net": "GPIO18",
+            "attempts": 3
+          },
+          {
+            "net": "GPIO22",
+            "attempts": 3
+          },
+          {
+            "net": "Net-(C11-Pad1)",
+            "attempts": 3
+          },
+          {
+            "net": "Net-(R3-Pad2)",
+            "attempts": 3
+          },
+          {
+            "net": "GPIO23",
+            "attempts": 1
+          },
+          {
+            "net": "Net-(R12-Pad2)",
+            "attempts": 1
+          }
+        ],
+        "sample": [
+          {
+            "outcome": "empty",
+            "net": "FPGA_{DONE}",
+            "peers": [
+              "Net-(C21-Pad1)",
+              "Net-(L5-Pad1)",
+              "Net-(L6-Pad2)"
+            ],
+            "attempt": 1
+          },
+          {
+            "outcome": "empty",
+            "net": "FPGA_{DONE}",
+            "peers": [
+              "Net-(Q1-Pad1)",
+              "Net-(R3-Pad2)",
+              "Net-(R4-Pad1)"
+            ],
+            "attempt": 2
+          },
+          {
+            "outcome": "empty",
+            "net": "FPGA_{DONE}",
+            "peers": [
+              "~CS_{HV}",
+              "DAC2",
+              "DAC5"
+            ],
+            "attempt": 3
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO17",
+            "peers": [
+              "Net-(C24-Pad1)",
+              "Net-(C26-Pad2)",
+              "Net-(C29-Pad1)"
+            ],
+            "attempt": 1
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO17",
+            "peers": [
+              "Net-(C31-Pad2)",
+              "Net-(C34-Pad1)",
+              "Net-(C36-Pad2)"
+            ],
+            "attempt": 2
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO17",
+            "peers": [
+              "Net-(C39-Pad1)",
+              "Net-(C41-Pad2)",
+              "Net-(C44-Pad1)"
+            ],
+            "attempt": 3
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO18",
+            "peers": [
+              "Net-(C46-Pad2)",
+              "Net-(C49-Pad1)",
+              "Net-(C51-Pad2)"
+            ],
+            "attempt": 1
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO18",
+            "peers": [
+              "Net-(C54-Pad1)",
+              "Net-(C56-Pad2)",
+              "Net-(C59-Pad1)"
+            ],
+            "attempt": 2
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO18",
+            "peers": [
+              "Net-(C61-Pad2)",
+              "Net-(C65-Pad2)",
+              "Net-(C68-Pad1)"
+            ],
+            "attempt": 3
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO22",
+            "peers": [
+              "Net-(D4-Pad2)",
+              "Net-(C11-Pad1)",
+              "Net-(C27-Pad1)"
+            ],
+            "attempt": 1
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO22",
+            "peers": [
+              "Net-(C32-Pad1)",
+              "Net-(C42-Pad1)",
+              "Net-(C47-Pad1)"
+            ],
+            "attempt": 2
+          },
+          {
+            "outcome": "empty",
+            "net": "GPIO22",
+            "peers": [
+              "Net-(C52-Pad1)",
+              "Net-(C57-Pad1)",
+              "Net-(C62-Pad1)"
+            ],
+            "attempt": 3
+          }
+        ]
+      },
+      "improvements": [
+        "PathFinder-style negotiated congestion on conflict clusters (enable for <70 nets)",
+        "Increase rip-up budget and peer set for multipin nets",
+        "Re-order: route short 2-pin locals before long buses that seal corridors"
+      ]
+    },
+    {
+      "id": "corridor_hogging",
+      "severity": "medium",
+      "summary": "8 completed nets >> human length (corridor hogging)",
+      "detail": {
+        "worst": [
+          {
+            "net": "Net-(C51-Pad2)",
+            "ar_mm": 7.72,
+            "human_mm": 1.75,
+            "ratio": 4.41,
+            "ar_vias": 2,
+            "human_vias": 0
+          },
+          {
+            "net": "Net-(C56-Pad2)",
+            "ar_mm": 7.72,
+            "human_mm": 1.75,
+            "ratio": 4.41,
+            "ar_vias": 2,
+            "human_vias": 0
+          },
+          {
+            "net": "Net-(C61-Pad2)",
+            "ar_mm": 7.72,
+            "human_mm": 1.75,
+            "ratio": 4.41,
+            "ar_vias": 2,
+            "human_vias": 0
+          },
+          {
+            "net": "+5V-A",
+            "ar_mm": 302.44,
+            "human_mm": 84.7,
+            "ratio": 3.57,
+            "ar_vias": 20,
+            "human_vias": 10
+          },
+          {
+            "net": "Net-(R2-Pad2)",
+            "ar_mm": 10.01,
+            "human_mm": 3.44,
+            "ratio": 2.91,
+            "ar_vias": 4,
+            "human_vias": 0
+          },
+          {
+            "net": "/5V-BOOST",
+            "ar_mm": 24.62,
+            "human_mm": 10.7,
+            "ratio": 2.3,
+            "ar_vias": 6,
+            "human_vias": 3
+          },
+          {
+            "net": "-5V",
+            "ar_mm": 189.18,
+            "human_mm": 94.18,
+            "ratio": 2.01,
+            "ar_vias": 18,
+            "human_vias": 10
+          },
+          {
+            "net": "Net-(Q1-Pad1)",
+            "ar_mm": 10.86,
+            "human_mm": 5.66,
+            "ratio": 1.92,
+            "ar_vias": 0,
+            "human_vias": 0
+          }
+        ]
+      },
+      "improvements": [
+        "Cap detour ratio vs Steiner/MST guide length during commit",
+        "Charge shared capacity earlier so early nets cannot monopolize lanes",
+        "Elastic regeometry / rubber-band after full legal set"
+      ]
+    },
+    {
+      "id": "global_overflow",
+      "severity": "medium",
+      "summary": "Global section overflow=51, mesh_overflow_nodes=3206",
+      "detail": {
+        "final_overflow": 51,
+        "overflow_history": [
+          56,
+          50,
+          60,
+          56,
+          51,
+          57,
+          50,
+          56,
+          48,
+          43,
+          49,
+          51
+        ],
+        "mesh_overflow_nodes": 3206,
+        "planned_vias": 363
+      },
+      "improvements": [
+        "Raise capacity_effort / mesh depth on dense boards",
+        "Overflow-aware Steiner already on \u2014 feed occupancy into detail cost more strongly",
+        "Split multipin nets into hierarchical sections (CBS / tree packing)"
+      ]
+    },
+    {
+      "id": "no_matrix_bucket",
+      "severity": "low",
+      "summary": "No matrix strategy nets (counts={'power': 6, 'general': 74, 'critical': 5}); dense multipin treated as general",
+      "detail": {
+        "counts": {
+          "power": 6,
+          "general": 74,
+          "critical": 5
+        }
+      },
+      "improvements": [
+        "Classify multipin analog channels (CH*, DAC*) as matrix when pin count \u2265 3",
+        "Use finer grid (0.15) for channel fanout like matrix phase"
+      ]
+    },
+    {
+      "id": "open_over_short_ok",
+      "severity": "info",
+      "summary": "Hard DRC = 0 with open nets (policy working)",
+      "detail": {
+        "hard_violations": 0,
+        "completion": 0.4824
+      },
+      "improvements": [
+        "Keep manufacturing gate: never trade shorts for completion",
+        "Grade is dominated by completion ratio \u2014 fix open nets, not length"
+      ]
+    }
+  ],
+  "recommended_actions": [
+    "Raise net weights for missing power/bus nets in placement_config.yaml",
+    "Route power with pours/zones after legal tracks (improve --physics-feedback)",
+    "Prefer few-pin nets first within power class so GND does not starve last",
+    "Human goldens use large pours (zones) for GND/power \u2014 AR under-uses areas",
+    "Add dedicated power-plane / zone fill stage after multipin connectivity",
+    "Ensure config lists +5V/+3V3/GND with net_class power/ground and high weight",
+    "PathFinder-style negotiated congestion on conflict clusters (enable for <70 nets)",
+    "Increase rip-up budget and peer set for multipin nets",
+    "Re-order: route short 2-pin locals before long buses that seal corridors",
+    "Cap detour ratio vs Steiner/MST guide length during commit",
+    "Charge shared capacity earlier so early nets cannot monopolize lanes",
+    "Elastic regeometry / rubber-band after full legal set"
+  ],
+  "router_notes_tail": [
+    "ripup(empty): FPGA_{DONE} vs Net-(Q1-Pad1),Net-(R3-Pad2),Net-(R4-Pad1) (attempt 2)",
+    "ripup(empty): FPGA_{DONE} vs ~CS_{HV},DAC2,DAC5 (attempt 3)",
+    "ripup(empty): GPIO17 vs Net-(C24-Pad1),Net-(C26-Pad2),Net-(C29-Pad1) (attempt 1)",
+    "ripup(empty): GPIO17 vs Net-(C31-Pad2),Net-(C34-Pad1),Net-(C36-Pad2) (attempt 2)",
+    "ripup(empty): GPIO17 vs Net-(C39-Pad1),Net-(C41-Pad2),Net-(C44-Pad1) (attempt 3)",
+    "ripup(empty): GPIO18 vs Net-(C46-Pad2),Net-(C49-Pad1),Net-(C51-Pad2) (attempt 1)",
+    "ripup(empty): GPIO18 vs Net-(C54-Pad1),Net-(C56-Pad2),Net-(C59-Pad1) (attempt 2)",
+    "ripup(empty): GPIO18 vs Net-(C61-Pad2),Net-(C65-Pad2),Net-(C68-Pad1) (attempt 3)",
+    "ripup(empty): GPIO22 vs Net-(D4-Pad2),Net-(C11-Pad1),Net-(C27-Pad1) (attempt 1)",
+    "ripup(empty): GPIO22 vs Net-(C32-Pad1),Net-(C42-Pad1),Net-(C47-Pad1) (attempt 2)",
+    "ripup(empty): GPIO22 vs Net-(C52-Pad1),Net-(C57-Pad1),Net-(C62-Pad1) (attempt 3)",
+    "ripup(empty): GPIO23 vs /5V-BOOST (attempt 1)",
+    "ripup(empty): Net-(R12-Pad2) vs Net-(C37-Pad1) (attempt 1)",
+    "ripup(empty): Net-(C12-Pad1) vs Net-(R2-Pad2) (attempt 1)",
+    "ripup(empty): Net-(C11-Pad1) vs Net-(C21-Pad1),Net-(L5-Pad1),Net-(L6-Pad2) (attempt 1)",
+    "ripup(empty): Net-(C11-Pad1) vs Net-(Q1-Pad1),Net-(R3-Pad2),Net-(R4-Pad1) (attempt 2)",
+    "ripup(empty): Net-(C11-Pad1) vs ~CS_{HV},DAC2,DAC5 (attempt 3)",
+    "ripup(empty): Net-(Q1-Pad1) vs Net-(C21-Pad1),Net-(L5-Pad1),Net-(L6-Pad2) (attempt 1)",
+    "ripup(empty): Net-(R3-Pad2) vs Net-(Q1-Pad1),Net-(C24-Pad1),Net-(C26-Pad2) (attempt 1)",
+    "ripup(empty): Net-(R3-Pad2) vs Net-(C29-Pad1),Net-(C31-Pad2),Net-(C34-Pad1) (attempt 2)",
+    "ripup(empty): Net-(R3-Pad2) vs Net-(C36-Pad2),Net-(C39-Pad1),Net-(C41-Pad2) (attempt 3)",
+    "ripup(empty): DAC5 vs Net-(R4-Pad1),~CS_{HV},DAC2 (attempt 1)",
+    "grade F (0/100) \u00b7 0 soft viol \u00b7 94 vias \u00b7 36 unrouted \u00b7 805.1 mm",
+    "hybrid: general phase nets=74 cl=0.200 grid=0.2",
+    "hybrid phase general: +318 segs +94 vias +3 areas unrouted=36",
+    "router_drc: 0 violation(s) (0 short, 0 spacing) @ clearance 0.15mm",
+    "ROUTE FAILED manufacturing gate: 41/85 complete nets, 0 native DRC violation(s)",
+    "route graph: components=41 cycles=4 crossings=0",
+    "grade F (0/100) \u00b7 0 soft viol \u00b7 94 vias \u00b7 44 unrouted \u00b7 805.1 mm",
+    "ROUTE FAILED manufacturing gate: 41/85 complete nets, 0 native DRC violation(s)"
+  ],
+  "extra": {
+    "source": "posthoc from completed run a322487"
+  }
+}

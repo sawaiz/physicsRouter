@@ -63,6 +63,23 @@ Missing nets vs human (44): `+3V3, +5V, CH0, CH1, CH2, CH3, CH4, CH5, CH6, CH7, 
 - Length shorter than human is only “better” if completion ≈ 1.0.
 - Human 4-layer pours (61 areas) are a return-path asset the AR still under-uses.
 
+### Why grade F (and how to raise it)
+
+Full post-mortem: **[ROUTING_DIFFICULTIES.md](ROUTING_DIFFICULTIES.md)** ·
+snapshot log **[mppc_v13_route_diagnostics.md](mppc_v13_route_diagnostics.md)**.
+
+| Issue | Evidence on this board |
+|-------|------------------------|
+| Open multipin | 44 nets: GND/+5V/+3V3/HV, all CH*, most DAC*, SPI, GPIO |
+| Pours missing | Human 61 areas vs AR 3 |
+| Corridor hogging | `+5V-A` 302 mm vs human 85 mm; seals space for digital +5V |
+| Empty rip-up | 23 `ripup(empty)` attempts (GPIO/FPGA/DAC) |
+| Global overflow | final_overflow≈51, mesh_overflow_nodes≈3206 |
+| Config gap (fixed) | `+5V` was not listed → weight 1.0; now weighted in placement_config |
+
+Future runs auto-write `viewer/runs/mppc_v1.3/route_diagnostics.{json,md}` via
+`route_diagnostics.py` / golden-eval.
+
 ---
 
 ## Why this board for topological autorouting

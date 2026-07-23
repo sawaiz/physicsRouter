@@ -8,35 +8,77 @@ notes: |
   HEP SiPM/MPPC 8-channel interface (muonTelescope). Topologies related to
   sPHENIX-class bias + coincidence. Benchmark golden for topological autorouting.
 
+# Net policy: higher weight → earlier routing priority.
+# Learned from AR grade-F run (48% complete): +5V was missing from config
+# (weight defaulted to 1.0) while +5V-A/-5V hogged corridors; GND/power
+# need pours; CH*/DAC* are multipin analog fanout (matrix-like).
 nets:
   - name: GND
-    weight: 5.0
+    weight: 6.0
     net_class: ground
+    notes: Human uses large pours — tracks alone under-complete
+  - name: "+5V"
+    weight: 5.5
+    net_class: power
   - name: "+3V3"
-    weight: 4.5
+    weight: 5.0
     net_class: power
   - name: "+1V2"
-    weight: 4.0
+    weight: 4.5
     net_class: power
   - name: "+5V-A"
-    weight: 4.5
+    weight: 4.0
     net_class: power
+    notes: Lowered vs digital +5V to reduce corridor hogging
   - name: "-5V"
-    weight: 4.5
+    weight: 4.0
     net_class: power
   - name: HV
-    weight: 5.0
+    weight: 5.5
     net_class: high_speed
     emi_sensitive: true
     notes: MPPC bias high voltage
   - name: SCLK
-    weight: 3.2
+    weight: 3.5
     net_class: high_speed
   - name: MOSI
-    weight: 3.2
+    weight: 3.5
     net_class: high_speed
   - name: MISO
+    weight: 3.5
+    net_class: high_speed
+  - name: CLK
+    weight: 3.5
+    net_class: high_speed
+  - name: "~CS_{DAC}"
     weight: 3.2
+    net_class: high_speed
+  - name: "~CS_{FPGA}"
+    weight: 3.2
+    net_class: high_speed
+  - name: CH0
+    weight: 3.0
+    net_class: high_speed
+  - name: CH1
+    weight: 3.0
+    net_class: high_speed
+  - name: CH2
+    weight: 3.0
+    net_class: high_speed
+  - name: CH3
+    weight: 3.0
+    net_class: high_speed
+  - name: CH4
+    weight: 3.0
+    net_class: high_speed
+  - name: CH5
+    weight: 3.0
+    net_class: high_speed
+  - name: CH6
+    weight: 3.0
+    net_class: high_speed
+  - name: CH7
+    weight: 3.0
     net_class: high_speed
 
 physics:

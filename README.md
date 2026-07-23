@@ -65,6 +65,10 @@ and a fair manufacturing-style score (rip human copper → re-route → grade).
 Honest partial: committed copper is legal; power/GND, analog channels, and SPI bus nets remain open.
 Missing include `GND`, `+5V`, `+3V3`, `CH0`–`CH7`, `HV`, FPGA SPI, DACs — pour-heavy multipin work still to do.
 
+**Why F / how to improve:** [docs/ROUTING_DIFFICULTIES.md](docs/ROUTING_DIFFICULTIES.md) ·
+auto logs `route_diagnostics.{json,md}` on every golden-eval ·
+mppc snapshot [docs/mppc_v13_route_diagnostics.md](docs/mppc_v13_route_diagnostics.md).
+
 Pinned PCB + config: [`examples/mppc-interface/`](examples/mppc-interface/)  
 Full write-up: **[docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)** · artifacts `viewer/runs/mppc_v1.3/`
 

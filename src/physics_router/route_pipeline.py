@@ -97,6 +97,9 @@ class RoutePipelineSolver:
             self.solved = True
             return False
         name = self.STAGES[self.stage_index]
+        import time as _time
+
+        t0 = _time.time()
         try:
             if name == "via_profile":
                 self._step_via_profile()
@@ -116,9 +119,20 @@ class RoutePipelineSolver:
             self.failed = True
             self.error = f"{name}: {exc}"
             self.stage_log.append(
-                PipelineStageResult(name=name, ok=False, detail={"error": str(exc)})
+                PipelineStageResult(
+                    name=name,
+                    ok=False,
+                    detail={"error": str(exc), "elapsed_s": round(_time.time() - t0, 3)},
+                )
             )
             return False
+        # Annotate last stage with wall time for future diagnostics logs
+        if self.stage_log and self.stage_log[-1].name == name:
+            detail = dict(self.stage_log[-1].detail or {})
+            detail["elapsed_s"] = round(_time.time() - t0, 3)
+            self.stage_log[-1] = PipelineStageResult(
+                name=name, ok=self.stage_log[-1].ok, detail=detail
+            )
         self.stage_index += 1
         if self.stage_index >= len(self.STAGES) and not self.failed:
             self.solved = True

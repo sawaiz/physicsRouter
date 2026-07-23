@@ -163,12 +163,25 @@ def classify_board(
         elif _matrix_name(net) or (
             pins >= 12
             and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))
+        ) or (
+            # Analog channel / DAC fanout (mppc CH*/DAC*): fine-grid multipin
+            pins >= 3
+            and (
+                nu.startswith("CH")
+                or nu.startswith("DAC")
+                or nu.startswith("ADC")
+            )
+            and not (lab and lab.net_class in (NetClass.POWER, NetClass.GROUND))
         ):
             strategy = "matrix"
             reason = (
                 f"dense multipin bus pins={pins}"
                 if pins >= 12
-                else "charlieplex/matrix name"
+                else (
+                    f"channel/DAC multipin pins={pins}"
+                    if pins >= 3 and (nu.startswith("CH") or nu.startswith("DAC"))
+                    else "charlieplex/matrix name"
+                )
             )
             w = min(w, max(rules.constraints.min_track_width_mm, 0.2))
         elif lab and (
