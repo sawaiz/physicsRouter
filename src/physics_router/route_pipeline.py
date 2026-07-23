@@ -296,6 +296,25 @@ class RoutePipelineSolver:
             progress_cb=self.progress_cb,
             routing_plan=self.routing_plan,
         )
+        detail = {
+            "segments": len(self.result.segments),
+            "vias": self.result.via_count,
+            "unrouted": list(self.result.unrouted_nets),
+            # Sample of copper for live UI canvas (cap size)
+            "segment_samples": [
+                {
+                    "x1": s.x1,
+                    "y1": s.y1,
+                    "x2": s.x2,
+                    "y2": s.y2,
+                    "layer": s.layer,
+                    "net": s.net,
+                    "width_mm": s.width_mm,
+                }
+                for s in (self.result.segments or [])[:2000]
+            ],
+        }
+        self._progress("detailed_route", detail)
         self.stage_log.append(
             PipelineStageResult(
                 name="detailed_route",

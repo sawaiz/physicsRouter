@@ -22,7 +22,7 @@ Plan connectivity as graph topology, then draw free-angle copper with exact clea
 | **Geometry** | Free-angle (TopoR-class idea) via required C++ core `pr_native` |
 | **Planning** | Hypergraph MST · overflow Steiner · DSATUR layers · capacity mesh |
 | **Compute** | **OpenMP** on all cores · **OpenCL** GPU clearance · parallel 2-pin waves · RAM-scaled A* |
-| **Product** | Python CLI · web UI · KiCad I/O · net policy · DRC · golden suite |
+| **Product** | Python CLI · native progress window · KiCad I/O · net policy · DRC · golden suite |
 | **Success** | Reachable pads · real vias · full multipin nets · **0 hard DRC** |
 | **Not success** | Tracks that short, stub, or only “look” finished |
 
@@ -134,8 +134,8 @@ See [RESEARCH.md](RESEARCH.md) · [docs/TOPOR.md](docs/TOPOR.md) · [DESIGN.md](
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  CLI · HTTP server · web viewer · KiCad plugin (Python)     │
-│  config · jobs · import · export · DRC/ERC · OpenEMS        │
+│  CLI · native progress UI · KiCad plugin (Python)           │
+│  config · import · export · DRC/ERC · OpenEMS               │
 └────────────────────────────┬────────────────────────────────┘
                              │
      ┌───────────────────────┼───────────────────────┐
@@ -153,7 +153,7 @@ See [RESEARCH.md](RESEARCH.md) · [docs/TOPOR.md](docs/TOPOR.md) · [DESIGN.md](
 
 | Layer | Owns |
 |-------|------|
-| **Python** | Policy, UI, files, jobs, net labels, golden-eval, graph topology |
+| **Python** | Policy, native progress UI, files, net labels, golden-eval, graph topology |
 | **C++ `pr_native`** | Clearance map, free-angle search, capacity mesh, native DRC |
 | **KiCad** | Authoritative DRC/ERC, STEP/GLB, official plots |
 
@@ -264,10 +264,12 @@ pip install -e ".[dev]"
 bash scripts/build_native.sh   # OpenMP + OpenCL when available
 # Windows: scripts\build_native.bat  (MinGW + Ninja; copies runtime DLLs)
 
-# Interactive UI
-physics-router serve --port 8765   # http://127.0.0.1:8765
+# Route with native live-progress window (pads + copper as nets commit)
+physics-router route --pcb path/to/board.kicad_pcb \
+  --out-json route.json --out-pcb routed.kicad_pcb
 
-# Headless any board
+# Headless / CI (no window)
+physics-router route --pcb path/to/board.kicad_pcb --no-ui --out-json route.json
 physics-router smoke --pcb path/to/board.kicad_pcb --fail-on-drc
 
 # Flagship golden
@@ -313,15 +315,19 @@ Guides: [docs/QUICKSTART.md](docs/QUICKSTART.md) · [docs/USER_GUIDE.md](docs/US
 
 | Path | When | Command |
 |------|------|---------|
-| **Viewer** | Import, lock nets, re-route, 3D | `physics-router serve` |
-| **CLI** | Scripts / CI | `smoke` · `route` · `golden-eval` · `improve` · `drc` |
+| **Route (native UI)** | Live stage/progress + copper canvas | `physics-router route --pcb …` |
+| **Headless / CI** | No window | `route --no-ui` · `smoke` · `golden-eval` |
 | **Plugin** | Inside pcbnew | [kicad_plugins/](kicad_plugins/README.md) |
 
 ```bash
-# Capacity / topological pipeline
+# Capacity / topological pipeline (opens native progress window)
 physics-router route --pcb board.kicad_pcb \
   --pipeline capacity --effort 0.55 \
   --out-json route.json --out-pcb routed.kicad_pcb --fail-on-drc
+
+# CI / SSH: same path, no GUI
+physics-router route --pcb board.kicad_pcb --no-ui \
+  --pipeline capacity --out-json route.json
 
 # Score vs human copper (rip-and-reroute)
 physics-router golden-eval --manifest examples/mppc-interface/manifest.yaml
@@ -378,7 +384,7 @@ Module: `physics_feedback.py` · tests: `tests/test_physics_feedback.py`.
 
 | Path | Role |
 |------|------|
-| [`src/physics_router/`](src/physics_router/) | CLI, server, policy, planning, golden-eval, graph theory |
+| [`src/physics_router/`](src/physics_router/) | CLI, native progress UI, policy, planning, golden-eval, graph theory |
 | [`native/`](native/) | C++ ExactMap · capacity mesh · pybind (`pr_native`) |
 | [`examples/mppc-interface/`](examples/mppc-interface/) | **Primary golden** — pinned v1.3 4L PCB |
 | [`examples/golden/`](examples/golden/) | OHL suite · RESULTS · manifests · SOURCES |

@@ -19,17 +19,18 @@ physics-router smoke --pcb /absolute/path/to/muon_telescope.kicad_pcb \
   --config examples/physics/placement_config.yaml
 ```
 
-Or in the UI: **Board** → Open path / drop file.
-
 ---
 
 ## Run
 
 ```bash
-# Prefer physics preset at server start
-PHYSICS_ROUTER_PRESET=physics physics-router serve --port 8765
-
 physics-router route \
+  --config examples/physics/placement_config.yaml \
+  --pcb "$PHYSICS_PCB" \
+  --out-json /tmp/physics_route.json --out-pcb /tmp/physics_routed.kicad_pcb
+
+# Headless
+physics-router route --no-ui \
   --config examples/physics/placement_config.yaml \
   --pcb "$PHYSICS_PCB" \
   --out-json /tmp/physics_route.json --out-pcb /tmp/physics_routed.kicad_pcb

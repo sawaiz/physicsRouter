@@ -536,6 +536,12 @@ def improve_cmd(
     default=None,
     help="Comma-separated nets to route (others left alone; needs seed from existing copper in session only)",
 )
+@click.option(
+    "--no-ui",
+    "no_ui",
+    is_flag=True,
+    help="Headless: do not open the native progress window (CI / SSH)",
+)
 def route_cmd(
     config_path: Path | None,
     pcb_path: Path | None,
@@ -555,8 +561,12 @@ def route_cmd(
     fail_on_unrouted: bool,
     fail_on_grade: str | None,
     nets_csv: str | None,
+    no_ui: bool,
 ) -> None:
-    """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish)."""
+    """Isotropic TopoR-style autorouter (topology → multi-variant → geometry polish).
+
+    Opens a native progress window with live copper unless ``--no-ui``.
+    """
     if config_path is None and pcb_path is None:
         raise click.UsageError("Provide --pcb and/or --config")
     if config_path is not None:
@@ -592,30 +602,36 @@ def route_cmd(
         nets_filter = [n.strip() for n in nets_csv.split(",") if n.strip()]
 
     pipe = (pipeline or "auto").lower()
-    if guide_only:
-        routes = topological_guide_route(board, config)
-    elif (pipe == "capacity" or (pipe == "auto" and rules is not None)) and nets_filter is None:
-        from physics_router.route_pipeline import run_capacity_pipeline
-        from physics_router.design_rules import default_design_rules
 
-        r = rules or default_design_rules()
-        click.echo(f"Capacity-mesh pipeline (effort={effort})")
-        routes = run_capacity_pipeline(
-            board, config, r, effort=float(effort), raise_on_fail=False
-        )
-    elif rules is not None or pipe == "hybrid":
-        routes = multilayer_route(
-            board,
-            config,
-            rules,
-            clearance_mm=clearance,
-            grid_mm=grid,
-            allow_vias=not no_vias,
-            num_variants=variants,
-            nets_filter=nets_filter,
-        )
-    else:
-        routes = topor_style_route(
+    def _do_route(progress_cb=None):
+        if guide_only:
+            return topological_guide_route(board, config)
+        if (pipe == "capacity" or (pipe == "auto" and rules is not None)) and nets_filter is None:
+            from physics_router.route_pipeline import run_capacity_pipeline
+            from physics_router.design_rules import default_design_rules
+
+            r = rules or default_design_rules()
+            return run_capacity_pipeline(
+                board,
+                config,
+                r,
+                effort=float(effort),
+                raise_on_fail=False,
+                progress_cb=progress_cb,
+            )
+        if rules is not None or pipe == "hybrid":
+            return multilayer_route(
+                board,
+                config,
+                rules,
+                clearance_mm=clearance,
+                grid_mm=grid,
+                allow_vias=not no_vias,
+                num_variants=variants,
+                nets_filter=nets_filter,
+                progress_cb=progress_cb,
+            )
+        return topor_style_route(
             board,
             config,
             None,
@@ -624,6 +640,23 @@ def route_cmd(
             allow_vias=not no_vias,
             num_variants=variants,
             nets_filter=nets_filter,
+            progress_cb=progress_cb,
+        )
+
+    if no_ui:
+        if pipe == "capacity" or (pipe == "auto" and rules is not None):
+            click.echo(f"Capacity-mesh pipeline (effort={effort})")
+        routes = _do_route(None)
+    else:
+        from physics_router.progress_ui import run_with_progress_window
+
+        click.echo("Opening native routing progress window…")
+        if pipe == "capacity" or (pipe == "auto" and rules is not None):
+            click.echo(f"Capacity-mesh pipeline (effort={effort})")
+        routes = run_with_progress_window(
+            work=_do_route,
+            title=f"physicsRouter · {pcb_path.name if pcb_path else 'route'}",
+            board=board,
         )
 
     # Length-rule notes from NetLabel.max_length_mm
@@ -946,10 +979,16 @@ def export_openems_cmd(
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8765, show_default=True, type=int)
 def serve_cmd(host: str, port: int) -> None:
-    """Interactive control plane: config, jobs, progress, board viewer, tests."""
-    from physics_router.server import serve
+    """Removed: web UI is no longer shipped.
 
-    serve(host=host, port=port)
+    Use ``physics-router route`` — a native progress window opens during routing.
+    """
+    raise click.ClickException(
+        "The web control plane was removed. "
+        "Run: physics-router route --pcb board.kicad_pcb "
+        "(native progress window shows live routing). "
+        "Use --no-ui for headless/CI."
+    )
 
 
 @main.command("export-dsn")

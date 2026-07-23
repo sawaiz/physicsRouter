@@ -1,6 +1,6 @@
 # Quick start
 
-**TL;DR:** install → build native → `serve` or `smoke` → open / route a `.kicad_pcb`.
+**TL;DR:** install → build native → `route` (native progress window) or `smoke` (headless).
 
 ---
 
@@ -28,25 +28,21 @@ python -c "from physics_router.native_bridge import info; print(info())"
 | CMake 3.16+, C++17 | required for native |
 | KiCad 8+ (`kicad-cli`) | for DRC / STEP |
 | OpenCL | faster on Apple GPU / some GPUs |
+| tkinter | native progress window (usually bundled) |
 
 ---
 
 ## 2. Route a board (pick one)
 
-### A) Web UI (easiest)
+### A) Route with native progress window
 
 ```bash
-physics-router serve --host 127.0.0.1 --port 8765
+physics-router route --pcb /path/to/board.kicad_pcb \
+  --out-json route.json --out-pcb routed.kicad_pcb
 ```
 
-Open **http://127.0.0.1:8765**
-
-1. **Board** — drop any `.kicad_pcb`, paste a path, or click an example (HALO-90 / synthetic)  
-2. **Route** — **Route** or **Improve until goal**  
-3. **Apply to PCB** — write copper  
-4. **Check** — KiCad DRC / tests  
-
-Optional on Route: lock nets (keep copper), re-route only selected nets, add keep-out boxes.
+A desktop window shows stage progress, log lines, and live copper as nets commit.
+Use **`--no-ui`** for CI / SSH / no display.
 
 ### B) One command (CI / scripts)
 
@@ -54,9 +50,9 @@ Optional on Route: lock nets (keep copper), re-route only selected nets, add kee
 physics-router smoke --pcb /path/to/board.kicad_pcb --fail-on-drc
 ```
 
-Does: auto-import nets → capacity/hybrid route → write `viewer/runs/smoke_<name>/` → DRC → non-zero exit if DRC fails.
+Does: auto-import nets → capacity/hybrid route → write under `viewer/runs/smoke_<name>/` → DRC → non-zero exit if DRC fails.
 
-### C) Explicit route
+### C) Explicit pipeline flags
 
 ```bash
 physics-router route --pcb board.kicad_pcb \
@@ -73,9 +69,10 @@ physics-router route --pcb board.kicad_pcb \
 
 | Example | How |
 |---------|-----|
-| Synthetic demo | UI example chip **Synthetic**, or omit `--pcb` with a config |
+| Synthetic demo | `physics-router route --config examples/demo/…` or smoke with config only |
 | HALO-90 | Clone into `third_party/halo-90` — see [../examples/halo-90/README.md](../examples/halo-90/README.md) |
 | Muon3 / physics | Sibling `../physics` + [../examples/physics/README.md](../examples/physics/README.md) |
+| mppcInterface | [../examples/mppc-interface/](../examples/mppc-interface/) flagship golden |
 
 ```bash
 # HALO if present
@@ -87,31 +84,4 @@ physics-router smoke \
 
 ---
 
-## 4. Tests
-
-```bash
-pytest -q
-# ~209 tests; native must be built
-```
-
----
-
-## 5. Common failures
-
-| Symptom | Fix |
-|---------|-----|
-| `pr_native` / native not available | `bash scripts/build_native.sh` |
-| `kicad-cli not found` | Install KiCad or set `KICAD_CLI` |
-| smoke exits 2 | DRC failed — inspect `.../drc/drc.json` |
-| smoke exits 3 | unrouted nets (`--fail-on-unrouted`) |
-| smoke exits 4 | grade below `--min-grade` |
-| Empty Muon3 shell board | Use telescope v10 path (see physics example README) |
-
----
-
-## Next
-
-- Day-to-day workflows → [USER_GUIDE.md](USER_GUIDE.md)  
-- CLI reference → [CLI.md](CLI.md)  
-- Design principles → [../DESIGN.md](../DESIGN.md)  
-- Doc map → [README.md](README.md)
+Next: [USER_GUIDE.md](USER_GUIDE.md) · [CLI.md](CLI.md) · [README.md](../README.md)

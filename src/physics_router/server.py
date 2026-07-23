@@ -1,10 +1,11 @@
-"""Local control-plane HTTP server: config, jobs, progress, results, static UI.
+"""Legacy local control-plane HTTP server (web UI removed from CLI).
 
-Run via::
+The ``physics-router serve`` command is removed. Use::
 
-    physics-router serve --port 8765
+    physics-router route --pcb board.kicad_pcb   # native progress window
+    physics-router route --no-ui …              # headless / CI
 
-Stdlib only (no Flask). Serves ``viewer/`` and JSON APIs under ``/api/``.
+This module remains for optional tooling; it is not exposed by the CLI.
 """
 
 from __future__ import annotations

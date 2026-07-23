@@ -28,7 +28,13 @@
 2. Runs headless smoke (auto net import + capacity/hybrid route).  
 3. Reloads the routed `.kicad_pcb` into the editor.  
 
-For interactive lock-nets / keep-outs, use the web UI instead: `physics-router serve`.
+For live progress while routing from the shell, use:
+
+```bash
+physics-router route --pcb board.kicad_pcb --out-pcb routed.kicad_pcb
+```
+
+(Native progress window; add `--no-ui` for headless.)
 
 ---
 

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import threading
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -17,7 +13,6 @@ from physics_router.models import KeepoutRegion, NetClass, NetLabel, PlacementCo
 from physics_router.net_import import _infer_diff_pairs, build_net_labels
 from physics_router.pin_access import _package_kind
 from physics_router.router import build_obstacle_map
-from physics_router.server import STATE, create_server
 
 ROOT = Path(__file__).resolve().parents[1]
 HALO_PCB = ROOT / "third_party/halo-90/pcb/halo-90.kicad_pcb"
@@ -114,50 +109,3 @@ def test_ses_import_minimal(tmp_path: Path):
     assert r.segments[0].layer == "F.Cu"
 
 
-@pytest.fixture()
-def httpd():
-    with STATE.lock:
-        STATE._load_preset("synthetic")
-        STATE.locked_nets = []
-        STATE.keepouts = []
-        STATE.reroute_nets = []
-    server = create_server("127.0.0.1", 0)
-    port = server.server_address[1]
-    th = threading.Thread(target=server.serve_forever, daemon=True)
-    th.start()
-    yield f"http://127.0.0.1:{port}"
-    server.shutdown()
-    STATE.stop_worker()
-
-
-def _post(base: str, path: str, body: dict) -> dict:
-    data = json.dumps(body).encode()
-    req = urllib.request.Request(
-        base + path, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode())
-
-
-def _get(base: str, path: str) -> dict:
-    with urllib.request.urlopen(base + path, timeout=30) as r:
-        return json.loads(r.read().decode())
-
-
-def test_routing_policy_api(httpd):
-    out = _post(
-        httpd,
-        "/api/routing/policy",
-        {
-            "locked_nets": ["VCC", "GND"],
-            "reroute_nets": ["SW"],
-            "keepouts": [{"x1": 0, "y1": 0, "x2": 2, "y2": 2}],
-        },
-    )
-    assert out["ok"] is True
-    assert "VCC" in out["locked_nets"]
-    assert out["reroute_nets"] == ["SW"]
-    assert len(out["keepouts"]) == 1
-    snap = _get(httpd, "/api/snapshot")
-    assert "VCC" in snap["locked_nets"]
-    assert "net_names" in snap

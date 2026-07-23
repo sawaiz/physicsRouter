@@ -30,7 +30,7 @@ This document records **why** the system is shaped the way it is. Code holds the
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  CLI · HTTP server · viewer · KiCad plugin (Python)          │
+│  CLI · native progress UI · KiCad plugin (Python)            │
 │  config · jobs · import · export · DRC/ERC · OpenEMS         │
 └────────────────────────────┬─────────────────────────────────┘
                              │

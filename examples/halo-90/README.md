@@ -21,8 +21,13 @@ Sources: `third_party/halo-90/pcb/halo-90.kicad_{pcb,sch,pro}`
 ## Run
 
 ```bash
-# UI (loads HALO by default when present)
-physics-router serve --port 8765
+# Live native progress window
+physics-router route \
+  --config examples/halo-90/placement_config.yaml \
+  --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
+  --pipeline capacity --effort 0.55 \
+  --out-json examples/halo-90/route_result.json \
+  --out-pcb /tmp/halo_routed.kicad_pcb
 
 # Headless (dense — allow partial for a quick smoke)
 physics-router smoke \
@@ -30,8 +35,8 @@ physics-router smoke \
   --config examples/halo-90/placement_config.yaml \
   --min-grade F --no-fail-on-drc
 
-# Full route + optional DRC
-physics-router route \
+# Explicit headless route
+physics-router route --no-ui \
   --config examples/halo-90/placement_config.yaml \
   --pcb third_party/halo-90/pcb/halo-90.kicad_pcb \
   --pipeline capacity --effort 0.55 \

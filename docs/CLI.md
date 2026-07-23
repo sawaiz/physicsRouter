@@ -1,6 +1,6 @@
 # CLI reference
 
-**TL;DR:** `physics-router <command> --help` always works. Most common: `smoke`, `route`, `serve`, `drc`.
+**TL;DR:** `physics-router <command> --help` always works. Most common: `smoke`, `route`, `drc`, `golden-eval`.
 
 ```bash
 physics-router --version
@@ -13,9 +13,8 @@ physics-router --help
 
 | Command | Purpose |
 |---------|---------|
-| `serve` | Web UI + job API (`--host` `--port`) |
+| `route` | Autoroute (capacity / hybrid / topor); **opens native progress window** unless `--no-ui` |
 | `smoke` | Any-board headless: import → route → PCB → DRC gates |
-| `route` | Autoroute (capacity / hybrid / topor) |
 | `golden-eval` | Rip human copper on golden boards → autoroute → score vs human |
 | `drc` | Official KiCad DRC only |
 | `import-nets` | Build `placement_config.yaml` from PCB/sch |
@@ -48,17 +47,18 @@ physics-router route [--config YAML] --pcb board.kicad_pcb \
   [--pipeline auto|capacity|hybrid|topor] [--effort 0.55] \
   [--clearance MM] [--grid MM] [--variants N] \
   [--drc/--no-drc] [--fail-on-drc] [--fail-on-unrouted] \
-  [--fail-on-grade B] [--nets NET1,NET2] [--guide-only]
+  [--fail-on-grade B] [--nets NET1,NET2] [--guide-only] \
+  [--no-ui]
 ```
 
 - `--config` optional if `--pcb` given (auto net import).  
-- `--nets` limits which nets are routed.
+- `--nets` limits which nets are routed.  
+- **Native progress window** opens by default (stage bar + copper canvas).  
+- `--no-ui` — headless (CI / SSH / no display).
 
-### `serve`
+### `serve` (removed)
 
-```bash
-physics-router serve --host 127.0.0.1 --port 8765
-```
+The web control plane was removed. Use `route` (native window) or `route --no-ui` / `smoke` for headless work.
 
 ---
 
@@ -77,78 +77,38 @@ physics-router improve --config c.yaml --pcb b.kicad_pcb --timeout 120 --grade B
 ```
 
 After a **fully legal** route (0 hard DRC, complete nets), SPICE + OpenEMS
-proxies score the copper and feed the next round:
-
-| Feedback | Effect |
-|----------|--------|
-| SPICE / loop | Bump power/GND placement weights; pour proposals |
-| OpenEMS / EMI | Bump EMI-sensitive net weights; corridor hints |
-| Matrix skew | Raise `matrix_length_match` physics weight |
-| Pours | Seed GND/power `CopperArea` outlines for return path |
-| Export | Optional OpenEMS mesh per round (`--physics-export-dir`) |
-
-Incomplete or illegal copper **skips** physics (open > short).
+proxies score the copper and feed the next round.
 
 ---
 
-## Rules & analysis
+## Import / export
 
 | Command | Purpose |
 |---------|---------|
-| `rules` | Dump stackup / netclasses / floors |
-| `pre-route` | Congestion / via budget / escape hints |
+| `import-nets` | PCB (+ optional sch) → YAML net labels |
+| `export-dsn` | FreeRouting Spef-style DSN |
+| `import-ses` | FreeRouting SES → segments |
+| `export-step` / `export-openems` | 3D / EM mesh proxies |
+| `viewer-data` | JSON board snapshot for tooling |
 
 ```bash
-physics-router rules --pcb board.kicad_pcb --out-json rules.json
-physics-router pre-route --config c.yaml --pcb board.kicad_pcb
-```
-
----
-
-## Golden boards (vs human routing) {#golden}
-
-```bash
-physics-router golden-eval [--manifest examples/golden/manifest.yaml] \
-  [--id simple_2net] [--pipeline capacity] [--effort 0.55] \
-  [--extract-only] [--kicad-drc] [--out-dir DIR] \
-  [--rules-profile via_0p45|via_0p6|source|4layer_capability] \
-  [--hard-deadline|--soft-timeout] [--cbs-repair|--no-cbs-repair]
-```
-
-Rip-and-reroute known-good PCBs and score against extracted human copper
-(tracks **and** zone pours). Hard deadline kills hung native search. CI uses
-`examples/golden/ci_manifest.yaml`.
-
-See [examples/golden/README.md](../examples/golden/README.md) · [GOLDEN_CORPUS.md](GOLDEN_CORPUS.md).
-
-## FreeRouting {#freerouting}
-
-| Command | Purpose |
-|---------|---------|
-| `export-dsn` | Specctra DSN (real pad XY, class rules) |
-| `import-ses` | SES wires → KiCad PCB |
-| `compare-routes` | Metrics: TopoR JSON vs SES/JSON |
-
-```bash
+physics-router import-nets --pcb board.kicad_pcb -o placement_config.yaml
 physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
-physics-router import-ses --ses board.ses --pcb board.kicad_pcb -o out.kicad_pcb
-physics-router compare-routes --topor topor.json --ses board.ses --out comparison.json
+physics-router export-step --pcb board.kicad_pcb -o board.step
 ```
-
-See also [../examples/demo/FREEROUTING.md](../examples/demo/FREEROUTING.md).
 
 ---
 
-## Export & viz
+## Other
 
 | Command | Purpose |
 |---------|---------|
-| `export-step` | STEP with copper / zones / silk |
-| `export-openems` | OpenEMS geometry + script |
-| `render` | KiCad SVG / 3D plots |
-| `viewer-data` | Write `viewer_data.json` |
+| `compare-routes` | Diff two route JSONs |
 | `dashboard` | HTML score dashboard |
 | `route-guide` | Topology guide only (no clearance) |
+| `rules` | Dump design rules from PCB |
+| `pre-route` | Pin-access / plan preview |
+| `render` | Simple 2D render of routes |
 
 ---
 
@@ -158,7 +118,6 @@ See also [../examples/demo/FREEROUTING.md](../examples/demo/FREEROUTING.md).
 |----------|------|
 | `KICAD_CLI` | Path to `kicad-cli` |
 | `KICAD_PYTHON` | Python with `import pcbnew` |
-| `PHYSICS_ROUTER_PRESET` | `physics` / `halo-90` / … at server start |
 | `PHYSICS_ROUTER_BIN` | Plugin: path to CLI |
 | `PHYSICS_ROUTER_TIMEOUT` | Plugin timeout (seconds) |
 
@@ -169,7 +128,7 @@ See also [../examples/demo/FREEROUTING.md](../examples/demo/FREEROUTING.md).
 ```
 compare-routes  dashboard  drc  export-dsn  export-openems  export-step
 import-nets  import-ses  improve  init-config  place  pre-route  render
-route  route-guide  rules  score  serve  smoke  viewer-data
+route  route-guide  rules  score  serve (removed)  smoke  viewer-data
 ```
 
-Back: [USER_GUIDE.md](USER_GUIDE.md) · [QUICKSTART.md](QUICKSTART.md) · [README.md](README.md)
+Back: [USER_GUIDE.md](USER_GUIDE.md) · [QUICKSTART.md](QUICKSTART.md) · [README.md](../README.md)
