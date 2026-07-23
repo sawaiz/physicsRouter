@@ -4424,6 +4424,225 @@ def parse_kicad_net_map(pcb_text: str) -> dict[str, int]:
     return out
 
 
+def parse_kicad_net_code_map(pcb_text: str) -> dict[int, str]:
+    """Inverse of :func:`parse_kicad_net_map`: net code → name."""
+    return {code: name for name, code in parse_kicad_net_map(pcb_text).items()}
+
+
+def _sexpr_blocks(text: str, head: str) -> list[str]:
+    """Yield balanced ``(head …)`` blocks (single- or multi-line KiCad)."""
+    needle = f"({head}"
+    n = len(text)
+    i = 0
+    out: list[str] = []
+    while True:
+        start = text.find(needle, i)
+        if start < 0:
+            break
+        # Require head boundary: "(segment" not "(segments_foo"
+        after = start + len(needle)
+        if after < n and text[after] not in " \t\n\r(":
+            i = after
+            continue
+        depth = 0
+        quoted = False
+        escaped = False
+        end = start
+        for end in range(start, n):
+            ch = text[end]
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    quoted = False
+                continue
+            if ch == '"':
+                quoted = True
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    end += 1
+                    break
+        out.append(text[start:end])
+        i = end
+    return out
+
+
+def _field_xy(block: str, name: str) -> tuple[float, float] | None:
+    import re
+
+    m = re.search(rf"\({name}\s+([^\s)]+)\s+([^\s)]+)\)", block)
+    if not m:
+        return None
+    try:
+        return float(m.group(1)), float(m.group(2))
+    except ValueError:
+        return None
+
+
+def _field_num(block: str, name: str, default: float = 0.0) -> float:
+    import re
+
+    m = re.search(rf"\({name}\s+([^\s)]+)\)", block)
+    if not m:
+        return default
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return default
+
+
+def _field_str(block: str, name: str, default: str = "") -> str:
+    import re
+
+    m = re.search(rf'\({name}\s+"([^"]*)"\)', block)
+    if m:
+        return m.group(1)
+    m = re.search(rf"\({name}\s+([^\s)]+)\)", block)
+    return m.group(1) if m else default
+
+
+def _field_layers_pair(block: str) -> tuple[str, str]:
+    import re
+
+    m = re.search(r'\(layers\s+"([^"]+)"\s+"([^"]+)"\)', block)
+    if m:
+        return m.group(1), m.group(2)
+    return "F.Cu", "B.Cu"
+
+
+def _field_net_name(block: str, code_to_name: dict[int, str]) -> str:
+    """Resolve ``(net N)``, ``(net N \"NAME\")``, or ``(net \"/path\")``."""
+    import re
+
+    m = re.search(r'\(net\s+(\d+)\s+"([^"]*)"\)', block)
+    if m:
+        name = m.group(2)
+        return name if name else code_to_name.get(int(m.group(1)), "")
+    m = re.search(r'\(net\s+"([^"]*)"\)', block)
+    if m:
+        return m.group(1)
+    m = re.search(r"\(net\s+(\d+)\)", block)
+    if m:
+        code = int(m.group(1))
+        if code in code_to_name:
+            return code_to_name[code]
+        return "" if code == 0 else f"net_{code}"
+    return ""
+
+
+def extract_routes_from_kicad_pcb(
+    path: str | Path,
+    *,
+    board_nets: dict[str, list] | None = None,
+) -> RouteResult:
+    """Parse board-level human (or any) copper into a :class:`RouteResult`.
+
+    Reads board ``(segment …)`` / ``(via …)`` S-expressions (single-line HALO
+    dialect **and** modern multi-line KiCad with named nets). Footprint pads
+    and zones are ignored — this is the golden copper snapshot for
+    ``golden-eval``.
+
+    If ``board_nets`` is provided (name → pad list), nets with pads but no
+    extracted copper are listed in ``unrouted_nets`` (coarse human completion).
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    code_to_name = parse_kicad_net_code_map(text)
+
+    segs: list[RouteSegment] = []
+    for block in _sexpr_blocks(text, "segment"):
+        start = _field_xy(block, "start")
+        end = _field_xy(block, "end")
+        if not start or not end:
+            continue
+        segs.append(
+            RouteSegment(
+                x1=start[0],
+                y1=start[1],
+                x2=end[0],
+                y2=end[1],
+                width_mm=_field_num(block, "width", 0.25),
+                layer=_field_str(block, "layer", "F.Cu"),
+                net=_field_net_name(block, code_to_name),
+            )
+        )
+
+    vias: list[Via] = []
+    for block in _sexpr_blocks(text, "via"):
+        at = _field_xy(block, "at")
+        if not at:
+            continue
+        la, lb = _field_layers_pair(block)
+        vias.append(
+            Via(
+                x=at[0],
+                y=at[1],
+                size_mm=_field_num(block, "size", 0.8),
+                drill_mm=_field_num(block, "drill", 0.4),
+                layers=(la, lb),
+                net=_field_net_name(block, code_to_name),
+                reason="human_copper",
+            )
+        )
+
+    length = sum(_dist((s.x1, s.y1), (s.x2, s.y2)) for s in segs)
+    copper_nets = {s.net for s in segs if s.net} | {v.net for v in vias if v.net}
+    unrouted: list[str] = []
+    if board_nets is not None:
+        for name, pads in board_nets.items():
+            if not name or not pads:
+                continue
+            if name not in copper_nets:
+                unrouted.append(name)
+        unrouted.sort()
+
+    by_net_len: dict[str, float] = {}
+    by_net_seg: dict[str, int] = {}
+    by_net_via: dict[str, int] = {}
+    for s in segs:
+        if not s.net:
+            continue
+        by_net_len[s.net] = by_net_len.get(s.net, 0.0) + _dist(
+            (s.x1, s.y1), (s.x2, s.y2)
+        )
+        by_net_seg[s.net] = by_net_seg.get(s.net, 0) + 1
+    for v in vias:
+        if v.net:
+            by_net_via[v.net] = by_net_via.get(v.net, 0) + 1
+
+    reports = [
+        NetRouteReport(
+            net=net,
+            length_mm=round(by_net_len.get(net, 0.0), 4),
+            segments=by_net_seg.get(net, 0),
+            vias=by_net_via.get(net, 0),
+            status="ok" if net in copper_nets else "unrouted",
+            method="human_extract",
+        )
+        for net in sorted(set(by_net_len) | set(by_net_via) | set(unrouted))
+    ]
+
+    result = RouteResult(
+        segments=segs,
+        vias=vias,
+        via_count=len(vias),
+        total_length_mm=round(length, 4),
+        unrouted_nets=unrouted,
+        notes=[
+            f"extracted from {path.name}",
+            f"segments={len(segs)} vias={len(vias)} nets_with_copper={len(copper_nets)}",
+        ],
+        net_reports=reports,
+    )
+    result.compute_quality()
+    return result
+
+
 def _tstamp_token(seed: int) -> str:
     hex32 = f"{abs(seed) % (16**32):032x}"
     return f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"

@@ -16,6 +16,7 @@ physics-router --help
 | `serve` | Web UI + job API (`--host` `--port`) |
 | `smoke` | Any-board headless: import → route → PCB → DRC gates |
 | `route` | Autoroute (capacity / hybrid / topor) |
+| `golden-eval` | Rip human copper on golden boards → autoroute → score vs human |
 | `drc` | Official KiCad DRC only |
 | `import-nets` | Build `placement_config.yaml` from PCB/sch |
 | `init-config` | Write example YAML |
@@ -89,6 +90,17 @@ physics-router pre-route --config c.yaml --pcb board.kicad_pcb
 ```
 
 ---
+
+## Golden boards (vs human routing) {#golden}
+
+```bash
+physics-router golden-eval [--manifest examples/golden/manifest.yaml] \
+  [--id simple_2net] [--pipeline capacity] [--effort 0.55] \
+  [--extract-only] [--kicad-drc] [--out-dir DIR]
+```
+
+Rip-and-reroute known-good PCBs and score against extracted human copper.
+See [examples/golden/README.md](../examples/golden/README.md).
 
 ## FreeRouting {#freerouting}
 

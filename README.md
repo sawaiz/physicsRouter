@@ -100,6 +100,10 @@ physics-router route --pcb board.kicad_pcb \
 # Labels from KiCad
 physics-router import-nets --pcb board.kicad_pcb -o placement_config.yaml
 
+# Golden suite: rip human copper → autoroute → score vs human
+physics-router golden-eval --manifest examples/golden/manifest.yaml
+physics-router golden-eval --id simple_2net --extract-only
+
 # FreeRouting baseline
 physics-router export-dsn --pcb board.kicad_pcb -o board.dsn
 physics-router import-ses --ses board.ses --pcb board.kicad_pcb -o board_fr.kicad_pcb
@@ -126,9 +130,10 @@ physics-router --help   # full command list
 ## Status snapshot
 
 - **Version:** 0.2.0 · native `2.0.0-production-flow`  
-- **Tests:** `pytest -q` (~209 collected)  
+- **Tests:** `pytest -q` (~209+ collected)  
 - **Synthetic:** typically full route + 0 DRC  
 - **HALO-90:** zero-violation **partial** OK (open nets > shorts); dense CPX still hard  
+- **Golden corpus:** CERN WREN, OpenIPMC, SatNOGS, Jetson, KiCad demos — [docs/GOLDEN_CORPUS.md](docs/GOLDEN_CORPUS.md)
 
 Benches & gallery: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
 

@@ -20,6 +20,7 @@ Everything else is optional depth. Each page starts with a **TL;DR** so you can 
 | Run HALO-90 / Muon3 examples | [../examples/halo-90/README.md](../examples/halo-90/README.md) · [../examples/physics/README.md](../examples/physics/README.md) |
 | Read speed numbers / images | [BENCHMARKS.md](BENCHMARKS.md) |
 | FreeRouting DSN/SES | [CLI.md](CLI.md#freerouting) · [../examples/demo/FREEROUTING.md](../examples/demo/FREEROUTING.md) |
+| Golden boards vs human copper | [CLI.md](CLI.md#golden) · [GOLDEN_CORPUS.md](GOLDEN_CORPUS.md) · [../examples/golden/README.md](../examples/golden/README.md) |
 | JLCPCB fab profiles | [JLCPCB_4LAYER.md](JLCPCB_4LAYER.md) |
 | Why dense boards fail historically | [AUTOROUTER_FAILURE_ANALYSIS.md](AUTOROUTER_FAILURE_ANALYSIS.md) |
 | Topology / graph theory plane | [ARCHITECTURE_ROUTER.md](ARCHITECTURE_ROUTER.md) |

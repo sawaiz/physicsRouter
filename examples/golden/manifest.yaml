@@ -1,0 +1,149 @@
+# Golden boards: human copper baseline → rip → autoroute → score.
+# Fetch third_party boards: bash scripts/fetch_golden_boards.sh
+# Analyze + charts: python scripts/golden_corpus_analyze.py --route-easy
+#
+# expect:
+#   manufacturing_gate — full nets + 0 hard DRC required to pass
+#   partial_ok         — 0 hard DRC; min_completion soft floor only
+
+boards:
+  # --- easy fixtures / science ---
+  - id: simple_2net
+    pcb: tests/fixtures/golden/simple_2net.kicad_pcb
+    difficulty: easy
+    expect: manufacturing_gate
+    timeout_s: 60
+    min_completion: 1.0
+    notes: "Two 0603, SIG_A (vias) + SIG_B."
+
+  - id: openflexure_illum
+    pcb: third_party/golden/openflexure-illum/SimpleIllumination.kicad_pcb
+    difficulty: easy
+    expect: partial_ok
+    timeout_s: 60
+    min_completion: 0.0
+    notes: "OpenFlexure simple illumination — science lab."
+
+  - id: ofm_illumination
+    pcb: third_party/golden/ofm-led/ofm_cc_illumination.kicad_pcb
+    difficulty: easy
+    expect: partial_ok
+    timeout_s: 60
+    min_completion: 0.0
+    notes: "OFM LED illumination, CERN-OHL."
+
+  - id: pq9_devboard
+    pcb: third_party/golden/pq9-devboard/pq9-devboard.kicad_pcb
+    difficulty: easy
+    expect: partial_ok
+    timeout_s: 90
+    min_completion: 0.0
+    notes: "Libre Space PQ9 cubesat bus."
+
+  - id: ecc83_pp
+    pcb: third_party/golden/kicad-demos/ecc83/ecc83-pp.kicad_pcb
+    difficulty: easy
+    expect: partial_ok
+    timeout_s: 60
+    min_completion: 0.0
+    notes: "Analog single-layer tube preamp demo."
+
+  - id: sonde_xilinx
+    pcb: third_party/golden/kicad-demos/sonde xilinx/sonde xilinx.kicad_pcb
+    difficulty: easy
+    expect: partial_ok
+    timeout_s: 90
+    min_completion: 0.0
+
+  # --- medium ---
+  - id: multichannel_mixer
+    pcb: third_party/golden/kicad-demos/multichannel/multichannel_mixer.kicad_pcb
+    difficulty: medium
+    expect: partial_ok
+    timeout_s: 120
+    min_completion: 0.0
+
+  - id: interf_u
+    pcb: third_party/golden/kicad-demos/interf_u/interf_u.kicad_pcb
+    difficulty: medium
+    expect: partial_ok
+    timeout_s: 120
+    min_completion: 0.0
+
+  - id: pic_programmer
+    pcb: third_party/golden/kicad-demos/pic_programmer/pic_programmer.kicad_pcb
+    difficulty: medium
+    expect: partial_ok
+    timeout_s: 120
+    min_completion: 0.0
+
+  - id: stickhub
+    pcb: third_party/golden/kicad-demos/stickhub/StickHub.kicad_pcb
+    difficulty: medium
+    expect: partial_ok
+    timeout_s: 120
+    min_completion: 0.0
+
+  # --- hard (inventory + optional long route) ---
+  - id: halo-90
+    pcb: third_party/halo-90/pcb/halo-90.kicad_pcb
+    config: examples/halo-90/placement_config.yaml
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 180
+    min_completion: 0.0
+    notes: "Charlieplex stress; open nets OK if hard DRC=0."
+
+  - id: openipmc_hw
+    pcb: third_party/golden/openipmc-hw/openipmc-hw.kicad_pcb
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 300
+    min_completion: 0.0
+    notes: "HEP ATCA OpenIPMC — management/power planes."
+
+  - id: satnogs_comms
+    pcb: third_party/golden/satnogs-comms/satnogs-comms.kicad_pcb
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 300
+    min_completion: 0.0
+    notes: "SatNOGS COMMS — RF + digital, CERN-OHL."
+
+  - id: tinytapeout
+    pcb: third_party/golden/kicad-demos/tiny_tapeout/tinytapeout-demo.kicad_pcb
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 300
+    min_completion: 0.0
+
+  - id: video
+    pcb: third_party/golden/kicad-demos/video/video.kicad_pcb
+    difficulty: hard
+    expect: partial_ok
+    timeout_s: 300
+    min_completion: 0.0
+
+  # --- extreme (extract/metrics; AR manufacturing gate research) ---
+  - id: jetson_nano
+    pcb: third_party/golden/antmicro-jetson-nano/jetson-nano-baseboard.kicad_pcb
+    difficulty: extreme
+    expect: partial_ok
+    timeout_s: 600
+    min_completion: 0.0
+    notes: "Antmicro Jetson carrier — BGA escape stress."
+
+  - id: jetson_agx_thor
+    pcb: third_party/golden/kicad-demos/jetson-agx-thor-baseboard/jetson-agx-thor-baseboard.kicad_pcb
+    difficulty: extreme
+    expect: partial_ok
+    timeout_s: 600
+    min_completion: 0.0
+
+  - id: vme_wren
+    pcb: third_party/golden/kicad-demos/vme-wren/vme-wren.kicad_pcb
+    difficulty: extreme
+    expect: partial_ok
+    timeout_s: 600
+    min_completion: 0.0
+    notes: "CERN White Rabbit Event Node class (KiCad demo)."

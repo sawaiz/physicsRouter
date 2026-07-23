@@ -216,7 +216,9 @@ Prioritized by impact on **legal, manufacturable** boards for HALO-class density
 6. **IR / current-density maps** on copper polygons (drives width and layer choice).
 7. **Return-path continuity** as a hard constraint on layer hops.
 8. **Via budget auction** — limited vias assigned by net criticality.
-9. **Golden copper diff** vs released HALO-90 for honest autorouter metrics.
+9. **Golden copper diff** — baseline suite lives at `physics-router golden-eval`
+   (`examples/golden/`); extend with more boards + geometry IoU / topology
+   distance beyond completion and length/via metrics.
 10. **Metal GPU** path on Apple (OpenCL is deprecated long-term).
 
 ### Longer term

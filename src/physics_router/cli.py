@@ -1002,6 +1002,115 @@ def compare_routes_cmd(
     click.echo(f"Wrote {out_json} and {out_md}")
 
 
+@main.command("golden-eval")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="YAML/JSON board list (default: examples/golden/manifest.yaml)",
+)
+@click.option(
+    "--id",
+    "board_ids",
+    multiple=True,
+    help="Only these board id(s) from the manifest (repeatable)",
+)
+@click.option(
+    "--pipeline",
+    type=click.Choice(["auto", "capacity", "hybrid", "topor"], case_sensitive=False),
+    default="capacity",
+    show_default=True,
+)
+@click.option("--effort", type=float, default=0.55, show_default=True)
+@click.option(
+    "--out-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Suite output directory (default: viewer/runs/golden_suite)",
+)
+@click.option(
+    "--extract-only",
+    is_flag=True,
+    default=False,
+    help="Only parse human copper (no autoroute)",
+)
+@click.option(
+    "--kicad-drc/--no-kicad-drc",
+    default=False,
+    help="Run KiCad DRC oracle on AR copper (needs kicad-cli)",
+)
+@click.option(
+    "--fail-on-fail/--no-fail-on-fail",
+    default=True,
+    help="Exit 2 if any board fails its expect gate (default on)",
+)
+def golden_eval_cmd(
+    manifest_path: Path | None,
+    board_ids: tuple[str, ...],
+    pipeline: str,
+    effort: float,
+    out_dir: Path | None,
+    extract_only: bool,
+    kicad_drc: bool,
+    fail_on_fail: bool,
+) -> None:
+    """Rip human copper on golden boards, autoroute, score vs human routing.
+
+    See examples/golden/README.md for the protocol and manifest format.
+    """
+    from physics_router.golden_eval import run_suite
+
+    root = Path(__file__).resolve().parents[2]
+    manifest = manifest_path or (root / "examples" / "golden" / "manifest.yaml")
+    if not manifest.is_file():
+        raise click.UsageError(f"Manifest not found: {manifest}")
+
+    ids = list(board_ids) if board_ids else None
+    summary = run_suite(
+        manifest,
+        pipeline=pipeline,
+        effort=float(effort),
+        out_dir=out_dir,
+        board_ids=ids,
+        run_kicad_drc=kicad_drc,
+        extract_only=extract_only,
+    )
+    counts = summary.get("counts") or {}
+    click.echo(
+        f"golden-eval: {counts.get('passed', 0)} passed · "
+        f"{counts.get('failed', 0)} failed · {counts.get('skipped', 0)} skipped "
+        f"(pipeline={pipeline} effort={effort}"
+        f"{' extract-only' if extract_only else ''})"
+    )
+    for row in summary.get("boards") or []:
+        if row.get("skipped"):
+            click.echo(f"  skip  {row.get('id')}: {row.get('error')}")
+            continue
+        if extract_only:
+            h = row.get("human") or {}
+            click.echo(
+                f"  human {row.get('id')}: segs={h.get('segments')} "
+                f"vias={h.get('vias')} L={h.get('length_mm')}mm "
+                f"nets={h.get('nets_with_copper')}"
+            )
+            continue
+        status = "PASS" if row.get("passed") else "FAIL"
+        click.echo(
+            f"  {status} {row.get('id')}: grade={row.get('golden_grade')} "
+            f"score={row.get('golden_score')} "
+            f"completion={row.get('completion_ratio')} "
+            f"hard_drc={row.get('hard_violations')} "
+            f"t={row.get('time_s')}s"
+        )
+        missing = row.get("missing_nets") or []
+        if missing:
+            click.echo(f"         missing: {', '.join(missing[:12])}")
+    click.echo(f"  summary → {summary.get('out_json')}")
+    if fail_on_fail and not summary.get("passed"):
+        sys.exit(2)
+
+
 @main.command("dashboard")
 @click.option(
     "--config",
