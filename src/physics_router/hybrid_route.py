@@ -277,6 +277,9 @@ def _deeppcb_eighty_twenty_route(
     def weight(n: str) -> float:
         return float(config.weight_for_net(n)) if config else 1.0
 
+    # Prefer critical/HS and local 2-pin first within stage (weight already
+    # in key). Grid: routine starts at 0.15; residual failures retry at 0.10
+    # (see residual pass below) — DeepPCB 80/20: easy nets must go 100%.
     stages: list[tuple[str, list[str], float]] = [
         (
             "routine_2pin",
@@ -422,14 +425,17 @@ def _deeppcb_eighty_twenty_route(
                 f"80_20 {name}: parallel committed {wave_ok}/{len(nets)} "
                 f"(workers={min(n_workers, len(nets))})"
             )
-            # Residual serial pass for anything still open in this stage
+            # Residual serial pass for anything still open in this stage.
+            # Fine-grid escape pass (0.10 mm) for 2-pin leftovers — the common
+            # local_rc failure mode on dense passive clusters.
             leftover = [n for n in nets if n not in done]
             if leftover:
+                residual_grid = 0.10 if name == "routine_2pin" else grid
                 partial = clearance_aware_route(
                     board,
                     config,
                     clearance_mm=cl,
-                    grid_mm=grid,
+                    grid_mm=residual_grid,
                     soft_fallback=False,
                     prefer_native=True,
                     allow_vias=True,
@@ -444,8 +450,45 @@ def _deeppcb_eighty_twenty_route(
                 )
                 more = _commit_from_partial(partial, leftover, f"80_20_{name}")
                 result.notes.append(
-                    f"80_20 {name}: serial residual {more}/{len(leftover)}"
+                    f"80_20 {name}: serial residual {more}/{len(leftover)} "
+                    f"(grid={residual_grid})"
                 )
+                # Second residual at 0.08 mm only for still-open 2-pin
+                if name == "routine_2pin":
+                    still = [n for n in leftover if n not in done]
+                    if still:
+                        partial2 = clearance_aware_route(
+                            board,
+                            config,
+                            clearance_mm=cl,
+                            grid_mm=0.08,
+                            soft_fallback=False,
+                            prefer_native=True,
+                            allow_vias=True,
+                            net_order=still,
+                            nets_filter=still,
+                            seed_result=result
+                            if (result.segments or result.areas)
+                            else None,
+                            style="isotropic",
+                            design_rules=rules,
+                            skip_hybrid=True,
+                            routing_plan=routing_plan,
+                            progress_cb=progress_cb,
+                        )
+                        more2 = _commit_from_partial(
+                            partial2, still, f"80_20_{name}_fine"
+                        )
+                        result.notes.append(
+                            f"80_20 {name}: fine residual {more2}/{len(still)} "
+                            f"(grid=0.08)"
+                        )
+                        for n in still:
+                            if n not in done:
+                                result.notes.append(
+                                    f"80_20 pin_escape_fail: {n} "
+                                    f"pins={by_pins.get(n, 0)}"
+                                )
             continue
 
         partial = clearance_aware_route(
@@ -782,7 +825,17 @@ def _completion_recovery_pass(
             result.notes.append(
                 f"completion_recovery: rip {len(rip)} multipin for 2-pin salvage"
             )
-        _merge_recovered(open_2, 0.12, "2pin_salvage")
+        _merge_recovered(open_2, 0.10, "2pin_salvage")
+        # Still open? one more pass at 0.08 mm (escape geometry)
+        open_2b = [
+            n
+            for n in open_2
+            if not _net_fully_connected(
+                board, n, result.segments, result.vias, areas=result.areas
+            )
+        ]
+        if open_2b:
+            _merge_recovered(open_2b, 0.08, "2pin_escape")
         # Re-route the ripped multipin after 2-pin salvage
         mid = sorted(
             [n for n in rip if n in board.nets],
@@ -791,16 +844,36 @@ def _completion_recovery_pass(
         if mid:
             _merge_recovered(mid, 0.15, "multipin_restore")
 
+    # Analog / high-speed mid nets first in recovery (CH*/DAC*/CLK/SPI)
+    def _mid_priority(n: str) -> tuple:
+        nu = n.upper()
+        if nu.startswith("CH") or nu.startswith("DAC") or nu.startswith("ADC"):
+            return (0, len(board.nets.get(n) or []), n)
+        if any(k in nu for k in ("CLK", "SCLK", "MOSI", "MISO", "CS", "SPI", "USB")):
+            return (1, len(board.nets.get(n) or []), n)
+        return (2, len(board.nets.get(n) or []), n)
+
     open_mid = sorted(
         [
             n
             for n in _open_nets(board, result)
             if 3 <= len(board.nets.get(n) or []) <= 12
         ],
-        key=lambda n: (len(board.nets.get(n) or []), n),
+        key=_mid_priority,
     )[:40]
     if open_mid:
         _merge_recovered(open_mid, 0.12, "mid_retry")
+        # Analog residual at finer grid
+        open_analog = [
+            n
+            for n in open_mid
+            if n.upper().startswith(("CH", "DAC", "ADC"))
+            and not _net_fully_connected(
+                board, n, result.segments, result.vias, areas=result.areas
+            )
+        ]
+        if open_analog:
+            _merge_recovered(open_analog, 0.10, "analog_fine")
 
     result = _try_power_pours(board, config, rules, result)
     result.unrouted_nets = _open_nets(board, result)

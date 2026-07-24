@@ -1284,7 +1284,12 @@ def _net_fully_connected(
 def _dense_grid_for_net(
     board: BoardModel, net: str, base_grid: float, attempt: int = 0
 ) -> float:
-    """Finer grid for multipin/matrix nets; denser still on retries."""
+    """Finer grid for multipin/matrix nets; denser still on retries.
+
+    Two-pin local_rc failures on dense passive clusters are usually *escape*
+    resolution (pad-to-pad on 0.15–0.2 mm), not capacity — push to 0.10 mm
+    quickly on retries so the routine 80% does not leak.
+    """
     g = float(base_grid)
     pins = len(board.nets.get(net) or [])
     if pins >= 12 or _is_matrix_net(net):
@@ -1293,8 +1298,13 @@ def _dense_grid_for_net(
         g = min(g, 0.25)
     if attempt >= 1:
         g = min(g, 0.15)
+    if attempt >= 2 and pins <= 2:
+        # Local RC / GPIO 2-pin: escape geometry needs sub-0.15 mm
+        g = min(g, 0.10)
     if attempt >= 3:
-        g = min(g, 0.12)
+        g = min(g, 0.12 if pins > 2 else 0.10)
+    if attempt >= 4 and pins <= 2:
+        g = min(g, 0.08)
     return max(0.08, g)
 
 
@@ -1307,7 +1317,12 @@ def _native_expansions_for_net(board: BoardModel, net: str, attempt: int = 0) ->
         base = 28000
     elif pins >= 6:
         base = 16000
+    elif pins <= 2:
+        # Short nets still need budget when pad escapes are tight
+        base = 12000
     base += attempt * 4000
+    if pins <= 2 and attempt >= 1:
+        base += 8000
     return min(40000, base)
 
 
