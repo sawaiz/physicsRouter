@@ -1,8 +1,12 @@
 # Route diagnostics — mppc_v1.3
 
-_Generated 2026-07-23T14:40:56_
+_Generated 2026-07-23T14:40:56 (Mac capacity effort ~0.45 — historical snapshot)._
 
-## Summary
+> **Newer baseline:** Windows RTX 3070 full golden **D / 39.41 · 59/85 (69.4%) · 0 DRC**
+> (~98 min, effort 0.55). Segment microbenches and six-lever plan:
+> [SCORE_ROADMAP.md](SCORE_ROADMAP.md) · [MPPC_BENCHMARK.md](MPPC_BENCHMARK.md).
+
+## Summary (this snapshot)
 
 - Completion: **0.4824** (41 ok · 44 open)
 - Grade / score: **F** / 18.24

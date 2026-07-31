@@ -1,9 +1,10 @@
 # Routing difficulties & how to raise golden grades
 
 **TL;DR:** Grades are driven almost entirely by **completion vs human copper**
-with **0 hard DRC**. Open nets beat shorts. On mppc v1.3 the AR got **48% /
-grade F** with clean DRC — the gap is *which nets never found a legal path*,
-not aesthetics.
+with **0 hard DRC**. Open nets beat shorts. Latest mppc v1.3 desktop golden:
+**69.4% / grade D (39.41)** with clean DRC (was F/18 at 48%). The gap is still
+*which nets never found a legal path*, not aesthetics. Six-lever plan:
+[SCORE_ROADMAP.md](SCORE_ROADMAP.md).
 
 Every golden / capacity run now writes:
 
@@ -41,43 +42,64 @@ shorter tracks while nets are open.
 
 ## Case study: mppcInterface v1.3 (commit 580c61d)
 
-Measured capacity run (~28 min, effort 0.45, dense-board hybrid caps):
+### Latest: Windows RTX 3070 (~98 min, effort 0.55, DeepPCB 80/20)
 
 | | Human | AR |
 |--|------:|---:|
-| Complete nets | 85 | **41** |
+| Complete nets | 85 | **59** (69.4%) |
+| Hard DRC | 0 | **0** |
+| Segments / vias / length | 1199 / 155 / 1932 mm | 369 / 110 / 778 mm |
+| Areas (pours) | **61** | **2** |
+| Grade | golden | **D (39.41)** |
+
+Staging notes: routine 2-pin ~11/20 · mid 3–6 **46/59** · heavy **1/6** · recovery +1.
+
+### Earlier Mac baseline (~28 min, effort 0.45)
+
+| | Human | AR |
+|--|------:|---:|
+| Complete nets | 85 | **41** (48%) |
 | Hard DRC | 0 | **0** |
 | Segments / vias / length | 1199 / 155 / 1932 mm | 318 / 94 / 805 mm |
 | Areas (pours) | **61** | **3** |
 | Grade | golden | **F (18.24)** |
 
-### What failed (categories)
+### What still fails (latest D run)
 
-| Category | Count | Examples |
-|----------|------:|----------|
-| **power_gnd** | high impact | `GND`, `+5V`, `+3V3`, `HV` |
-| **analog_channel** | all open | `CH0`–`CH7`, most `DAC*` |
-| **digital_bus** | SPI/FPGA | `SCLK`, `MOSI`, `MISO`, `CLK`, `~CS_*` |
-| **gpio** | open | `GPIO17`…`GPIO27` |
-| **local_rc** | some open | `Net-(R*-Pad2)`, `Net-(C11-Pad1)` |
+| Category | Impact | Examples |
+|----------|--------|----------|
+| **power_gnd** | high | `GND`, `+5V`, `+3V3`, `HV`, `+5V-A` |
+| **analog_channel** | medium | subset of `CH*` / `DAC*` (empty-board analog is 75%!) |
+| **digital_bus** | medium | `SCLK`, `MOSI`, `MISO`, `CLK`, `~CS_*` |
+| **gpio** / LED | medium | `GPIO18`…, `LED-0` |
+| **local_rc** | low (2 open) | `Net-(R2-Pad2)`, `Net-(C12-Pad1)` — empty-board local_rc is **100%** |
 
 **Power / pour gap:** human GND alone is **521 mm** of copper + large zones;
-AR left GND with **0** tracks. The hybrid *power* phase only reserved a few
-rails (`+5V-A`, `-5V`) which then **over-length** vs human (corridor hogging:
-`+5V-A` 302 mm vs 85 mm human). Digital `+5V` was **missing from config**
-(default weight 1.0) so it lost priority — fixed in
+AR left GND with **0** tracks. Power rails that do commit often **over-length**
+vs human (corridor hogging). Config weights for `+5V`/`+3V3`/GND are set in
 `examples/mppc-interface/placement_config.yaml`.
+
+### Segment microbenches (empty board — use these to iterate)
+
+| Segment | Result | Insight |
+|---------|--------|---------|
+| `local_rc` | 6/6 @ 0.5 s | Not a hard problem in isolation |
+| `2pin` + 0.10 residual | 16/20 @ ~15 s | Residual shipped; remaining = long GPIO/LED/FPGA |
+| `analog` | 12/16 @ ~8 min | Channels are routable; full golden starves them |
+
+```bash
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment 2pin
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment analog
+```
 
 ### Pipeline evidence (from notes)
 
-1. **Critical phase** (5 nets): partial; several left unrouted.  
-2. **General phase** (74 nets): native batch committed **37/74**, then
-   **ripup(empty)** loops for GPIO / FPGA / DAC peers — no legal alternate
-   after 3 attempts.  
-3. **Manufacturing gate:** 41/85 complete, **0** native DRC (policy OK).  
-4. **Global capacity:** final_overflow still ~50; mesh_overflow_nodes thousands.  
-5. **No matrix bucket** on this board (power=6, critical=5, general=74) —
-   multipin CH/DAC treated as general, coarser grid.
+1. **DeepPCB 80/20** stages by pin count (not classic power/critical/matrix order).  
+2. **Routine 2-pin** parallel wave + **fine residual 0.10/0.08 mm** (lever 1 partial).  
+3. **Mid 3–6 pin** carries most of the grade (46/59 on latest golden).  
+4. **Manufacturing gate:** 0 native hard DRC with open nets (policy OK).  
+5. **Global capacity:** overflow residual still high; mesh_overflow_nodes thousands.  
+6. **CH/DAC** classified matrix when pins ≥ 3; still need corridor negotiation.
 
 ### Runtime difficulties (engineering)
 
@@ -85,9 +107,10 @@ rails (`+5V-A`, `-5V`) which then **over-length** vs human (corridor hogging:
 |-------|---------|---------------------------|
 | Hard process deadline | Worker killed mid-net → no `ar_route.json` | `timeout_s=0`, `hard_deadline=False` on mppc script |
 | ThreadPool order variants + PathFinder | GIL thrash, 20+ min no copper | Cap variants / skip negotiated congestion when nets ≥ 70 |
-| Native ExactMap cost | ~25 min in `GridMap::segment_blocked` | Fine for quality; log stage `elapsed_s`; optional coarser grid early |
-| Empty rip-up | Notes show `ripup(empty)` | Need better peer selection / congestion costs / section replan |
-| Zone under-use | 3 vs 61 areas | Post-legal pour stage + physics feedback |
+| Native ExactMap cost | Long `segment_blocked` at fine grid | Coarse-to-fine residual; log stage `elapsed_s` |
+| Empty rip-up | Notes show `ripup(empty)` | **Next:** conflict-directed victims (SCORE_ROADMAP #3) |
+| Zone under-use | 2 vs 61 areas | **Next:** pour stage (SCORE_ROADMAP #2) |
+| 2-pin residual | Was ~11/20 routine | **Done partial:** 0.10 residual → 16/20 empty-board |
 
 ---
 
@@ -139,14 +162,15 @@ escape, via profile, or true blockage).
 - Layer-sequence retry from global section assignment.  
 - Shared-escape vias for multipin fanout before long-haul.
 
-### 5. Strategy mis-bucket (no matrix)
+### 5. Strategy mis-bucket (matrix / analog)
 
-**Cause:** CH*/DAC* not classified as dense matrix multipin.
+**Cause:** Historically CH*/DAC* treated as general; corridors sealed by early nets.
 
 **Improve:**
 
-- Auto matrix when pin count ≥ 3 and not power.  
-- Finer grid (0.15) for channel fanout.
+- Auto matrix when pin count ≥ 3 and name matches CH/DAC (done in `classify_board`).  
+- Finer grid (0.15) + shared corridor plan for channel fanout.  
+- Empty-board analog microbench already 12/16 — push remainder with lever #3/#4.
 
 ### 6. Global overflow residual
 
@@ -189,13 +213,14 @@ Inspect:
 
 ## Target roadmap to higher mppc grades
 
-| Goal | What must change |
-|------|------------------|
-| **D (~35)** | ~65% completion — route +5V/+3V3/GND stubs + half of CH/DAC |
-| **C (~55)** | ~85% — full SPI + GPIO + remaining analog |
-| **B (~75)** | ~95% — pours for GND/power, low bloat |
+| Goal | Status / what must change |
+|------|---------------------------|
+| **D (~35)** | **Reached** at 69.4% / 39.41 (Win desktop) |
+| **C (~55)** | ~85% — finish 2-pin GPIO, remaining analog, SPI; pours start helping |
+| **B (~75)** | ~95% — pours for GND/power, conflict rip-up, low bloat |
 | **A (~90)** | ≥99% + length/via near human + KiCad DRC clean |
 
+Detailed levers: [SCORE_ROADMAP.md](SCORE_ROADMAP.md).  
 Policy never changes: **0 hard DRC** is required at every step.
 
 ### DeepPCB 80/20 (2026 essays)

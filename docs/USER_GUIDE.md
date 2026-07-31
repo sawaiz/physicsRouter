@@ -31,7 +31,18 @@ Requires **tkinter** (usually bundled with Python). If tkinter is missing, routi
 
 ## 2. CLI workflows
 
-Full flag list: [CLI.md](CLI.md).
+Full flag list: [CLI.md](CLI.md). Score plan: [SCORE_ROADMAP.md](SCORE_ROADMAP.md).
+
+### Segment microbenches (mppc grade work)
+
+Full capacity goldens take ~1–2 h. Iterate with segments first:
+
+```bash
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment local_rc
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment 2pin
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment analog
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment hspeed
+```
 
 ### Headless CI on any board
 
@@ -39,7 +50,6 @@ Full flag list: [CLI.md](CLI.md).
 physics-router smoke --pcb board.kicad_pcb --fail-on-drc --min-grade D
 echo $?   # 0 ok · 2 DRC · 3 unrouted · 4 grade
 ```
-
 ### Place → route → DRC
 
 ```bash

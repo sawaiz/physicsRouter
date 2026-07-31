@@ -20,6 +20,16 @@ physics-router --help
 | `import-nets` | Build `placement_config.yaml` from PCB/sch |
 | `init-config` | Write example YAML |
 
+### Segment microbenches (not a CLI subcommand)
+
+Fast mppc segment loops (prefer over full golden while iterating):
+
+```bash
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment 2pin|local_rc|analog|hspeed|power
+```
+
+See [SCORE_ROADMAP.md](SCORE_ROADMAP.md) · [MPPC_BENCHMARK.md](MPPC_BENCHMARK.md).
+
 ### `smoke`
 
 ```bash

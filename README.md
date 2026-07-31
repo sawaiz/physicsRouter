@@ -52,21 +52,30 @@ and a fair manufacturing-style score (rip human copper → re-route → grade).
 | Cut preflight | feasible (0 saturated cuts @ 0.3 mm pitch, 4 layers) |
 | Via profile (auto) | `via_0p6` · ~99% SMD escape reach · shared-escape savings ~19% |
 
-### Latest AR scorecard (DeepPCB 80/20 · capacity · ~37 min)
+### Latest AR scorecard (DeepPCB 80/20 · capacity · Win RTX 3070 · ~98 min)
 
 | Metric | Human | Autorouter |
 |--------|------:|-----------:|
 | Grade / score | — | **D / 39.41** (was F / 18) |
 | Completion vs human nets | 100% | **69.4%** (59/85) |
 | Hard DRC | 0 | **0** (open > short) |
-| Segments · vias · length | 1199 · 155 · 1932 mm | 367 · 110 · 782 mm |
+| Segments · vias · length | 1199 · 155 · 1932 mm | 369 · 110 · 778 mm |
 | Areas / pours | 61 | 2 |
-| Wall time | hand | ~35 min staged search |
+| Wall time | hand | ~98 min desktop OpenCL |
 
-**Staging (DeepPCB 80/20):** routine 2-pin 11/20 · mid 3–6 pin 46/59 · heavy multipin 1/6 · recovery +1.  
-Still open: mostly power multipin (`GND`, `+5V`, `+3V3`, `HV`, `+5V-A`) plus some CH/DAC/SPI/GPIO.
+**Staging (DeepPCB 80/20 on golden):** routine 2-pin ~11/20 · mid 3–6 pin 46/59 · heavy 1/6 · recovery +1.  
+Still open: power multipin (`GND`, `+5V`, `+3V3`, `HV`, `+5V-A`) plus CH/DAC/SPI/GPIO.
 
-**Why not A yet / how to improve:** [docs/ROUTING_DIFFICULTIES.md](docs/ROUTING_DIFFICULTIES.md) ·
+**Segment microbenches** (empty board, minutes — prefer these over full golden while iterating):
+
+| Segment | Empty-board completion | Notes |
+|---------|-----------------------:|-------|
+| `local_rc` | **100%** (6/6) | Not the main leak |
+| `2pin` + fine residual | **80%** (16/20) | Residual 0.10 mm shipped; open GPIO/LED/FPGA |
+| `analog` CH*/DAC* | **75%** (12/16) | Corridor starvation on full golden |
+
+**Why not A yet / how to improve:** **[docs/SCORE_ROADMAP.md](docs/SCORE_ROADMAP.md)** (six levers) ·
+[docs/ROUTING_DIFFICULTIES.md](docs/ROUTING_DIFFICULTIES.md) ·
 [docs/DEEPPCB_NOTES.md](docs/DEEPPCB_NOTES.md) ·
 auto logs `route_diagnostics.{json,md}` on every golden-eval ·
 mppc snapshot [docs/mppc_v13_route_diagnostics.md](docs/mppc_v13_route_diagnostics.md).
@@ -91,21 +100,26 @@ Full write-up: **[docs/MPPC_BENCHMARK.md](docs/MPPC_BENCHMARK.md)** · artifacts
 | Physics | SPICE / OpenEMS proxies only **after** complete + legal copper |
 
 ```bash
-# Reproduce the flagship run
+# Reproduce the flagship run (slow — ~1–2 h)
 bash scripts/build_native.sh
 python scripts/run_mppc_benchmark.py
 
-# Or explicit capacity pipeline
+# Fast segment checks while raising grade (seconds–minutes)
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment 2pin
+PYTHONPATH=src:native/build python scripts/microbench_segments.py --segment analog
+
+# Explicit capacity pipeline (native progress window; add --no-ui for CI)
 physics-router route \
   --pcb examples/mppc-interface/mppcInterface_v1.3.kicad_pcb \
   --config examples/mppc-interface/placement_config.yaml \
-  --pipeline capacity --effort 0.5 \
+  --pipeline capacity --effort 0.55 \
   --out-json /tmp/mppc_ar.json --out-pcb /tmp/mppc_ar.kicad_pcb
 
 physics-router golden-eval --manifest examples/mppc-interface/manifest.yaml
 ```
 
 Artifacts land under `viewer/runs/mppc_v1.3/` (`human_route.json`, topology, pin-access, benchmark row).
+Microbench JSON: `viewer/runs/microbench/`.
 
 ---
 
