@@ -470,7 +470,12 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
                        std::vector<Segment> &out_segs, std::vector<Via> &out_vias,
                        std::string &method,
                        const HistoryCostMap *history = nullptr,
-                       const std::vector<RectObs> *pad_obstacles = nullptr) {
+                       const std::vector<RectObs> *pad_obstacles = nullptr,
+                       double escape_width = 0.0) {
+  // Neck-down: the pad-escape stub may run at the fab minimum while the main
+  // corridor keeps the net's nominal width. Never wider than nominal.
+  const double stub_width =
+      (escape_width > 1e-9 && escape_width < width) ? escape_width : width;
   std::vector<int> blocked_layers;
   int alts = 0;
 
@@ -697,13 +702,13 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
           if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
             continue;
           method = "two_via_reserved_access";
-          emit_poly(p0, terminal_layer, net_id, width, out_segs);
-          paint_poly(grid, p0, terminal_layer, net_id, width,
+          emit_poly(p0, terminal_layer, net_id, stub_width, out_segs);
+          paint_poly(grid, p0, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           emit_poly(pm, route_layer, net_id, width, out_segs);
           paint_poly(grid, pm, route_layer, net_id, width, cfg.clearance_mm);
-          emit_poly(p1, terminal_layer, net_id, width, out_segs);
-          paint_poly(grid, p1, terminal_layer, net_id, width,
+          emit_poly(p1, terminal_layer, net_id, stub_width, out_segs);
+          paint_poly(grid, p1, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           for (const auto &site : {va, vb}) {
             Via via;
@@ -744,13 +749,13 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
           if (p0.size() < 2 || pm.size() < 2 || p1.size() < 2)
             continue;
           method = "two_via_escape";
-          emit_poly(p0, terminal_layer, net_id, width, out_segs);
-          paint_poly(grid, p0, terminal_layer, net_id, width,
+          emit_poly(p0, terminal_layer, net_id, stub_width, out_segs);
+          paint_poly(grid, p0, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           emit_poly(pm, route_layer, net_id, width, out_segs);
           paint_poly(grid, pm, route_layer, net_id, width, cfg.clearance_mm);
-          emit_poly(p1, terminal_layer, net_id, width, out_segs);
-          paint_poly(grid, p1, terminal_layer, net_id, width,
+          emit_poly(p1, terminal_layer, net_id, stub_width, out_segs);
+          paint_poly(grid, p1, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           for (const auto &site : {va, vb}) {
             Via via;
@@ -824,17 +829,17 @@ static bool route_edge(GridMap &grid, const RouteConfig &cfg, Vec2 a, Vec2 b, in
           if (middle.size() < 2)
             continue;
           method = "two_via_fanout";
-          emit_poly(start_escape.stub, terminal_layer, net_id, width,
+          emit_poly(start_escape.stub, terminal_layer, net_id, stub_width,
                     out_segs);
-          paint_poly(grid, start_escape.stub, terminal_layer, net_id, width,
+          paint_poly(grid, start_escape.stub, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           emit_poly(middle, route_layer, net_id, width, out_segs);
           paint_poly(grid, middle, route_layer, net_id, width,
                      cfg.clearance_mm);
           auto goal_stub = goal_escape.stub;
           std::reverse(goal_stub.begin(), goal_stub.end());
-          emit_poly(goal_stub, terminal_layer, net_id, width, out_segs);
-          paint_poly(grid, goal_stub, terminal_layer, net_id, width,
+          emit_poly(goal_stub, terminal_layer, net_id, stub_width, out_segs);
+          paint_poly(grid, goal_stub, terminal_layer, net_id, stub_width,
                      cfg.clearance_mm);
           for (const auto &site : {start_escape.site, goal_escape.site}) {
             Via via;
@@ -1304,7 +1309,7 @@ RouteResult route_board(const std::vector<NetSpec> &nets, const RouteConfig &cfg
                              section_layers, from_allowed, to_allowed,
                              from_access, to_access, net.width_mm,
                              edge_segments, edge_vias, method, history_ptr,
-                             &pad_obstacles);
+                             &pad_obstacles, net.escape_width_mm);
         if (!ok)
           continue;
         in[candidate.to] = 1;

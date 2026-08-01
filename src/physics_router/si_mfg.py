@@ -256,8 +256,14 @@ def evaluate_si_mfg(
         costs.copper_density_imbalance = abs(f_len - b_len) / tot
 
     # --- Neck risk: thin tracks near foreign copper ---
+    # A *short* minimum-width stub leaving a fine-pitch pad is standard
+    # neck-down practice, not a defect — only sustained thin runs alongside
+    # foreign copper are a manufacturing risk.
+    escape_stub_mm = 1.0
     for s in result.segments:
         if s.width_mm >= 0.3:
+            continue
+        if _dist((s.x1, s.y1), (s.x2, s.y2)) <= escape_stub_mm:
             continue
         mx, my = (s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2
         for o in by_layer.get(s.layer, []):

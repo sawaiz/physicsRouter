@@ -17,6 +17,7 @@ The result is deliberately conservative:
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -181,6 +182,61 @@ class PinAccessPlan:
             else 0.0,
             "clusters": clusters[:200],
         }
+
+    def escape_scarcity(self, *, region_mm: float = 1.0) -> dict[str, float]:
+        """Per-net escape scarcity — higher means *route this net earlier*.
+
+        A net is constrained when its pads have few legal escape sites and those
+        sites sit in a region many **other** nets must also escape through
+        (dense QFN/BGA edges). Measured on mppcInterface: GPIO/LED/FPGA nets off
+        one QFN each route fine in isolation but fail in a 20-net batch, because
+        alphabetical / pin-count order lets unconstrained nets consume the
+        shared pad-ring corridor first.
+
+        Classic most-constrained-variable heuristic: allocate scarce escape
+        resources before abundant ones.
+        """
+        # Bucket access sites by coarse region, tracking distinct competing nets
+        # (cross-net contention — unlike shared_escape_resources, which clusters
+        # within a single net).
+        cell = max(0.05, float(region_mm))
+        region_nets: dict[tuple[int, int], set[str]] = {}
+        # A dense package's pad ring is one shared resource: every net escaping
+        # the same component competes for the same finite band of board.
+        component_nets: dict[str, set[str]] = {}
+        for net, pads in self.by_net.items():
+            for pad in pads:
+                if pad.candidates:
+                    component_nets.setdefault(pad.ref, set()).add(net)
+                for site in pad.candidates:
+                    key = (int(math.floor(site.x / cell)), int(math.floor(site.y / cell)))
+                    region_nets.setdefault(key, set()).add(net)
+
+        scarcity: dict[str, float] = {}
+        for net, pads in self.by_net.items():
+            score = 0.0
+            for pad in pads:
+                if not pad.candidates:
+                    # No candidates only constrains when the pad needs an escape;
+                    # a thru-hole pad already spans every copper layer.
+                    if "spans all copper" not in (pad.reason or ""):
+                        score += 10.0
+                    continue
+                local = 0
+                for site in pad.candidates:
+                    key = (int(math.floor(site.x / cell)), int(math.floor(site.y / cell)))
+                    local = max(local, len(region_nets.get(key, ())) - 1)
+                package = max(0, len(component_nets.get(pad.ref, ())) - 1)
+                # Few escapes, many local rivals, and a crowded package ring all
+                # push a net earlier in the allocation order.
+                score += (1.0 + local + package) / float(len(pad.candidates))
+            scarcity[net] = round(score, 4)
+        return scarcity
+
+    def order_by_escape_scarcity(self, nets: Iterable[str]) -> list[str]:
+        """Most-constrained-escape nets first; deterministic tie-break by name."""
+        scarcity = self.escape_scarcity()
+        return sorted(nets, key=lambda n: (-scarcity.get(n, 0.0), n))
 
     def to_dict(self) -> dict[str, Any]:
         shared = self.shared_escape_resources()

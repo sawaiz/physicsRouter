@@ -140,6 +140,68 @@ def density_congestion(board: BoardModel, cell_mm: float = 5.0) -> float:
     return var + peak * 0.5
 
 
+def escape_congestion(
+    board: BoardModel,
+    config: PlacementConfig | None = None,
+    *,
+    cell_mm: float = 2.0,
+    track_pitch_mm: float = 0.3,
+) -> float:
+    """Routability estimate: pad escape **demand** vs routing **capacity**.
+
+    ``density_congestion`` counts whole components in coarse 5 mm cells, which
+    cannot see that a fine-pitch package has more pads wanting out than there
+    are lanes to carry them. Placement that looks optimal on wirelength can be
+    unroutable for exactly that reason (measured on mppcInterface: every failing
+    2-pin net escaped one QFN32).
+
+    Demand  = routed pads whose copper must leave the cell.
+    Capacity= lanes crossing the cell boundary ≈ (cell/pitch) × copper layers.
+    Cost    = Σ overflow², so a few saturated cells dominate a broadly busy board
+    — the same overflow shape the capacity mesh uses during global routing.
+    """
+    if not board.components:
+        return 0.0
+    from physics_router.kicad_io import local_to_board
+
+    layers = max(1, len(board.copper_layers or ["F.Cu", "B.Cu"]))
+    cell = max(0.5, float(cell_mm))
+    pitch = max(0.05, float(track_pitch_mm))
+
+    # Only pads carrying a net need an escape.
+    routed_pads: dict[tuple[int, int], int] = {}
+    for ref, component in board.components.items():
+        pads = list(getattr(component, "pads", None) or [])
+        if not pads:
+            continue
+        for pad in pads:
+            if not pad.get("net"):
+                continue
+            try:
+                px, py = local_to_board(
+                    component.x_mm,
+                    component.y_mm,
+                    component.rotation_deg,
+                    float(pad.get("x") or 0.0),
+                    float(pad.get("y") or 0.0),
+                )
+            except Exception:  # noqa: BLE001 - degrade to component center
+                px, py = component.x_mm, component.y_mm
+            key = (int(math.floor(px / cell)), int(math.floor(py / cell)))
+            routed_pads[key] = routed_pads.get(key, 0) + 1
+
+    if not routed_pads:
+        return 0.0
+    # Lanes available to leave one cell, summed over copper layers.
+    capacity = (cell / pitch) * layers
+    overflow = 0.0
+    for demand in routed_pads.values():
+        excess = demand - capacity
+        if excess > 0:
+            overflow += excess * excess
+    return overflow
+
+
 def thermal_spread(board: BoardModel) -> float:
     """Penalize clustering of dissipating parts (sum of inverse distance * power)."""
     hot = [c for c in board.components.values() if c.power_dissipation_w > 0]
@@ -460,6 +522,7 @@ def _total_from_weights(w: object, sb: ScoreBreakdown) -> float:
         + float(getattr(w, "overlap_penalty", 1.0)) * sb.overlap_penalty
         + float(getattr(w, "region_violation", 1.0)) * sb.region_violation
         + float(getattr(w, "density_congestion", 1.0)) * sb.density_congestion
+        + float(getattr(w, "escape_congestion", 2.5)) * sb.escape_congestion
         + float(getattr(w, "thermal_spread", 1.0)) * sb.thermal_spread
         + float(getattr(w, "emi_proxy", 1.0)) * sb.emi_proxy
         + float(getattr(w, "spice_score", 1.0)) * sb.spice_score
@@ -485,6 +548,7 @@ def geometric_score(board: BoardModel, config: PlacementConfig) -> ScoreBreakdow
         overlap_penalty=overlap_penalty(board),
         region_violation=region_violation(board, config),
         density_congestion=density_congestion(board),
+        escape_congestion=escape_congestion(board, config),
         thermal_spread=thermal_spread(board),
         emi_proxy=emi_proxy(board, config),
         ir_drop=ir,

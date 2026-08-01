@@ -73,6 +73,10 @@ struct NetSpec {
   std::vector<std::vector<Vec2>> anchor_via_sites;
   double priority = 1.0;
   double width_mm = 0.25;
+  // Necked-down width for the short pad-escape stub. Standard practice at
+  // fine-pitch packages: leave the pad at the fab minimum, widen once clear of
+  // the pad ring. 0 = use width_mm (no neck-down).
+  double escape_width_mm = 0.0;
   std::vector<int> preferred_layers; // empty = all
   bool use_copper_area = false;
   int area_layer = -1; // -1 = first preferred layer

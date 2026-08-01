@@ -404,6 +404,15 @@ def route_board_native(
         else:
             ns.width_mm = board_track_width
             nc = ""
+        # Neck-down: leave the pad at the fab minimum, widen once clear of the
+        # pad ring. Only meaningful when the net's run width is wider.
+        if hasattr(ns, "escape_width_mm"):
+            escape_floor = float(
+                rules.get("min_track_width_mm") or board_track_width
+            )
+            ns.escape_width_mm = (
+                escape_floor if escape_floor < ns.width_mm else 0.0
+            )
         planned_layers = (
             routing_plan.preferred_layers(name) if routing_plan is not None else []
         )

@@ -41,6 +41,7 @@ PYBIND11_MODULE(pr_native, m) {
       .def_readwrite("anchor_via_sites", &pr::NetSpec::anchor_via_sites)
       .def_readwrite("priority", &pr::NetSpec::priority)
       .def_readwrite("width_mm", &pr::NetSpec::width_mm)
+      .def_readwrite("escape_width_mm", &pr::NetSpec::escape_width_mm)
       .def_readwrite("preferred_layers", &pr::NetSpec::preferred_layers)
       .def_readwrite("use_copper_area", &pr::NetSpec::use_copper_area)
       .def_readwrite("area_layer", &pr::NetSpec::area_layer)

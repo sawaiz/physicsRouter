@@ -117,6 +117,21 @@ class DesignRules(BaseModel):
                         )
         return max(w, self.constraints.min_track_width_mm)
 
+    def escape_track_width_for_net(
+        self, net: str, config: PlacementConfig | None = None
+    ) -> float:
+        """Necked-down width for the short pad-escape stub.
+
+        Standard layout practice for fine-pitch parts: a trace leaves the pad at
+        the fab minimum width, then widens once clear of the pad ring. Nominal
+        width is a *run* rule; forcing it through the escape makes wide power and
+        boosted nets unroutable at a QFN edge even though the geometry is legal.
+
+        Never returns less than the fab floor, so necked copper still passes DRC.
+        """
+        nominal = self.track_width_for_net(net, config)
+        return min(nominal, self.constraints.min_track_width_mm)
+
     def via_for_net(self, net: str, config: PlacementConfig | None = None) -> tuple[float, float]:
         cls = self._class_for(net, config)
         if cls:

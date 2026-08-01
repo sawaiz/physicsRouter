@@ -73,6 +73,66 @@ python scripts/run_mppc_benchmark.py
 
 ---
 
+## Root cause of the 2-pin residual (measured 2026-08)
+
+The residual is **not** missing escape geometry. Every remaining failure
+(`GPIO17/18/23`, `LED-0`, `~FPGA_{RST}`) terminates on **U9 = ICE40-LP384
+QFN32**, and each routes **grade A in isolation**; all five together route
+**5/5 in 0.4 s** when given priority. The escape machinery (`pin_access` outward
+`_direction_order` + QFN `_dense_radii`, native `two_via_fanout`) already
+reproduces the human oracle — pin-access proposes `(-3.19, 6.16)` for GPIO17
+where the human via sits at `(-3.15, 6.15)`.
+
+They fail **only in a batch**: unconstrained nets consume the QFN pad-ring
+corridor first. This is escape-resource *contention* — an allocation-order
+problem, not a search-quality one.
+
+Hard geometry behind it: U9 pitch 0.50 mm, pad width 0.25 mm ⇒ **0.25 mm gap**,
+while track 0.15 + 2×0.15 clearance needs **0.45 mm**. Routing *between*
+adjacent QFN pads is impossible at these rules — which is why refining
+0.10 → 0.08 mm returned exactly +0. Escape must go radially outward, then via.
+
+### Lever 1 — escape scarcity: path-dependent, ships as API only
+
+`PinAccessPlan.escape_scarcity()` / `.order_by_escape_scarcity()` implement the
+most-constrained-variable heuristic (few escapes × local rivals × package-ring
+crowding).
+
+| Path | Alphabetical | Escape-scarcity |
+|------|-------------:|----------------:|
+| direct native batch (`route_board_native`, exclusive) | 12/20 | **15/20** (0.7 s) |
+| per-net `clearance_aware_route` (80/20 stage shape) | 15/20 | **12/20** |
+
+It **helps the batch path and hurts the staged path**, which applies its own
+priority and rip-up. It is therefore *not* wired into
+`_deeppcb_eighty_twenty_route`; wire it only behind an A/B on that path. Worth
+noting the batch path reaches 15/20 in **0.7 s** where the two-pass microbench
+needs ~310 s for the same 15.
+
+### Lever 2 — neck-down (shipped)
+
+`DesignRules.escape_track_width_for_net()` + native `NetSpec.escape_width_mm`:
+the pad-escape stub runs at the fab floor while the corridor keeps nominal
+width, never below the DRC minimum. Verified on `+5V-A`: 35 stub segments
+@0.15 mm and 21 run segments @0.30 mm. `si_mfg` no longer charges `neck_risk`
+for stubs ≤1 mm — a short minimum-width escape is standard practice, not a
+defect.
+
+### Lever 3 — routability-scored placement (shipped)
+
+`physics.escape_congestion()` scores **pad escape demand vs lane capacity**
+(`Σ overflow²`, the capacity-mesh shape) instead of counting components in 5 mm
+cells. It is pad-aware where `density_congestion` is component-aware: **0.0** on
+the human mppc placement, **128.4** with 40 parts piled on the QFN. Weighted 2.5
+in `PhysicsWeights`, so SA placement can no longer trade routability for
+wirelength. This closes a gap [PCBWorld](https://arxiv.org/html/2607.05915v1)
+leaves explicitly open — it fixes placement as input and never scores its effect
+on routability.
+
+Tests: `tests/test_routability_levers.py`.
+
+---
+
 ## Six levers (priority order)
 
 ### 1. Fix routine 2-pin leak (~+4–9 nets) — **partially shipped**

@@ -95,6 +95,9 @@ class PhysicsWeights(BaseModel):
     overlap_penalty: float = 50.0
     region_violation: float = 10.0
     density_congestion: float = 1.5
+    # Escape/routing congestion (pad demand vs lane capacity). Placement that
+    # scores well on wirelength can still be unroutable at fine-pitch packages.
+    escape_congestion: float = 2.5
     thermal_spread: float = 0.5
     emi_proxy: float = 2.0
     spice_score: float = 4.0
@@ -233,6 +236,7 @@ class ScoreBreakdown(BaseModel):
     overlap_penalty: float = 0.0
     region_violation: float = 0.0
     density_congestion: float = 0.0
+    escape_congestion: float = 0.0
     thermal_spread: float = 0.0
     emi_proxy: float = 0.0
     spice_score: float = 0.0
@@ -252,6 +256,7 @@ class ScoreBreakdown(BaseModel):
             "overlap_penalty": self.overlap_penalty,
             "region_violation": self.region_violation,
             "density_congestion": self.density_congestion,
+            "escape_congestion": self.escape_congestion,
             "thermal_spread": self.thermal_spread,
             "emi_proxy": self.emi_proxy,
             "spice_score": self.spice_score,

@@ -277,6 +277,13 @@ def _deeppcb_eighty_twenty_route(
     def weight(n: str) -> float:
         return float(config.weight_for_net(n)) if config else 1.0
 
+    # NOTE: escape-scarcity ordering (PinAccessPlan.order_by_escape_scarcity)
+    # is deliberately NOT applied here. Measured on the mppc 2-pin segment it
+    # gains +3 nets (12→15) through the direct native batch path, but loses 3
+    # (15→12) through this stage's per-net clearance_aware_route path, which
+    # applies its own priority and rip-up. Wire it in only with an A/B on the
+    # staged path. See docs/SCORE_ROADMAP.md.
+
     # Prefer critical/HS and local 2-pin first within stage (weight already
     # in key). Grid: routine starts at 0.15; residual failures retry at 0.10
     # (see residual pass below) — DeepPCB 80/20: easy nets must go 100%.
